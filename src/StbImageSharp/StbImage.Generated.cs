@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using StbSharp;
 
 namespace StbImageSharp
 {
@@ -2607,7 +2608,7 @@ namespace StbImageSharp
 					}
 					if ((ntot - n) < (c))
 						return (int)(stbi__err("bad codelengths"));
-					CRuntime.memset(lencodes + n, (int)(fill), (ulong)(c));
+					CRuntime.memset(lencodes + n, fill, c);
 					n += (int)(c);
 				}
 			}
@@ -2852,9 +2853,9 @@ namespace StbImageSharp
 		public static int stbi__paeth(int a, int b, int c)
 		{
 			int p = (int)(a + b - c);
-			int pa = (int)(CRuntime.abs((int)(p - a)));
-			int pb = (int)(CRuntime.abs((int)(p - b)));
-			int pc = (int)(CRuntime.abs((int)(p - c)));
+			int pa = (int)(Math.Abs((int)(p - a)));
+			int pb = (int)(Math.Abs((int)(p - b)));
+			int pc = (int)(Math.Abs((int)(p - c)));
 			if ((pa <= pb) && (pa <= pc))
 				return (int)(a);
 			if (pb <= pc)
@@ -3989,7 +3990,7 @@ namespace StbImageSharp
 			if ((stbi__bmp_parse_header(s, &info)) == (null))
 				return (null);
 			flip_vertically = (int)(((int)(s.img_y)) > (0) ? 1 : 0);
-			s.img_y = (uint)(CRuntime.abs((int)(s.img_y)));
+			s.img_y = (uint)(Math.Abs((int)(s.img_y)));
 			mr = (uint)(info.mr);
 			mg = (uint)(info.mg);
 			mb = (uint)(info.mb);

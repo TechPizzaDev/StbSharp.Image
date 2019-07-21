@@ -4,3 +4,6 @@
 [submodule "generation/Sichem"]
 	path = generation/Sichem
 	url = https://github.com/rds1983/Sichem.git
+[submodule "modules/StbSharp.Shared"]
+	path = modules/StbSharp.Shared
+	url = https://github.com/TechnologicalPizza/StbSharp.Shared

@@ -1,9 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Authors>StbImageSharpTeam</Authors>
     <Product>StbImageSharp</Product>
     <PackageId>StbImageSharp</PackageId>
-    <TargetFrameworks>netstandard2.0;net45</TargetFrameworks>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <Description>C# port of the stb_image.h</Description>
     <PackageLicenseUrl>Public Domain</PackageLicenseUrl>
     <PackageProjectUrl>https://github.com/StbSharp/StbImageSharp</PackageProjectUrl>
@@ -14,4 +14,7 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\modules\StbSharp.Shared\src\StbSharp.Shared\StbSharp.Shared.csproj" />
+  </ItemGroup>
 </Project>
