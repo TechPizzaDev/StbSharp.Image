@@ -1,25 +1,18 @@
 ﻿using System;
+using System.IO;
 using System.Runtime.InteropServices;
-using StbSharp;
 
-namespace StbImageSharp
+namespace StbSharp
 {
-#if !STBSHARP_INTERNAL
-	public
-#else
-	internal
-#endif
-	static unsafe partial class StbImage
+    internal static unsafe partial class StbImage
 	{
 		public static string LastError;
 
 		public const int STBI__ZFAST_BITS = 9;
 
-		public delegate int ReadCallback(void* user, sbyte* data, int size);
-
-		public delegate int SkipCallback(void* user, int n);
-
-		public delegate int EofCallback(void* user);
+		public delegate int ReadCallback(Stream stream, byte* data, int size);
+		public delegate int SkipCallback(Stream stream, int n);
+		public delegate int EofCallback(Stream stream);
 
 		public delegate void idct_block_kernel(byte* output, int out_stride, short* data);
 
@@ -31,42 +24,10 @@ namespace StbImageSharp
 		public static string stbi__g_failure_reason;
 		public static int stbi__vertically_flip_on_load;
 
-		public class stbi_io_callbacks
+		public struct stbi_io_callbacks
 		{
 			public ReadCallback read;
 			public SkipCallback skip;
-			public EofCallback eof;
-		}
-
-		public class stbi__context: IDisposable
-		{
-			public uint img_x = 0;
-			public uint img_y = 0;
-			public int img_n = 0;
-			public int img_out_n = 0;
-			public stbi_io_callbacks io = new stbi_io_callbacks();
-			public void* io_user_data;
-			public int read_from_callbacks = 0;
-			public int buflen = 0;
-			public byte* buffer_start = (byte *)CRuntime.malloc(128);
-			public byte* img_buffer;
-			public byte* img_buffer_end;
-			public byte* img_buffer_original;
-			public byte* img_buffer_original_end;
-
-			~stbi__context()
-			{
-				Dispose();
-			}
-
-			public void Dispose()
-			{
-				if (buffer_start != null)
-				{
-					CRuntime.free(buffer_start);
-					buffer_start = null;
-				}
-			}
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -175,13 +136,12 @@ namespace StbImageSharp
 			public byte suffix;
 		}
 
-		public class stbi__gif: IDisposable
+		public class stbi__gif
 		{
 			public int w;
 			public int h;
 			public byte* _out_;
-			public byte* background;
-			public byte* history;
+			public byte* old_out;
 			public int flags;
 			public int bgindex;
 			public int ratio;
@@ -190,7 +150,7 @@ namespace StbImageSharp
 			public int delay;
 			public byte* pal;
 			public byte* lpal;
-			public stbi__gif_lzw* codes = (stbi__gif_lzw*)stbi__malloc(8192 * sizeof(stbi__gif_lzw));
+			public stbi__gif_lzw* codes;
 			public byte* color_table;
 			public int parse;
 			public int step;
@@ -205,34 +165,9 @@ namespace StbImageSharp
 
 			public stbi__gif()
 			{
+				codes = (stbi__gif_lzw*) stbi__malloc(4096 * sizeof(stbi__gif_lzw));
 				pal = (byte*) stbi__malloc(256 * 4 * sizeof(byte));
 				lpal = (byte*) stbi__malloc(256 * 4 * sizeof(byte));
-			}
-
-			~stbi__gif()
-			{
-				Dispose();
-			}
-
-			public void Dispose()
-			{
-				if (pal != null)
-				{
-					CRuntime.free(pal);
-					pal = null;
-				}
-
-				if (lpal != null)
-				{
-					CRuntime.free(lpal);
-					lpal = null;
-				}
-
-				if (codes != null)
-				{
-					CRuntime.free(codes);
-					codes = null;
-				}
 			}
 		}
 
@@ -254,8 +189,7 @@ namespace StbImageSharp
 
 		public static void stbi__gif_parse_colortable(stbi__context s, byte* pal, int num_entries, int transp)
 		{
-			int i;
-			for (i = 0; (i) < (num_entries); ++i)
+			for (int i = 0; (i) < (num_entries); ++i)
 			{
 				pal[i * 4 + 2] = stbi__get8(s);
 				pal[i * 4 + 1] = stbi__get8(s);
