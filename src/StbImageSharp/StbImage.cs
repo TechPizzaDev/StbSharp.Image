@@ -1,37 +1,27 @@
 ﻿using System;
-using System.IO;
 using System.Runtime.InteropServices;
 
 namespace StbSharp
 {
-    internal static unsafe partial class StbImage
+    public static unsafe partial class StbImage
 	{
 		public static string LastError;
+        public static int stbi__vertically_flip_on_load;
 
-		public const int STBI__ZFAST_BITS = 9;
+        public const int STBI__ZFAST_BITS = 9;
 
-		public delegate int ReadCallback(Stream stream, byte* data, int size);
-		public delegate int SkipCallback(Stream stream, int n);
-		public delegate int EofCallback(Stream stream);
+		public delegate int ReadCallback(ReadContext context, Span<byte> data);
+		public delegate int SkipCallback(ReadContext context, int n);
 
 		public delegate void idct_block_kernel(byte* output, int out_stride, short* data);
 
 		public delegate void YCbCr_to_RGB_kernel(
 			byte* output, byte* y, byte* pcb, byte* pcr, int count, int step);
 
-		public delegate byte* Resampler(byte* a, byte* b, byte* c, int d, int e);
-
-		public static string stbi__g_failure_reason;
-		public static int stbi__vertically_flip_on_load;
-
-		public struct stbi_io_callbacks
-		{
-			public ReadCallback read;
-			public SkipCallback skip;
-		}
+		public delegate byte* ResamplerMethod(byte* a, byte* b, byte* c, int d, int e);
 
 		[StructLayout(LayoutKind.Sequential)]
-		public struct img_comp
+		public struct JpegComponent
 		{
 			public int id;
 			public int h, v;
@@ -48,22 +38,22 @@ namespace StbSharp
 			public int coeff_w, coeff_h; // number of 8x8 coefficient blocks
 		}
 
-		public class stbi__jpeg
+		public class JpegContext
 		{
-			public stbi__context s;
+			public ReadContext s;
 			public readonly stbi__huffman[] huff_dc = new stbi__huffman[4];
 			public readonly stbi__huffman[] huff_ac = new stbi__huffman[4];
 			public readonly ushort[][] dequant;
 
 			public readonly short[][] fast_ac;
 
-// sizes for components, interleaved MCUs
+            // sizes for components, interleaved MCUs
 			public int img_h_max, img_v_max;
 			public int img_mcu_x, img_mcu_y;
 			public int img_mcu_w, img_mcu_h;
 
-// definition of jpeg image component
-			public img_comp[] img_comp = new img_comp[4];
+            // definition of jpeg image component
+			public JpegComponent[] img_comp = new JpegComponent[4];
 
 			public uint code_buffer; // jpeg entropy-coded buffer
 			public int code_bits; // number of valid bits
@@ -84,41 +74,40 @@ namespace StbSharp
 			public int[] order = new int[4];
 			public int restart_interval, todo;
 
-// kernels
 			public idct_block_kernel idct_block_kernel;
 			public YCbCr_to_RGB_kernel YCbCr_to_RGB_kernel;
-			public Resampler resample_row_hv_2_kernel;
+			public ResamplerMethod resample_row_hv_2_kernel;
 
-			public stbi__jpeg()
+			public JpegContext(ReadContext ctx)
 			{
-				for (var i = 0; i < 4; ++i)
+                s = ctx;
+
+                idct_block_kernel = stbi__idct_block;
+                YCbCr_to_RGB_kernel = stbi__YCbCr_to_RGB_row;
+                resample_row_hv_2_kernel = stbi__resample_row_hv_2;
+
+                for (var i = 0; i < 4; ++i)
 				{
 					huff_ac[i] = new stbi__huffman();
 					huff_dc[i] = new stbi__huffman();
 				}
 
 				for (var i = 0; i < img_comp.Length; ++i)
-				{
-					img_comp[i] = new img_comp();
-				}
+					img_comp[i] = new JpegComponent();
 
 				fast_ac = new short[4][];
 				for (var i = 0; i < fast_ac.Length; ++i)
-				{
 					fast_ac[i] = new short[1 << STBI__ZFAST_BITS];
-				}
 
 				dequant = new ushort [4][];
 				for (var i = 0; i < dequant.Length; ++i)
-				{
 					dequant[i] = new ushort[64];
-				}
 			}
 		};
 
-		public class stbi__resample
+		public struct stbi__resample
 		{
-			public Resampler resample;
+			public ResamplerMethod Resample;
 			public byte* line0;
 			public byte* line1;
 			public int hs;
@@ -126,7 +115,7 @@ namespace StbSharp
 			public int w_lores;
 			public int ystep;
 			public int ypos;
-		}
+        }
 
 		[StructLayout(LayoutKind.Sequential)]
 		public struct stbi__gif_lzw
@@ -136,42 +125,75 @@ namespace StbSharp
 			public byte suffix;
 		}
 
-		public class stbi__gif
-		{
-			public int w;
-			public int h;
-			public byte* _out_;
-			public byte* old_out;
-			public int flags;
-			public int bgindex;
-			public int ratio;
-			public int transparent;
-			public int eflags;
-			public int delay;
-			public byte* pal;
-			public byte* lpal;
-			public stbi__gif_lzw* codes;
-			public byte* color_table;
-			public int parse;
-			public int step;
-			public int lflags;
-			public int start_x;
-			public int start_y;
-			public int max_x;
-			public int max_y;
-			public int cur_x;
-			public int cur_y;
-			public int line_size;
+        public class GifContext : IDisposable
+        {
+            public int w;
+            public int h;
+            public byte* _out_;
+            public byte* background;
+            public byte* history;
+            public int flags;
+            public int bgindex;
+            public int ratio;
+            public int transparent;
+            public int eflags;
+            public int delay;
+            public byte* pal;
+            public byte* lpal;
+            public stbi__gif_lzw* codes;
+            public byte* color_table;
+            public int parse;
+            public int step;
+            public int lflags;
+            public int start_x;
+            public int start_y;
+            public int max_x;
+            public int max_y;
+            public int cur_x;
+            public int cur_y;
+            public int line_size;
 
-			public stbi__gif()
-			{
-				codes = (stbi__gif_lzw*) stbi__malloc(4096 * sizeof(stbi__gif_lzw));
-				pal = (byte*) stbi__malloc(256 * 4 * sizeof(byte));
-				lpal = (byte*) stbi__malloc(256 * 4 * sizeof(byte));
-			}
-		}
+            public GifContext()
+            {
+                codes = (stbi__gif_lzw*)stbi__malloc(8192 * sizeof(stbi__gif_lzw));
+                pal = (byte*)stbi__malloc(256 * 4 * sizeof(byte));
+                lpal = (byte*)stbi__malloc(256 * 4 * sizeof(byte));
+            }
 
-		private static void* stbi__malloc(int size)
+            protected virtual void Dispose(bool disposing)
+            {
+                if (pal != null)
+                {
+                    CRuntime.free(pal);
+                    pal = null;
+                }
+
+                if (lpal != null)
+                {
+                    CRuntime.free(lpal);
+                    lpal = null;
+                }
+
+                if (codes != null)
+                {
+                    CRuntime.free(codes);
+                    codes = null;
+                }
+            }
+
+            public void Dispose()
+            {
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
+
+            ~GifContext()
+            {
+                Dispose(false);
+            }
+        }
+
+        private static void* stbi__malloc(int size)
 		{
 			return CRuntime.malloc((ulong) size);
 		}
@@ -185,17 +207,6 @@ namespace StbSharp
 		{
 			LastError = str;
 			return 0;
-		}
-
-		public static void stbi__gif_parse_colortable(stbi__context s, byte* pal, int num_entries, int transp)
-		{
-			for (int i = 0; (i) < (num_entries); ++i)
-			{
-				pal[i * 4 + 2] = stbi__get8(s);
-				pal[i * 4 + 1] = stbi__get8(s);
-				pal[i * 4] = stbi__get8(s);
-				pal[i * 4 + 3] = (byte) (transp == i ? 0 : 255);
-			}
 		}
 	}
 }

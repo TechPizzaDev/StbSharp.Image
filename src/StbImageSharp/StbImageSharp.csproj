@@ -15,6 +15,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\modules\StbSharp.Shared\src\StbSharp.Shared\StbSharp.Shared.csproj" />
+    <PackageReference Include="System.Memory" Version="4.5.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Shared\src\StbSharp.Shared\StbSharp.Shared.csproj" />
   </ItemGroup>
 </Project>

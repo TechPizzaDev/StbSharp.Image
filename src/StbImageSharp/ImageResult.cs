@@ -1,15 +1,11 @@
-﻿using System;
+﻿/*
+using System;
 using System.Runtime.InteropServices;
 using StbSharp;
 
 namespace StbImageSharp
 {
-#if !STBSHARP_INTERNAL
-	public
-#else
-	internal
-#endif
-	class ImageResult
+    public class ImageResult
 	{
 		public int Width { get; set; }
 		public int Height { get; set; }
@@ -63,3 +59,4 @@ namespace StbImageSharp
 		}
 	}
 }
+*/
