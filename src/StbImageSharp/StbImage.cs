@@ -12,6 +12,7 @@ namespace StbSharp
 
 		public delegate int ReadCallback(ReadContext context, Span<byte> data);
 		public delegate int SkipCallback(ReadContext context, int n);
+        public delegate void ReadProgressCallback(double progress, Rect? rect);
 
 		public delegate void idct_block_kernel(byte* output, int out_stride, short* data);
 
@@ -19,6 +20,22 @@ namespace StbSharp
 			byte* output, byte* y, byte* pcb, byte* pcr, int count, int step);
 
 		public delegate byte* ResamplerMethod(byte* a, byte* b, byte* c, int d, int e);
+
+        public readonly struct Rect
+        {
+            public readonly int X;
+            public readonly int Y;
+            public readonly int W;
+            public readonly int H;
+
+            public Rect(int x, int y, int w, int h)
+            {
+                X = x;
+                Y = y;
+                W = w;
+                H = h;
+            }
+        }
 
 		[StructLayout(LayoutKind.Sequential)]
 		public struct JpegComponent
@@ -155,9 +172,9 @@ namespace StbSharp
 
             public GifContext()
             {
-                codes = (stbi__gif_lzw*)stbi__malloc(8192 * sizeof(stbi__gif_lzw));
-                pal = (byte*)stbi__malloc(256 * 4 * sizeof(byte));
-                lpal = (byte*)stbi__malloc(256 * 4 * sizeof(byte));
+                codes = (stbi__gif_lzw*)CRuntime.malloc(8192 * sizeof(stbi__gif_lzw));
+                pal = (byte*)CRuntime.malloc(256 * 4 * sizeof(byte));
+                lpal = (byte*)CRuntime.malloc(256 * 4 * sizeof(byte));
             }
 
             protected virtual void Dispose(bool disposing)
@@ -192,16 +209,6 @@ namespace StbSharp
                 Dispose(false);
             }
         }
-
-        private static void* stbi__malloc(int size)
-		{
-			return CRuntime.malloc((ulong) size);
-		}
-
-		private static void* stbi__malloc(ulong size)
-		{
-			return stbi__malloc((int) size);
-		}
 
 		private static int stbi__err(string str)
 		{

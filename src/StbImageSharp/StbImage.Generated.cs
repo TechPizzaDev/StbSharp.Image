@@ -56,7 +56,7 @@ namespace StbSharp
                 Skip = skip;
 
                 DataLength = 256;
-                DataStart = (byte*)stbi__malloc(DataLength);
+                DataStart = (byte*)CRuntime.malloc(DataLength);
                 DataOriginal = DataStart;
                 stbi__refill_buffer(this);
                 DataOriginalEnd = DataEnd;
@@ -64,14 +64,22 @@ namespace StbSharp
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct LoadState
+        public struct ReadState
         {
+            public readonly ReadProgressCallback OnProgress;
+
             public int BitsPerChannel;
             public int Components;
+            public int AnimationDelay;
 
             public int Width;
             public int Height;
             public int RequestedComponents;
+
+            public ReadState(ReadProgressCallback onProgress) : this()
+            {
+                OnProgress = onProgress;
+            }
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -302,21 +310,21 @@ namespace StbSharp
         {
             if (stbi__mad2sizes_valid((int)(a), (int)(b), (int)(add)) == 0)
                 return (null);
-            return stbi__malloc((ulong)(a * b + add));
+            return CRuntime.malloc((ulong)(a * b + add));
         }
 
         public static void* stbi__malloc_mad3(int a, int b, int c, int add)
         {
             if (stbi__mad3sizes_valid((int)(a), (int)(b), (int)(c), (int)(add)) == 0)
                 return (null);
-            return stbi__malloc((ulong)(a * b * c + add));
+            return CRuntime.malloc((ulong)(a * b * c + add));
         }
 
         public static void* stbi__malloc_mad4(int a, int b, int c, int d, int add)
         {
             if (stbi__mad4sizes_valid((int)(a), (int)(b), (int)(c), (int)(d), (int)(add)) == 0)
                 return (null);
-            return stbi__malloc((ulong)(a * b * c * d + add));
+            return CRuntime.malloc((ulong)(a * b * c * d + add));
         }
 
         public static void stbi_set_flip_vertically_on_load(int flag_true_if_should_flip)
@@ -325,7 +333,7 @@ namespace StbSharp
         }
 
         public static void* stbi__load_main(
-            ReadContext s, int req_comp, int bytesPerComp, out LoadState ri)
+            ReadContext s, int req_comp, int bytesPerComp, out ReadState ri)
         {
             ri = default;
             ri.BitsPerChannel = bytesPerComp;
@@ -352,7 +360,7 @@ namespace StbSharp
             int i;
             int img_len = (int)(w * h * channels);
             byte* reduced;
-            reduced = (byte*)(stbi__malloc((ulong)(img_len)));
+            reduced = (byte*)(CRuntime.malloc((ulong)(img_len)));
             if ((reduced) == (null))
                 return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : (null))));
 
@@ -368,7 +376,7 @@ namespace StbSharp
             int i;
             int img_len = (int)(w * h * channels);
             ushort* enlarged;
-            enlarged = (ushort*)(stbi__malloc((ulong)(img_len * 2)));
+            enlarged = (ushort*)(CRuntime.malloc((ulong)(img_len * 2)));
             if ((enlarged) == (null))
                 return (ushort*)((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : (null))));
             for (i = (int)(0); (i) < (img_len); ++i)
@@ -407,7 +415,7 @@ namespace StbSharp
         public static byte* stbi__load_and_postprocess_8bit(
             ReadContext s, out int x, out int y, out int comp, int req_comp)
         {
-            void* result = stbi__load_main(s, req_comp, 8, out LoadState ri);
+            void* result = stbi__load_main(s, req_comp, 8, out ReadState ri);
             x = ri.Width;
             y = ri.Height;
             comp = ri.Components;
@@ -433,7 +441,7 @@ namespace StbSharp
         public static ushort* stbi__load_and_postprocess_16bit(
             ReadContext s, out int x, out int y, out int comp, int req_comp)
         {
-            void* result = stbi__load_main(s, req_comp, 16, out LoadState ri);
+            void* result = stbi__load_main(s, req_comp, 16, out ReadState ri);
             x = ri.Width;
             y = ri.Height;
             comp = ri.Components;
@@ -703,7 +711,7 @@ namespace StbSharp
             if ((req_comp) == (img_n))
                 return data;
 
-            ushort* good = (ushort*)(stbi__malloc((ulong)(req_comp * x * y * 2)));
+            ushort* good = (ushort*)(CRuntime.malloc((ulong)(req_comp * x * y * 2)));
             if ((good) == (null))
             {
                 CRuntime.free(data);
@@ -2206,7 +2214,7 @@ namespace StbSharp
             return (byte)((t + (t >> 8)) >> 8);
         }
 
-        public static byte* load_jpeg_image(JpegContext z, ref LoadState ri)
+        public static byte* load_jpeg_image(JpegContext z, ref ReadState ri)
         {
             if (ri.RequestedComponents < 0 || ri.RequestedComponents > 4)
                 return ((byte*)((ulong)((stbi__err("bad req_comp")) != 0 ? ((byte*)null) : (null))));
@@ -2232,7 +2240,7 @@ namespace StbSharp
             for (k = (int)(0); (k) < (decode_n); ++k)
             {
                 ref stbi__resample r = ref res_comp[k];
-                z.img_comp[k].linebuf = (byte*)(stbi__malloc((ulong)(z.s.W + 3)));
+                z.img_comp[k].linebuf = (byte*)(CRuntime.malloc((ulong)(z.s.W + 3)));
                 if (z.img_comp[k].linebuf == null)
                 {
                     stbi__cleanup_jpeg(z);
@@ -2421,7 +2429,7 @@ namespace StbSharp
             return output;
         }
 
-        public static void* stbi__jpeg_load(ReadContext s, ref LoadState ri)
+        public static void* stbi__jpeg_load(ReadContext s, ref ReadState ri)
         {
             var j = new JpegContext(s);
             return load_jpeg_image(j, ref ri);
@@ -2852,7 +2860,7 @@ namespace StbSharp
         public static byte* stbi_zlib_decode_malloc_guesssize(byte* buffer, int len, int initial_size, int* outlen)
         {
             stbi__zbuf a = new stbi__zbuf();
-            byte* p = (byte*)(stbi__malloc((ulong)(initial_size)));
+            byte* p = (byte*)(CRuntime.malloc((ulong)(initial_size)));
             if ((p) == (null))
                 return (null);
             a.zbuffer = (byte*)(buffer);
@@ -2880,7 +2888,7 @@ namespace StbSharp
             int* outlen, int parse_header)
         {
             stbi__zbuf a = new stbi__zbuf();
-            byte* p = (byte*)(stbi__malloc((ulong)(initial_size)));
+            byte* p = (byte*)(CRuntime.malloc((ulong)(initial_size)));
             if ((p) == (null))
                 return (null);
             a.zbuffer = (byte*)(buffer);
@@ -2913,7 +2921,7 @@ namespace StbSharp
         public static byte* stbi_zlib_decode_noheader_malloc(byte* buffer, int len, int* outlen)
         {
             stbi__zbuf a = new stbi__zbuf();
-            byte* p = (byte*)(stbi__malloc((ulong)(16384)));
+            byte* p = (byte*)(CRuntime.malloc((ulong)(16384)));
             if ((p) == (null))
                 return (null);
             a.zbuffer = (byte*)(buffer);
@@ -3808,7 +3816,7 @@ namespace StbSharp
         }
 
         public static void* stbi__do_png(
-            ref PngContext p, ref LoadState ri)
+            ref PngContext p, ref ReadState ri)
         {
             if (((ri.RequestedComponents) < (0)) || ((ri.RequestedComponents) > (4)))
                 return ((byte*)((ulong)((stbi__err("bad comp request")) != 0 ? ((byte*)null) : (null))));
@@ -3849,7 +3857,7 @@ namespace StbSharp
             return result;
         }
 
-        public static void* stbi__png_load(ReadContext s, ref LoadState ri)
+        public static void* stbi__png_load(ReadContext s, ref ReadState ri)
         {
             var p = new PngContext(s);
             return stbi__do_png(ref p, ref ri);
@@ -4086,7 +4094,7 @@ namespace StbSharp
             return (void*)(1);
         }
 
-        public static void* stbi__bmp_load(ReadContext s, ref LoadState ri)
+        public static void* stbi__bmp_load(ReadContext s, ref ReadState ri)
         {
             var info = new stbi__bmp_data();
             info.all_a = (uint)(255);
@@ -4491,7 +4499,7 @@ namespace StbSharp
             _out_[2] = ((byte)((b * 255) / 31));
         }
 
-        public static void* stbi__tga_load(ReadContext s, ref LoadState ri)
+        public static void* stbi__tga_load(ReadContext s, ref ReadState ri)
         {
             int tga_offset = (int)(stbi__get8(s));
             int tga_indexed = (int)(stbi__get8(s));
@@ -4725,7 +4733,7 @@ namespace StbSharp
             return (int)(1);
         }
 
-        public static void* stbi__psd_load(ReadContext s, ref LoadState ri)
+        public static void* stbi__psd_load(ReadContext s, ref ReadState ri)
         {
             int pixelCount;
             int channelCount;
@@ -4763,7 +4771,7 @@ namespace StbSharp
             if (compression == 0 && bitdepth == 16 && ri.BitsPerChannel == 16)
                 _out_ = (byte*)(stbi__malloc_mad3(8, w, h, 0));
             else
-                _out_ = (byte*)(stbi__malloc((ulong)(4 * w * h)));
+                _out_ = (byte*)(CRuntime.malloc((ulong)(4 * w * h)));
 
             if (_out_ == null)
                 return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : (null))));
@@ -4912,7 +4920,7 @@ namespace StbSharp
         }
 
         public static int stbi__gif_header(
-            ReadContext s, GifContext g, ref LoadState ri, bool skipColorTable)
+            ReadContext s, GifContext g, ref ReadState ri, bool skipColorTable)
         {
             byte version;
             if ((((stbi__get8(s) != 'G') || (stbi__get8(s) != 'I')) || (stbi__get8(s) != 'F')) ||
@@ -5099,7 +5107,7 @@ namespace StbSharp
         }
 
         public static byte* stbi__gif_load_next(
-            ReadContext s, GifContext g, ref LoadState ri, byte* two_back)
+            ReadContext s, GifContext g, ref ReadState ri, byte* two_back)
         {
             int dispose = 0;
             int first_frame = 0;
@@ -5114,9 +5122,9 @@ namespace StbSharp
                     return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : (null))));
 
                 pcount = (int)(g.w * g.h);
-                g._out_ = (byte*)(stbi__malloc((ulong)(4 * pcount)));
-                g.background = (byte*)(stbi__malloc((ulong)(4 * pcount)));
-                g.history = (byte*)(stbi__malloc((ulong)(pcount)));
+                g._out_ = (byte*)(CRuntime.malloc((ulong)(4 * pcount)));
+                g.background = (byte*)(CRuntime.malloc((ulong)(4 * pcount)));
+                g.history = (byte*)(CRuntime.malloc((ulong)(pcount)));
                 if (((g._out_ == null) || (g.background == null)) || (g.history == null))
                     return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : (null))));
 
@@ -5267,7 +5275,7 @@ namespace StbSharp
         }
 
         public static void* stbi__load_gif_main(
-            ReadContext s, int** delays, out int layers, ref LoadState ri)
+            ReadContext s, int** delays, out int layers, ref ReadState ri)
         {
             layers = 0;
             if ((stbi__gif_test(s)) != 0)
@@ -5299,9 +5307,9 @@ namespace StbSharp
                             }
                             else
                             {
-                                _out_ = (byte*)(stbi__malloc((ulong)(layers * stride)));
+                                _out_ = (byte*)(CRuntime.malloc((ulong)(layers * stride)));
                                 if ((delays) != null)
-                                    *delays = (int*)(stbi__malloc((ulong)(layers * sizeof(int))));
+                                    *delays = (int*)(CRuntime.malloc((ulong)(layers * sizeof(int))));
                             }
                             CRuntime.memcpy(_out_ + ((layers - 1) * stride), u, (ulong)(stride));
                             if ((layers) >= (2))
@@ -5329,7 +5337,7 @@ namespace StbSharp
             }
         }
 
-        public static void* stbi__gif_load(ReadContext s, ref LoadState ri)
+        public static void* stbi__gif_load(ReadContext s, ref ReadState ri)
         {
             using (var g = new GifContext())
             {
@@ -5354,7 +5362,7 @@ namespace StbSharp
             comp = 0;
             using (var g = new GifContext())
             {
-                LoadState ri = default;
+                ReadState ri = default;
                 if (stbi__gif_header(s, g, ref ri, skipColorTable: true) == 0)
                 {
                     stbi__rewind(s);
