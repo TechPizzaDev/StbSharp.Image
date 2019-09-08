@@ -10,8 +10,8 @@ namespace StbSharp
     public static unsafe partial class StbImage
     {
         // TODO move to the ReadContext
-        public static int stbi__unpremultiply_on_load = (int)(0);
-        public static int stbi__de_iphone_flag = (int)(0);
+        public static int stbi__unpremultiply_on_load = 0;
+        public static int stbi__de_iphone_flag = 0;
 
         public class ReadContext
         {
@@ -66,7 +66,7 @@ namespace StbSharp
         [StructLayout(LayoutKind.Sequential)]
         public struct ReadState
         {
-            public readonly ReadProgressCallback OnProgress;
+            public readonly ReadProgressCallback Progress;
 
             public int BitsPerChannel;
             public int Components;
@@ -78,7 +78,7 @@ namespace StbSharp
 
             public ReadState(ReadProgressCallback onProgress) : this()
             {
-                OnProgress = onProgress;
+                Progress = onProgress;
             }
         }
 
@@ -261,14 +261,14 @@ namespace StbSharp
         public static int stbi__addsizes_valid(int a, int b)
         {
             if ((b) < (0))
-                return (int)(0);
+                return 0;
             return (a <= 2147483647 - b) ? 1 : 0;
         }
 
         public static int stbi__mul2sizes_valid(int a, int b)
         {
             if (((a) < (0)) || ((b) < (0)))
-                return (int)(0);
+                return 0;
             if ((b) == (0))
                 return (int)(1);
             return (a <= 2147483647 / b) ? 1 : 0;
@@ -364,7 +364,7 @@ namespace StbSharp
             if ((reduced) == (null))
                 return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : (null))));
 
-            for (i = (int)(0); (i) < (img_len); ++i)
+            for (i = 0; (i) < (img_len); ++i)
                 reduced[i] = ((byte)((orig[i] >> 8) & 0xFF));
 
             CRuntime.free(orig);
@@ -379,7 +379,7 @@ namespace StbSharp
             enlarged = (ushort*)(CRuntime.malloc((ulong)(img_len * 2)));
             if ((enlarged) == (null))
                 return (ushort*)((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : (null))));
-            for (i = (int)(0); (i) < (img_len); ++i)
+            for (i = 0; (i) < (img_len); ++i)
             {
                 enlarged[i] = ((ushort)((orig[i] << 8) + orig[i]));
             }
@@ -394,7 +394,7 @@ namespace StbSharp
             ulong bytes_per_row = (ulong)(w * bytes_per_pixel);
             byte* tmp = stackalloc byte[2048];
             byte* bytes = (byte*)(image);
-            for (row = (int)(0); (row) < (h >> 1); row++)
+            for (row = 0; (row) < (h >> 1); row++)
             {
                 byte* row0 = bytes + (ulong)row * bytes_per_row;
                 byte* row1 = bytes + (ulong)(h - row - 1) * bytes_per_row;
@@ -502,7 +502,7 @@ namespace StbSharp
             if ((s.Read) != null)
             {
                 if (s.Stream.CanRead)
-                    return (int)(0); // not at eof
+                    return 0; // not at eof
 
                 if (s.ReadFromCallbacks)
                     return (int)(1);
@@ -557,7 +557,7 @@ namespace StbSharp
                 return (int)(1);
             }
             else
-                return (int)(0);
+                return 0;
         }
 
         public static int stbi__get16be(ReadContext s)
@@ -594,7 +594,7 @@ namespace StbSharp
             if ((req_comp) == (img_n))
                 return data;
 
-            byte* good = (byte*)(stbi__malloc_mad3((int)(req_comp), (int)(x), (int)(y), (int)(0)));
+            byte* good = (byte*)(stbi__malloc_mad3((int)(req_comp), (int)(x), (int)(y), 0));
             if ((good) == (null))
             {
                 CRuntime.free(data);
@@ -604,7 +604,7 @@ namespace StbSharp
             int i;
             int j;
 
-            for (j = (int)(0); (j) < ((int)(y)); ++j)
+            for (j = 0; (j) < ((int)(y)); ++j)
             {
                 byte* src = data + j * x * img_n;
                 byte* dest = good + j * x * req_comp;
@@ -718,7 +718,7 @@ namespace StbSharp
                 return (ushort*)((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : (null))));
             }
 
-            for (j = (int)(0); (j) < ((int)(y)); ++j)
+            for (j = 0; (j) < ((int)(y)); ++j)
             {
                 ushort* src = data + j * x * img_n;
                 ushort* dest = good + j * x * req_comp;
@@ -819,16 +819,16 @@ namespace StbSharp
         {
             int i;
             int j;
-            int k = (int)(0);
-            int code = (int)(0);
-            for (i = (int)(0); (i) < (16); ++i)
+            int k = 0;
+            int code = 0;
+            for (i = 0; (i) < (16); ++i)
             {
-                for (j = (int)(0); (j) < (count[i]); ++j)
+                for (j = 0; (j) < (count[i]); ++j)
                     h.size[k++] = ((byte)(i + 1));
             }
 
             h.size[k] = (byte)(0);
-            k = (int)(0);
+            k = 0;
             for (j = (int)(1); j <= 16; ++j)
             {
                 h.delta[j] = (int)(k - code);
@@ -852,14 +852,14 @@ namespace StbSharp
             {
                 h.fast[i] = 255;
             }
-            for (i = (int)(0); (i) < (k); ++i)
+            for (i = 0; (i) < (k); ++i)
             {
                 int s = (int)(h.size[i]);
                 if (s <= 9)
                 {
                     int c = (int)(h.code[i] << (9 - s));
                     int m = (int)(1 << (9 - s));
-                    for (j = (int)(0); (j) < (m); ++j)
+                    for (j = 0; (j) < (m); ++j)
                     {
                         h.fast[c + j] = ((byte)(i));
                     }
@@ -872,7 +872,7 @@ namespace StbSharp
         public static void stbi__build_fast_ac(short[] fast_ac, ref stbi__huffman h)
         {
             int i;
-            for (i = (int)(0); (i) < (1 << 9); ++i)
+            for (i = 0; (i) < (1 << 9); ++i)
             {
                 byte fast = (byte)(h.fast[i]);
                 fast_ac[i] = (short)(0);
@@ -1011,7 +1011,7 @@ namespace StbSharp
             t = (int)(stbi__jpeg_huff_decode(j, ref hdc));
             if ((t) < (0))
                 return (int)(stbi__err("bad huffman code"));
-            CRuntime.memset(data, (int)(0), (ulong)(64 * sizeof(short)));
+            CRuntime.memset(data, 0, (ulong)(64 * sizeof(short)));
             diff = (int)((t) != 0 ? stbi__extend_receive(j, (int)(t)) : 0);
             dc = (int)(j.img_comp[b].dc_pred + diff);
             j.img_comp[b].dc_pred = (int)(dc);
@@ -1073,7 +1073,7 @@ namespace StbSharp
                 stbi__grow_buffer_unsafe(j);
             if ((j.succ_high) == (0))
             {
-                CRuntime.memset(data, (int)(0), (ulong)(64 * sizeof(short)));
+                CRuntime.memset(data, 0, (ulong)(64 * sizeof(short)));
                 t = (int)(stbi__jpeg_huff_decode(j, ref hdc));
                 diff = (int)((t) != 0 ? stbi__extend_receive(j, (int)(t)) : 0);
                 dc = (int)(j.img_comp[b].dc_pred + diff);
@@ -1260,7 +1260,7 @@ namespace StbSharp
             int* v = val;
             byte* o;
             short* d = ((short*)data);
-            for (i = (int)(0); (i) < (8); ++i, ++d, ++v)
+            for (i = 0; (i) < (8); ++i, ++d, ++v)
             {
                 if ((((((((d[8]) == (0)) && ((d[16]) == (0))) && ((d[24]) == (0))) && ((d[32]) == (0))) &&
                       ((d[40]) == (0))) &&
@@ -1337,7 +1337,7 @@ namespace StbSharp
                 }
             }
 
-            for (i = (int)(0), v = val, o = _out_; (i) < (8); ++i, v += 8, o += out_stride)
+            for (i = 0, v = val, o = _out_; (i) < (8); ++i, v += 8, o += out_stride)
             {
                 int t0;
                 int t1;
@@ -1424,15 +1424,15 @@ namespace StbSharp
 
         public static void stbi__jpeg_reset(JpegContext j)
         {
-            j.code_bits = (int)(0);
+            j.code_bits = 0;
             j.code_buffer = (uint)(0);
-            j.nomore = (int)(0);
+            j.nomore = 0;
             j.img_comp[0].dc_pred =
                 (int)(j.img_comp[1].dc_pred =
-                    (int)(j.img_comp[2].dc_pred = (int)(j.img_comp[3].dc_pred = (int)(0))));
+                    (int)(j.img_comp[2].dc_pred = (int)(j.img_comp[3].dc_pred = 0)));
             j.marker = (byte)(0xff);
             j.todo = (int)((j.restart_interval) != 0 ? j.restart_interval : 0x7fffffff);
-            j.eob_run = (int)(0);
+            j.eob_run = 0;
         }
 
         public static int stbi__parse_entropy_coded_data(JpegContext z)
@@ -1448,15 +1448,15 @@ namespace StbSharp
                     int n = (int)(z.order[0]);
                     int w = (int)((z.img_comp[n].x + 7) >> 3);
                     int h = (int)((z.img_comp[n].y + 7) >> 3);
-                    for (j = (int)(0); (j) < (h); ++j)
+                    for (j = 0; (j) < (h); ++j)
                     {
-                        for (i = (int)(0); (i) < (w); ++i)
+                        for (i = 0; (i) < (w); ++i)
                         {
                             int ha = (int)(z.img_comp[n].ha);
                             if (stbi__jpeg_decode_block(
                                     z, data, ref z.huff_dc[z.img_comp[n].hd], ref z.huff_ac[ha],
                                     z.fast_ac[ha], (int)(n), z.dequant[z.img_comp[n].tq]) == 0)
-                                return (int)(0);
+                                return 0;
 
                             z.idct_block_kernel(
                                 z.img_comp[n].data + z.img_comp[n].w2 * j * 8 + i * 8,
@@ -1483,16 +1483,16 @@ namespace StbSharp
                     int x;
                     int y;
                     short* data = stackalloc short[64];
-                    for (j = (int)(0); (j) < (z.img_mcu_y); ++j)
+                    for (j = 0; (j) < (z.img_mcu_y); ++j)
                     {
-                        for (i = (int)(0); (i) < (z.img_mcu_x); ++i)
+                        for (i = 0; (i) < (z.img_mcu_x); ++i)
                         {
-                            for (k = (int)(0); (k) < (z.scan_n); ++k)
+                            for (k = 0; (k) < (z.scan_n); ++k)
                             {
                                 int n = (int)(z.order[k]);
-                                for (y = (int)(0); (y) < (z.img_comp[n].v); ++y)
+                                for (y = 0; (y) < (z.img_comp[n].v); ++y)
                                 {
-                                    for (x = (int)(0); (x) < (z.img_comp[n].h); ++x)
+                                    for (x = 0; (x) < (z.img_comp[n].h); ++x)
                                     {
                                         int x2 = (int)((i * z.img_comp[n].h + x) * 8);
                                         int y2 = (int)((j * z.img_comp[n].v + y) * 8);
@@ -1502,7 +1502,7 @@ namespace StbSharp
                                                 ref z.huff_dc[z.img_comp[n].hd],
                                                 ref z.huff_ac[ha], z.fast_ac[ha], (int)(n),
                                                 z.dequant[z.img_comp[n].tq]) == 0)
-                                            return (int)(0);
+                                            return 0;
                                         z.idct_block_kernel(z.img_comp[n].data + z.img_comp[n].w2 * y2 + x2,
                                             (int)(z.img_comp[n].w2), data);
                                     }
@@ -1532,23 +1532,23 @@ namespace StbSharp
                     int n = (int)(z.order[0]);
                     int w = (int)((z.img_comp[n].x + 7) >> 3);
                     int h = (int)((z.img_comp[n].y + 7) >> 3);
-                    for (j = (int)(0); (j) < (h); ++j)
+                    for (j = 0; (j) < (h); ++j)
                     {
-                        for (i = (int)(0); (i) < (w); ++i)
+                        for (i = 0; (i) < (w); ++i)
                         {
                             short* data = z.img_comp[n].coeff + 64 * (i + j * z.img_comp[n].coeff_w);
                             if ((z.spec_start) == (0))
                             {
                                 if (stbi__jpeg_decode_block_prog_dc(z, data,
                                         ref z.huff_dc[z.img_comp[n].hd], (int)(n)) == 0)
-                                    return (int)(0);
+                                    return 0;
                             }
                             else
                             {
                                 int ha = (int)(z.img_comp[n].ha);
                                 if (stbi__jpeg_decode_block_prog_ac(
                                     z, data, ref z.huff_ac[ha], z.fast_ac[ha]) == 0)
-                                    return (int)(0);
+                                    return 0;
                             }
 
                             if (--z.todo <= 0)
@@ -1571,23 +1571,23 @@ namespace StbSharp
                     int k;
                     int x;
                     int y;
-                    for (j = (int)(0); (j) < (z.img_mcu_y); ++j)
+                    for (j = 0; (j) < (z.img_mcu_y); ++j)
                     {
-                        for (i = (int)(0); (i) < (z.img_mcu_x); ++i)
+                        for (i = 0; (i) < (z.img_mcu_x); ++i)
                         {
-                            for (k = (int)(0); (k) < (z.scan_n); ++k)
+                            for (k = 0; (k) < (z.scan_n); ++k)
                             {
                                 int n = (int)(z.order[k]);
-                                for (y = (int)(0); (y) < (z.img_comp[n].v); ++y)
+                                for (y = 0; (y) < (z.img_comp[n].v); ++y)
                                 {
-                                    for (x = (int)(0); (x) < (z.img_comp[n].h); ++x)
+                                    for (x = 0; (x) < (z.img_comp[n].h); ++x)
                                     {
                                         int x2 = (int)(i * z.img_comp[n].h + x);
                                         int y2 = (int)(j * z.img_comp[n].v + y);
                                         short* data = z.img_comp[n].coeff + 64 * (x2 + y2 * z.img_comp[n].coeff_w);
                                         if (stbi__jpeg_decode_block_prog_dc(
                                             z, data, ref z.huff_dc[z.img_comp[n].hd], (int)(n)) == 0)
-                                            return (int)(0);
+                                            return 0;
                                     }
                                 }
                             }
@@ -1612,7 +1612,7 @@ namespace StbSharp
         public static void stbi__jpeg_dequantize(short* data, ushort[] dequant)
         {
             int i;
-            for (i = (int)(0); (i) < (64); ++i)
+            for (i = 0; (i) < (64); ++i)
             {
                 data[i] *= (short)(dequant[i]);
             }
@@ -1625,13 +1625,13 @@ namespace StbSharp
                 int i;
                 int j;
                 int n;
-                for (n = (int)(0); (n) < (z.s.N); ++n)
+                for (n = 0; (n) < (z.s.N); ++n)
                 {
                     int w = (int)((z.img_comp[n].x + 7) >> 3);
                     int h = (int)((z.img_comp[n].y + 7) >> 3);
-                    for (j = (int)(0); (j) < (h); ++j)
+                    for (j = 0; (j) < (h); ++j)
                     {
-                        for (i = (int)(0); (i) < (w); ++i)
+                        for (i = 0; (i) < (w); ++i)
                         {
                             short* data = z.img_comp[n].coeff + 64 * (i + j * z.img_comp[n].coeff_w);
                             stbi__jpeg_dequantize(data, z.dequant[z.img_comp[n].tq]);
@@ -1669,7 +1669,7 @@ namespace StbSharp
                             return (int)(stbi__err("bad DQT type"));
                         if ((t) > (3))
                             return (int)(stbi__err("bad DQT table"));
-                        for (i = (int)(0); (i) < (64); ++i)
+                        for (i = 0; (i) < (64); ++i)
                         {
                             z.dequant[t][stbi__jpeg_dezigzag[i]] =
                                 ((ushort)((sixteen) != 0 ? stbi__get16be(z.s) : stbi__get8(z.s)));
@@ -1685,13 +1685,13 @@ namespace StbSharp
                     {
                         int* sizes = stackalloc int[16];
                         int i;
-                        int n = (int)(0);
+                        int n = 0;
                         int q = (int)(stbi__get8(z.s));
                         int tc = (int)(q >> 4);
                         int th = (int)(q & 15);
                         if (((tc) > (1)) || ((th) > (3)))
                             return (int)(stbi__err("bad DHT header"));
-                        for (i = (int)(0); (i) < (16); ++i)
+                        for (i = 0; (i) < (16); ++i)
                         {
                             sizes[i] = (int)(stbi__get8(z.s));
                             n += (int)(sizes[i]);
@@ -1703,17 +1703,17 @@ namespace StbSharp
                         if ((tc) == (0))
                         {
                             if (stbi__build_huffman(ref z.huff_dc[th], sizes) == 0)
-                                return (int)(0);
+                                return 0;
                             huff = z.huff_dc;
                         }
                         else
                         {
                             if (stbi__build_huffman(ref z.huff_ac[th], sizes) == 0)
-                                return (int)(0);
+                                return 0;
                             huff = z.huff_ac;
                         }
 
-                        for (i = (int)(0); (i) < (n); ++i)
+                        for (i = 0; (i) < (n); ++i)
                         {
                             huff[th].values[i] = (byte)(stbi__get8(z.s));
                         }
@@ -1748,10 +1748,10 @@ namespace StbSharp
                     tag[4] = (byte)('\0');
                     int ok = (int)(1);
                     int i;
-                    for (i = (int)(0); (i) < (5); ++i)
+                    for (i = 0; (i) < (5); ++i)
                     {
                         if (stbi__get8(z.s) != tag[i])
-                            ok = (int)(0);
+                            ok = 0;
                     }
 
                     L -= (int)(5);
@@ -1769,10 +1769,10 @@ namespace StbSharp
                     tag[5] = (byte)('\0');
                     int ok = (int)(1);
                     int i;
-                    for (i = (int)(0); (i) < (6); ++i)
+                    for (i = 0; (i) < (6); ++i)
                     {
                         if (stbi__get8(z.s) != tag[i])
-                            ok = (int)(0);
+                            ok = 0;
                     }
 
                     L -= (int)(6);
@@ -1802,19 +1802,19 @@ namespace StbSharp
                 return (int)(stbi__err("bad SOS component count"));
             if (Ls != 6 + 2 * z.scan_n)
                 return (int)(stbi__err("bad SOS len"));
-            for (i = (int)(0); (i) < (z.scan_n); ++i)
+            for (i = 0; (i) < (z.scan_n); ++i)
             {
                 int id = (int)(stbi__get8(z.s));
                 int which;
                 int q = (int)(stbi__get8(z.s));
-                for (which = (int)(0); (which) < (z.s.N); ++which)
+                for (which = 0; (which) < (z.s.N); ++which)
                 {
                     if ((z.img_comp[which].id) == (id))
                         break;
                 }
 
                 if ((which) == (z.s.N))
-                    return (int)(0);
+                    return 0;
                 z.img_comp[which].hd = (int)(q >> 4);
                 if ((z.img_comp[which].hd) > (3))
                     return (int)(stbi__err("bad DC huff"));
@@ -1852,7 +1852,7 @@ namespace StbSharp
 
         public static int stbi__free_jpeg_components(JpegContext z, int ncomp, int why)
         {
-            for (int i = (int)(0); (i) < (ncomp); ++i)
+            for (int i = 0; (i) < (ncomp); ++i)
             {
                 if ((z.img_comp[i].raw_data) != null)
                 {
@@ -1904,7 +1904,7 @@ namespace StbSharp
             if (((c != 3) && (c != 1)) && (c != 4))
                 return (int)(stbi__err("bad component count"));
             s.N = (int)(c);
-            for (i = (int)(0); (i) < (c); ++i)
+            for (i = 0; (i) < (c); ++i)
             {
                 z.img_comp[i].data = (null);
                 z.img_comp[i].linebuf = (null);
@@ -1912,13 +1912,13 @@ namespace StbSharp
 
             if (Lf != 8 + 3 * s.N)
                 return (int)(stbi__err("bad SOF len"));
-            z.rgb = (int)(0);
+            z.rgb = 0;
 
             byte* rgb = stackalloc byte[3];
             rgb[0] = (byte)('R');
             rgb[1] = (byte)('G');
             rgb[2] = (byte)('B');
-            for (i = (int)(0); (i) < (s.N); ++i)
+            for (i = 0; (i) < (s.N); ++i)
             {
                 z.img_comp[i].id = (int)(stbi__get8(s));
                 if (((s.N) == (3)) && ((z.img_comp[i].id) == (rgb[i])))
@@ -1937,9 +1937,9 @@ namespace StbSharp
 
             if (scan != STBI__SCAN_load)
                 return (int)(1);
-            if (stbi__mad3sizes_valid((int)(s.W), (int)(s.H), (int)(s.N), (int)(0)) == 0)
+            if (stbi__mad3sizes_valid((int)(s.W), (int)(s.H), (int)(s.N), 0) == 0)
                 return (int)(stbi__err("too large"));
-            for (i = (int)(0); (i) < (s.N); ++i)
+            for (i = 0; (i) < (s.N); ++i)
             {
                 if ((z.img_comp[i].h) > (h_max))
                     h_max = (int)(z.img_comp[i].h);
@@ -1953,7 +1953,7 @@ namespace StbSharp
             z.img_mcu_h = (int)(v_max * 8);
             z.img_mcu_x = (int)((s.W + z.img_mcu_w - 1) / z.img_mcu_w);
             z.img_mcu_y = (int)((s.H + z.img_mcu_h - 1) / z.img_mcu_h);
-            for (i = (int)(0); (i) < (s.N); ++i)
+            for (i = 0; (i) < (s.N); ++i)
             {
                 z.img_comp[i].x = (int)((s.W * z.img_comp[i].h + h_max - 1) / h_max);
                 z.img_comp[i].y = (int)((s.H * z.img_comp[i].v + v_max - 1) / v_max);
@@ -1986,7 +1986,7 @@ namespace StbSharp
         public static int stbi__decode_jpeg_header(JpegContext z, int scan)
         {
             int m;
-            z.jfif = (int)(0);
+            z.jfif = 0;
             z.app14_color_transform = (int)(-1);
             z.marker = (byte)(0xff);
             m = (int)(stbi__get_marker(z));
@@ -1998,7 +1998,7 @@ namespace StbSharp
             while (!((((m) == (0xc0)) || ((m) == (0xc1))) || ((m) == (0xc2))))
             {
                 if (stbi__process_marker(z, (int)(m)) == 0)
-                    return (int)(0);
+                    return 0;
                 m = (int)(stbi__get_marker(z));
                 while ((m) == (0xff))
                 {
@@ -2010,31 +2010,31 @@ namespace StbSharp
 
             z.progressive = (int)((m) == (0xc2) ? 1 : 0);
             if (stbi__process_frame_header(z, (int)(scan)) == 0)
-                return (int)(0);
+                return 0;
             return (int)(1);
         }
 
         public static int stbi__decode_jpeg_image(JpegContext j)
         {
             int m;
-            for (m = (int)(0); (m) < (4); m++)
+            for (m = 0; (m) < (4); m++)
             {
                 j.img_comp[m].raw_data = (null);
                 j.img_comp[m].raw_coeff = (null);
             }
 
-            j.restart_interval = (int)(0);
+            j.restart_interval = 0;
             if (stbi__decode_jpeg_header(j, (int)(STBI__SCAN_load)) == 0)
-                return (int)(0);
+                return 0;
             m = (int)(stbi__get_marker(j));
             while (!((m) == (0xd9)))
             {
                 if (((m) == (0xda)))
                 {
                     if (stbi__process_scan_header(j) == 0)
-                        return (int)(0);
+                        return 0;
                     if (stbi__parse_entropy_coded_data(j) == 0)
-                        return (int)(0);
+                        return 0;
                     if ((j.marker) == (0xff))
                     {
                         while (stbi__at_eof(j.s) == 0)
@@ -2060,7 +2060,7 @@ namespace StbSharp
                 else
                 {
                     if (stbi__process_marker(j, (int)(m)) == 0)
-                        return (int)(0);
+                        return 0;
                 }
 
                 m = (int)(stbi__get_marker(j));
@@ -2079,7 +2079,7 @@ namespace StbSharp
         public static byte* stbi__resample_row_v_2(byte* _out_, byte* in_near, byte* in_far, int w, int hs)
         {
             int i;
-            for (i = (int)(0); (i) < (w); ++i)
+            for (i = 0; (i) < (w); ++i)
             {
                 _out_[i] = ((byte)((3 * in_near[i] + in_far[i] + 2) >> 2));
             }
@@ -2140,9 +2140,9 @@ namespace StbSharp
         {
             int i;
             int j;
-            for (i = (int)(0); (i) < (w); ++i)
+            for (i = 0; (i) < (w); ++i)
             {
-                for (j = (int)(0); (j) < (hs); ++j)
+                for (j = 0; (j) < (hs); ++j)
                 {
                     _out_[i * hs + j] = (byte)(in_near[i]);
                 }
@@ -2154,7 +2154,7 @@ namespace StbSharp
         public static void stbi__YCbCr_to_RGB_row(byte* _out_, byte* y, byte* pcb, byte* pcr, int count, int step)
         {
             int i;
-            for (i = (int)(0); (i) < (count); ++i)
+            for (i = 0; (i) < (count); ++i)
             {
                 int y_fixed = (int)((y[i] << 20) + (1 << 19));
                 int r;
@@ -2174,7 +2174,7 @@ namespace StbSharp
                 if (((uint)(r)) > (255))
                 {
                     if ((r) < (0))
-                        r = (int)(0);
+                        r = 0;
                     else
                         r = (int)(255);
                 }
@@ -2182,7 +2182,7 @@ namespace StbSharp
                 if (((uint)(g)) > (255))
                 {
                     if ((g) < (0))
-                        g = (int)(0);
+                        g = 0;
                     else
                         g = (int)(255);
                 }
@@ -2190,7 +2190,7 @@ namespace StbSharp
                 if (((uint)(b)) > (255))
                 {
                     if ((b) < (0))
-                        b = (int)(0);
+                        b = 0;
                     else
                         b = (int)(255);
                 }
@@ -2237,7 +2237,7 @@ namespace StbSharp
             byte** coutput = stackalloc byte*[4];
             var res_comp = new stbi__resample[4];
 
-            for (k = (int)(0); (k) < (decode_n); ++k)
+            for (k = 0; (k) < (decode_n); ++k)
             {
                 ref stbi__resample r = ref res_comp[k];
                 z.img_comp[k].linebuf = (byte*)(CRuntime.malloc((ulong)(z.s.W + 3)));
@@ -2251,7 +2251,7 @@ namespace StbSharp
                 r.vs = (int)(z.img_v_max / z.img_comp[k].v);
                 r.ystep = (int)(r.vs >> 1);
                 r.w_lores = (int)((z.s.W + r.hs - 1) / r.hs);
-                r.ypos = (int)(0);
+                r.ypos = 0;
                 r.line0 = r.line1 = z.img_comp[k].data;
 
                 if (((r.hs) == (1)) && ((r.vs) == (1)))
@@ -2276,7 +2276,7 @@ namespace StbSharp
             for (j = (uint)(0); (j) < (z.s.H); ++j)
             {
                 byte* _out_ = output + n * z.s.W * j;
-                for (k = (int)(0); (k) < (decode_n); ++k)
+                for (k = 0; (k) < (decode_n); ++k)
                 {
                     ref stbi__resample r = ref res_comp[k];
                     int y_bot = (int)((r.ystep) >= (r.vs >> 1) ? 1 : 0);
@@ -2452,7 +2452,7 @@ namespace StbSharp
             if (stbi__decode_jpeg_header(j, (int)(STBI__SCAN_header)) == 0)
             {
                 stbi__rewind(j.s);
-                return (int)(0);
+                return 0;
             }
 
             x = (int)(j.s.W);
@@ -2484,22 +2484,22 @@ namespace StbSharp
         public static int stbi__zbuild_huffman(stbi__zhuffman* z, byte* sizelist, int num)
         {
             int i;
-            int k = (int)(0);
+            int k = 0;
             int* next_code = stackalloc int[16];
             int* sizes = stackalloc int[17];
-            CRuntime.memset(sizes, (int)(0), (ulong)(sizeof(int)));
-            CRuntime.memset(((ushort*)(z->fast)), (int)(0), (ulong)((1 << 9) * sizeof(ushort)));
-            for (i = (int)(0); (i) < (num); ++i)
+            CRuntime.memset(sizes, 0, (ulong)(sizeof(int)));
+            CRuntime.memset(((ushort*)(z->fast)), 0, (ulong)((1 << 9) * sizeof(ushort)));
+            for (i = 0; (i) < (num); ++i)
                 ++sizes[sizelist[i]];
 
-            sizes[0] = (int)(0);
+            sizes[0] = 0;
             for (i = (int)(1); (i) < (16); ++i)
             {
                 if ((sizes[i]) > (1 << i))
                     return (int)(stbi__err("bad sizes"));
             }
 
-            int code = (int)(0);
+            int code = 0;
             for (i = (int)(1); (i) < (16); ++i)
             {
                 next_code[i] = (int)(code);
@@ -2515,7 +2515,7 @@ namespace StbSharp
             }
 
             z->maxcode[16] = (int)(0x10000);
-            for (i = (int)(0); (i) < (num); ++i)
+            for (i = 0; (i) < (num); ++i)
             {
                 int s = (int)(sizelist[i]);
                 if ((s) != 0)
@@ -2639,7 +2639,7 @@ namespace StbSharp
                     if ((zout) >= (a->zout_end))
                     {
                         if (stbi__zexpand(a, zout, (int)(1)) == 0)
-                            return (int)(0);
+                            return 0;
                         zout = a->zout;
                     }
 
@@ -2670,7 +2670,7 @@ namespace StbSharp
                     if ((zout + len) > (a->zout_end))
                     {
                         if (stbi__zexpand(a, zout, (int)(len)) == 0)
-                            return (int)(0);
+                            return 0;
                         zout = a->zout;
                     }
 
@@ -2698,16 +2698,16 @@ namespace StbSharp
             int hdist = (int)(stbi__zreceive(a, (int)(5)) + 1);
             int hclen = (int)(stbi__zreceive(a, (int)(4)) + 4);
             int ntot = (int)(hlit + hdist);
-            CRuntime.memset(((byte*)(codelength_sizes)), (int)(0), (ulong)(19 * sizeof(byte)));
-            for (i = (int)(0); (i) < (hclen); ++i)
+            CRuntime.memset(((byte*)(codelength_sizes)), 0, (ulong)(19 * sizeof(byte)));
+            for (i = 0; (i) < (hclen); ++i)
             {
                 int s = (int)(stbi__zreceive(a, (int)(3)));
                 codelength_sizes[length_dezigzag[i]] = ((byte)(s));
             }
 
             if (stbi__zbuild_huffman(&z_codelength, codelength_sizes, (int)(19)) == 0)
-                return (int)(0);
-            n = (int)(0);
+                return 0;
+            n = 0;
             while ((n) < (ntot))
             {
                 int c = (int)(stbi__zhuffman_decode(a, &z_codelength));
@@ -2742,9 +2742,9 @@ namespace StbSharp
             if (n != ntot)
                 return (int)(stbi__err("bad codelengths"));
             if (stbi__zbuild_huffman(&a->z_length, lencodes, (int)(hlit)) == 0)
-                return (int)(0);
+                return 0;
             if (stbi__zbuild_huffman(&a->z_distance, lencodes + hlit, (int)(hdist)) == 0)
-                return (int)(0);
+                return 0;
             return (int)(1);
         }
 
@@ -2756,7 +2756,7 @@ namespace StbSharp
             int k;
             if ((a->num_bits & 7) != 0)
                 stbi__zreceive(a, (int)(a->num_bits & 7));
-            k = (int)(0);
+            k = 0;
             while ((a->num_bits) > (0))
             {
                 header[k++] = ((byte)(a->code_buffer & 255));
@@ -2775,7 +2775,7 @@ namespace StbSharp
                 return (int)(stbi__err("read past buffer"));
             if ((a->zout + len) > (a->zout_end))
                 if (stbi__zexpand(a, a->zout, (int)(len)) == 0)
-                    return (int)(0);
+                    return 0;
             CRuntime.memcpy(a->zout, a->zbuffer, (ulong)(len));
             a->zbuffer += len;
             a->zout += len;
@@ -2802,8 +2802,8 @@ namespace StbSharp
             int type;
             if ((parse_header) != 0)
                 if (stbi__parse_zlib_header(a) == 0)
-                    return (int)(0);
-            a->num_bits = (int)(0);
+                    return 0;
+            a->num_bits = 0;
             a->code_buffer = (uint)(0);
             do
             {
@@ -2812,11 +2812,11 @@ namespace StbSharp
                 if ((type) == (0))
                 {
                     if (stbi__parse_uncompressed_block(a) == 0)
-                        return (int)(0);
+                        return 0;
                 }
                 else if ((type) == (3))
                 {
-                    return (int)(0);
+                    return 0;
                 }
                 else
                 {
@@ -2825,23 +2825,23 @@ namespace StbSharp
                         fixed (byte* b = stbi__zdefault_length)
                         {
                             if (stbi__zbuild_huffman(&a->z_length, b, (int)(288)) == 0)
-                                return (int)(0);
+                                return 0;
                         }
 
                         fixed (byte* b = stbi__zdefault_distance)
                         {
                             if (stbi__zbuild_huffman(&a->z_distance, b, (int)(32)) == 0)
-                                return (int)(0);
+                                return 0;
                         }
                     }
                     else
                     {
                         if (stbi__compute_huffman_codes(a) == 0)
-                            return (int)(0);
+                            return 0;
                     }
 
                     if (stbi__parse_huffman_block(a) == 0)
-                        return (int)(0);
+                        return 0;
                 }
             } while (final == 0);
 
@@ -2912,7 +2912,7 @@ namespace StbSharp
             stbi__zbuf a = new stbi__zbuf();
             a.zbuffer = (byte*)(ibuffer);
             a.zbuffer_end = (byte*)(ibuffer) + ilen;
-            if ((stbi__do_zlib(&a, obuffer, (int)(olen), (int)(0), (int)(1))) != 0)
+            if ((stbi__do_zlib(&a, obuffer, (int)(olen), 0, (int)(1))) != 0)
                 return (int)(a.zout - a.zout_start);
             else
                 return (int)(-1);
@@ -2926,7 +2926,7 @@ namespace StbSharp
                 return (null);
             a.zbuffer = (byte*)(buffer);
             a.zbuffer_end = (byte*)(buffer) + len;
-            if ((stbi__do_zlib(&a, p, (int)(16384), (int)(1), (int)(0))) != 0)
+            if ((stbi__do_zlib(&a, p, (int)(16384), (int)(1), 0)) != 0)
             {
                 if ((outlen) != null)
                     *outlen = ((int)(a.zout - a.zout_start));
@@ -2945,7 +2945,7 @@ namespace StbSharp
             stbi__zbuf a = new stbi__zbuf();
             a.zbuffer = (byte*)(ibuffer);
             a.zbuffer_end = (byte*)(ibuffer) + ilen;
-            if ((stbi__do_zlib(&a, obuffer, (int)(olen), (int)(0), (int)(0))) != 0)
+            if ((stbi__do_zlib(&a, obuffer, (int)(olen), 0, 0)) != 0)
                 return (int)(a.zout - a.zout_start);
             else
                 return (int)(-1);
@@ -2962,7 +2962,7 @@ namespace StbSharp
         public static int stbi__check_png_header(ReadContext s)
         {
             int i;
-            for (i = (int)(0); (i) < (8); ++i)
+            for (i = 0; (i) < (8); ++i)
             {
                 if (stbi__get8(s) != png_sig[i])
                     return (int)(stbi__err("bad png sig"));
@@ -2987,7 +2987,7 @@ namespace StbSharp
             int filter_bytes = (int)(img_n * bytes);
             int width = (int)(x);
 
-            a._out_ = (byte*)(stbi__malloc_mad3((int)(x), (int)(y), (int)(out_bytes), (int)(0)));
+            a._out_ = (byte*)(stbi__malloc_mad3((int)(x), (int)(y), (int)(out_bytes), 0));
             if (a._out_ == null)
                 return (int)(stbi__err("outofmem"));
 
@@ -3038,7 +3038,7 @@ namespace StbSharp
 
                     case STBI__F_paeth:
                         for (; k < filter_bytes; ++k)
-                            cur[k] = ((byte)((raw[k] + CRuntime.Paeth32((int)(0), (int)(prior[k]), (int)(0))) & 255));
+                            cur[k] = ((byte)((raw[k] + CRuntime.Paeth32(0, (int)(prior[k]), 0)) & 255));
                         break;
                 }
 
@@ -3121,7 +3121,7 @@ namespace StbSharp
                             for (; (i) >= (1); --i, cur[filter_bytes] = (byte)(255),
                                 raw += filter_bytes, cur += out_bytes, prior += out_bytes)
                             {
-                                for (k = (int)(0); (k) < (filter_bytes); ++k)
+                                for (k = 0; (k) < (filter_bytes); ++k)
                                     cur[k] = (byte)(raw[k]);
                             }
                             break;
@@ -3130,7 +3130,7 @@ namespace StbSharp
                             for (; (i) >= (1); --i, cur[filter_bytes] = (byte)(255),
                                 raw += filter_bytes, cur += out_bytes, prior += out_bytes)
                             {
-                                for (k = (int)(0); (k) < (filter_bytes); ++k)
+                                for (k = 0; (k) < (filter_bytes); ++k)
                                     cur[k] = ((byte)((raw[k] + cur[k - out_bytes]) & 255));
                             }
                             break;
@@ -3139,7 +3139,7 @@ namespace StbSharp
                             for (; (i) >= (1); --i, cur[filter_bytes] = (byte)(255),
                                 raw += filter_bytes, cur += out_bytes, prior += out_bytes)
                             {
-                                for (k = (int)(0); (k) < (filter_bytes); ++k)
+                                for (k = 0; (k) < (filter_bytes); ++k)
                                     cur[k] = ((byte)((raw[k] + prior[k]) & 255));
                             }
                             break;
@@ -3148,7 +3148,7 @@ namespace StbSharp
                             for (; (i) >= (1); --i, cur[filter_bytes] = (byte)(255),
                                 raw += filter_bytes, cur += out_bytes, prior += out_bytes)
                             {
-                                for (k = (int)(0); (k) < (filter_bytes); ++k)
+                                for (k = 0; (k) < (filter_bytes); ++k)
                                     cur[k] = ((byte)((raw[k] + ((prior[k] + cur[k - out_bytes]) >> 1)) & 255));
                             }
                             break;
@@ -3157,7 +3157,7 @@ namespace StbSharp
                             for (; (i) >= (1); --i, cur[filter_bytes] = (byte)(255),
                                 raw += filter_bytes, cur += out_bytes, prior += out_bytes)
                             {
-                                for (k = (int)(0); (k) < (filter_bytes); ++k)
+                                for (k = 0; (k) < (filter_bytes); ++k)
                                     cur[k] = (byte)(raw[k] + CRuntime.Paeth32(
                                         (int)(cur[k - out_bytes]), (int)(prior[k]),
                                         (int)(prior[k - out_bytes])) & 255);
@@ -3168,7 +3168,7 @@ namespace StbSharp
                             for (; (i) >= (1); --i, cur[filter_bytes] = (byte)(255),
                                 raw += filter_bytes, cur += out_bytes, prior += out_bytes)
                             {
-                                for (k = (int)(0); (k) < (filter_bytes); ++k)
+                                for (k = 0; (k) < (filter_bytes); ++k)
                                     cur[k] = ((byte)((raw[k] + (cur[k - out_bytes] >> 1)) & 255));
                             }
                             break;
@@ -3177,9 +3177,9 @@ namespace StbSharp
                             for (; (i) >= (1); --i, cur[filter_bytes] = (byte)(255),
                                 raw += filter_bytes, cur += out_bytes, prior += out_bytes)
                             {
-                                for (k = (int)(0); (k) < (filter_bytes); ++k)
+                                for (k = 0; (k) < (filter_bytes); ++k)
                                     cur[k] = ((byte)((raw[k] + CRuntime.Paeth32(
-                                        (int)(cur[k - out_bytes]), (int)(0), (int)(0))) & 255));
+                                        (int)(cur[k - out_bytes]), 0, 0)) & 255));
                             }
                             break;
                     }
@@ -3304,24 +3304,24 @@ namespace StbSharp
                     ref a, image_data, (uint)(image_data_len), (int)(out_n),
                     (uint)(a.s.W), (uint)(a.s.H), (int)(depth), (int)(color)));
 
-            byte* final = (byte*)(stbi__malloc_mad3((int)(a.s.W), (int)(a.s.H), (int)(out_bytes), (int)(0)));
+            byte* final = (byte*)(stbi__malloc_mad3((int)(a.s.W), (int)(a.s.H), (int)(out_bytes), 0));
 
             int* xorig = stackalloc int[7];
-            xorig[0] = (int)(0);
+            xorig[0] = 0;
             xorig[1] = (int)(4);
-            xorig[2] = (int)(0);
+            xorig[2] = 0;
             xorig[3] = (int)(2);
-            xorig[4] = (int)(0);
+            xorig[4] = 0;
             xorig[5] = (int)(1);
-            xorig[6] = (int)(0);
+            xorig[6] = 0;
 
             int* yorig = stackalloc int[7];
-            yorig[0] = (int)(0);
-            yorig[1] = (int)(0);
+            yorig[0] = 0;
+            yorig[1] = 0;
             yorig[2] = (int)(4);
-            yorig[3] = (int)(0);
+            yorig[3] = 0;
             yorig[4] = (int)(2);
-            yorig[5] = (int)(0);
+            yorig[5] = 0;
             yorig[6] = (int)(1);
 
             int* xspc = stackalloc int[7];
@@ -3342,7 +3342,7 @@ namespace StbSharp
             yspc[5] = (int)(2);
             yspc[6] = (int)(2);
 
-            for (int p = (int)(0); (p) < (7); ++p)
+            for (int p = 0; (p) < (7); ++p)
             {
                 int i;
                 int j;
@@ -3356,12 +3356,12 @@ namespace StbSharp
                         (uint)(x), (uint)(y), (int)(depth), (int)(color)) == 0)
                     {
                         CRuntime.free(final);
-                        return (int)(0);
+                        return 0;
                     }
 
-                    for (j = (int)(0); (j) < (y); ++j)
+                    for (j = 0; (j) < (y); ++j)
                     {
-                        for (i = (int)(0); (i) < (x); ++i)
+                        for (i = 0; (i) < (x); ++i)
                         {
                             int out_y = (int)(j * yspc[p] + yorig[p]);
                             int out_x = (int)(i * xspc[p] + xorig[p]);
@@ -3443,7 +3443,7 @@ namespace StbSharp
             byte* p;
             byte* temp_out;
             byte* orig = a._out_;
-            p = (byte*)(stbi__malloc_mad2((int)(pixel_count), (int)(pal_img_n), (int)(0)));
+            p = (byte*)(stbi__malloc_mad2((int)(pixel_count), (int)(pal_img_n), 0));
             if ((p) == (null))
                 return (int)(stbi__err("outofmem"));
             temp_out = p;
@@ -3553,15 +3553,15 @@ namespace StbSharp
             uint pal_len = (uint)(0);
             int first = (int)(1);
             int k;
-            int interlace = (int)(0);
-            int color = (int)(0);
-            int is_iphone = (int)(0);
+            int interlace = 0;
+            int color = 0;
+            int is_iphone = 0;
             ReadContext s = z.s;
             z.expanded = (null);
             z.idata = (null);
             z._out_ = (null);
             if (stbi__check_png_header(s) == 0)
-                return (int)(0);
+                return 0;
             if ((scan) == (STBI__SCAN_type))
                 return (int)(1);
             for (; ; )
@@ -3580,7 +3580,7 @@ namespace StbSharp
                         int filter;
                         if (first == 0)
                             return (int)(stbi__err("multiple IHDR"));
-                        first = (int)(0);
+                        first = 0;
                         if (c.length != 13)
                             return (int)(stbi__err("bad IHDR len"));
                         s.W = (uint)(stbi__get32be(s));
@@ -3684,12 +3684,12 @@ namespace StbSharp
                             has_trans = (byte)(1);
                             if ((z.depth) == (16))
                             {
-                                for (k = (int)(0); (k) < (s.N); ++k)
+                                for (k = 0; (k) < (s.N); ++k)
                                     tc16[k] = ((ushort)(stbi__get16be(s)));
                             }
                             else
                             {
-                                for (k = (int)(0); (k) < (s.N); ++k)
+                                for (k = 0; (k) < (s.N); ++k)
                                     tc[k] = (byte)((byte)(stbi__get16be(s) & 255) * stbi__depth_scale_table[z.depth]);
                             }
                         }
@@ -3710,7 +3710,7 @@ namespace StbSharp
                         }
 
                         if (((int)(ioff + c.length)) < ((int)(ioff)))
-                            return (int)(0);
+                            return 0;
                         if ((ioff + c.length) > (idata_limit))
                         {
                             uint idata_limit_old = (uint)(idata_limit);
@@ -3749,7 +3749,7 @@ namespace StbSharp
                                 (int)(raw_len),
                                 (int*)(&raw_len), is_iphone != 0 ? 0 : 1));
                         if ((z.expanded) == (null))
-                            return (int)(0);
+                            return 0;
                         CRuntime.free(z.idata);
                         z.idata = (null);
                         if (((((req_comp) == (s.N + 1)) && (req_comp != 3)) && (pal_img_n == 0)) ||
@@ -3761,18 +3761,18 @@ namespace StbSharp
                             stbi__create_png_image(ref z, z.expanded, (uint)(raw_len), (int)(s.OutN),
                                 (int)(z.depth), (int)(color),
                                 (int)(interlace)) == 0)
-                            return (int)(0);
+                            return 0;
                         if ((has_trans) != 0)
                         {
                             if ((z.depth) == (16))
                             {
                                 if (stbi__compute_transparency16(ref z, tc16, (int)(s.OutN)) == 0)
-                                    return (int)(0);
+                                    return 0;
                             }
                             else
                             {
                                 if (stbi__compute_transparency(ref z, tc, (int)(s.OutN)) == 0)
-                                    return (int)(0);
+                                    return 0;
                             }
                         }
 
@@ -3786,7 +3786,7 @@ namespace StbSharp
                             if ((req_comp) >= (3))
                                 s.OutN = (int)(req_comp);
                             if (stbi__expand_png_palette(ref z, palette, (int)(pal_len), (int)(s.OutN)) == 0)
-                                return (int)(0);
+                                return 0;
                         }
                         else if ((has_trans) != 0)
                         {
@@ -3872,7 +3872,7 @@ namespace StbSharp
 
         public static bool stbi__png_info_raw(ref PngContext p, out int x, out int y, out int comp)
         {
-            if (stbi__parse_png_file(ref p, (int)(STBI__SCAN_header), (int)(0)) == 0)
+            if (stbi__parse_png_file(ref p, (int)(STBI__SCAN_header), 0) == 0)
             {
                 stbi__rewind(p.s);
                 x = 0;
@@ -3896,9 +3896,9 @@ namespace StbSharp
         public static int stbi__bmp_test_raw(ReadContext s)
         {
             if (stbi__get8(s) != 'B')
-                return (int)(0);
+                return 0;
             if (stbi__get8(s) != 'M')
-                return (int)(0);
+                return 0;
             stbi__get32le(s);
             stbi__get16le(s);
             stbi__get16le(s);
@@ -3919,7 +3919,7 @@ namespace StbSharp
 
         public static int stbi__high_bit(uint z)
         {
-            int n = (int)(0);
+            int n = 0;
             if ((z) == (0))
                 return (int)(-1);
             if ((z) >= (0x10000))
@@ -3968,7 +3968,7 @@ namespace StbSharp
         public static int stbi__shiftsigned(int v, int shift, int bits)
         {
             int result;
-            int z = (int)(0);
+            int z = 0;
             if ((shift) < (0))
                 v <<= -shift;
             else
@@ -4076,7 +4076,7 @@ namespace StbSharp
                     info->mb = (uint)(stbi__get32le(s));
                     info->ma = (uint)(stbi__get32le(s));
                     stbi__get32le(s);
-                    for (i = (int)(0); (i) < (12); ++i)
+                    for (i = 0; (i) < (12); ++i)
                     {
                         stbi__get32le(s);
                     }
@@ -4102,7 +4102,7 @@ namespace StbSharp
                 return (null);
 
             byte* _out_;
-            int psize = (int)(0);
+            int psize = 0;
             int i;
             int j;
             int width;
@@ -4134,21 +4134,21 @@ namespace StbSharp
             else
                 target = (int)(s.N);
 
-            if (stbi__mad3sizes_valid((int)(target), (int)(s.W), (int)(s.H), (int)(0)) == 0)
+            if (stbi__mad3sizes_valid((int)(target), (int)(s.W), (int)(s.H), 0) == 0)
                 return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : (null))));
-            _out_ = (byte*)(stbi__malloc_mad3((int)(target), (int)(s.W), (int)(s.H), (int)(0)));
+            _out_ = (byte*)(stbi__malloc_mad3((int)(target), (int)(s.W), (int)(s.H), 0));
             if (_out_ == null)
                 return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : (null))));
             if ((info.bpp) < (16))
             {
-                int z = (int)(0);
+                int z = 0;
                 if (((psize) == (0)) || ((psize) > (256)))
                 {
                     CRuntime.free(_out_);
                     return ((byte*)((ulong)((stbi__err("invalid")) != 0 ? ((byte*)null) : (null))));
                 }
 
-                for (i = (int)(0); (i) < (psize); ++i)
+                for (i = 0; (i) < (psize); ++i)
                 {
                     pal[i * 4 + 2] = (byte)(stbi__get8(s));
                     pal[i * 4 + 1] = (byte)(stbi__get8(s));
@@ -4170,12 +4170,12 @@ namespace StbSharp
                 }
 
                 pad = (int)((-width) & 3);
-                for (j = (int)(0); (j) < ((int)(s.H)); ++j)
+                for (j = 0; (j) < ((int)(s.H)); ++j)
                 {
-                    for (i = (int)(0); (i) < ((int)(s.W)); i += (int)(2))
+                    for (i = 0; (i) < ((int)(s.W)); i += (int)(2))
                     {
                         int v = (int)(stbi__get8(s));
-                        int v2 = (int)(0);
+                        int v2 = 0;
                         if ((info.bpp) == (4))
                         {
                             v2 = (int)(v & 15);
@@ -4208,7 +4208,7 @@ namespace StbSharp
                 else if ((info.bpp) == (16))
                     width = (int)(2 * s.W);
                 else
-                    width = (int)(0);
+                    width = 0;
                 pad = (int)((-width) & 3);
 
                 int easy = 0;
@@ -4293,11 +4293,11 @@ namespace StbSharp
             if ((flip_vertically) != 0)
             {
                 byte t;
-                for (j = (int)(0); (j) < ((int)(s.H) >> 1); ++j)
+                for (j = 0; (j) < ((int)(s.H) >> 1); ++j)
                 {
                     byte* p1 = _out_ + j * s.W * target;
                     byte* p2 = _out_ + (s.H - 1 - j) * s.W * target;
-                    for (i = (int)(0); (i) < ((int)(s.W) * target); ++i)
+                    for (i = 0; (i) < ((int)(s.W) * target); ++i)
                     {
                         t = (byte)(p1[i]);
                         p1[i] = (byte)(p2[i]);
@@ -4323,7 +4323,7 @@ namespace StbSharp
         public static int stbi__tga_get_comp(int bits_per_pixel, int is_grey, int* is_rgb16)
         {
             if ((is_rgb16) != null)
-                *is_rgb16 = (int)(0);
+                *is_rgb16 = 0;
             switch (bits_per_pixel)
             {
                 case 8:
@@ -4339,7 +4339,7 @@ namespace StbSharp
                 case 32:
                     return (int)(bits_per_pixel / 8);
                 default:
-                    return (int)(0);
+                    return 0;
             }
 
         }
@@ -4359,7 +4359,7 @@ namespace StbSharp
             if ((tga_colormap_type) > (1))
             {
                 stbi__rewind(s);
-                return (int)(0);
+                return 0;
             }
 
             tga_image_type = (int)(stbi__get8(s));
@@ -4368,7 +4368,7 @@ namespace StbSharp
                 if ((tga_image_type != 1) && (tga_image_type != 9))
                 {
                     stbi__rewind(s);
-                    return (int)(0);
+                    return 0;
                 }
 
                 stbi__skip(s, (int)(4));
@@ -4376,7 +4376,7 @@ namespace StbSharp
                 if (((((sz != 8) && (sz != 15)) && (sz != 16)) && (sz != 24)) && (sz != 32))
                 {
                     stbi__rewind(s);
-                    return (int)(0);
+                    return 0;
                 }
 
                 stbi__skip(s, (int)(4));
@@ -4388,25 +4388,25 @@ namespace StbSharp
                     (tga_image_type != 11))
                 {
                     stbi__rewind(s);
-                    return (int)(0);
+                    return 0;
                 }
 
                 stbi__skip(s, (int)(9));
-                tga_colormap_bpp = (int)(0);
+                tga_colormap_bpp = 0;
             }
 
             tga_w = (int)(stbi__get16le(s));
             if ((tga_w) < (1))
             {
                 stbi__rewind(s);
-                return (int)(0);
+                return 0;
             }
 
             tga_h = (int)(stbi__get16le(s));
             if ((tga_h) < (1))
             {
                 stbi__rewind(s);
-                return (int)(0);
+                return 0;
             }
 
             tga_bits_per_pixel = (int)(stbi__get8(s));
@@ -4416,10 +4416,10 @@ namespace StbSharp
                 if ((tga_bits_per_pixel != 8) && (tga_bits_per_pixel != 16))
                 {
                     stbi__rewind(s);
-                    return (int)(0);
+                    return 0;
                 }
 
-                tga_comp = (int)(stbi__tga_get_comp((int)(tga_colormap_bpp), (int)(0), (null)));
+                tga_comp = (int)(stbi__tga_get_comp((int)(tga_colormap_bpp), 0, (null)));
             }
             else
             {
@@ -4432,7 +4432,7 @@ namespace StbSharp
             if (tga_comp == 0)
             {
                 stbi__rewind(s);
-                return (int)(0);
+                return 0;
             }
 
             if ((x) != null)
@@ -4446,7 +4446,7 @@ namespace StbSharp
 
         public static int stbi__tga_test(ReadContext s)
         {
-            int res = (int)(0);
+            int res = 0;
             int sz;
             int tga_color_type;
             stbi__get8(s);
@@ -4504,7 +4504,7 @@ namespace StbSharp
             int tga_offset = (int)(stbi__get8(s));
             int tga_indexed = (int)(stbi__get8(s));
             int tga_image_type = (int)(stbi__get8(s));
-            int tga_is_RLE = (int)(0);
+            int tga_is_RLE = 0;
             int tga_palette_start = (int)(stbi__get16le(s));
             int tga_palette_len = (int)(stbi__get16le(s));
             int tga_palette_bits = (int)(stbi__get8(s));
@@ -4514,7 +4514,7 @@ namespace StbSharp
             int tga_height = (int)(stbi__get16le(s));
             int tga_bits_per_pixel = (int)(stbi__get8(s));
             int tga_comp;
-            int tga_rgb16 = (int)(0);
+            int tga_rgb16 = 0;
             int tga_inverted = (int)(stbi__get8(s));
             byte* tga_data;
             byte* tga_palette = (null);
@@ -4523,8 +4523,8 @@ namespace StbSharp
             byte* raw_data = stackalloc byte[4];
             raw_data[0] = (byte)(0);
 
-            int RLE_count = (int)(0);
-            int RLE_repeating = (int)(0);
+            int RLE_count = 0;
+            int RLE_repeating = 0;
             int read_next_pixel = (int)(1);
             if ((tga_image_type) >= (8))
             {
@@ -4544,17 +4544,17 @@ namespace StbSharp
             ri.Height = (int)(tga_height);
             ri.Components = (int)(tga_comp);
 
-            if (stbi__mad3sizes_valid((int)(tga_width), (int)(tga_height), (int)(tga_comp), (int)(0)) == 0)
+            if (stbi__mad3sizes_valid((int)(tga_width), (int)(tga_height), (int)(tga_comp), 0) == 0)
                 return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : (null))));
 
-            tga_data = (byte*)(stbi__malloc_mad3((int)(tga_width), (int)(tga_height), (int)(tga_comp), (int)(0)));
+            tga_data = (byte*)(stbi__malloc_mad3((int)(tga_width), (int)(tga_height), (int)(tga_comp), 0));
             if (tga_data == null)
                 return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : (null))));
 
             stbi__skip(s, (int)(tga_offset));
             if (((tga_indexed == 0) && (tga_is_RLE == 0)) && (tga_rgb16 == 0))
             {
-                for (i = (int)(0); (i) < (tga_height); ++i)
+                for (i = 0; (i) < (tga_height); ++i)
                 {
                     int row = (int)((tga_inverted) != 0 ? tga_height - i - 1 : i);
                     byte* tga_row = tga_data + row * tga_width * tga_comp;
@@ -4566,7 +4566,7 @@ namespace StbSharp
                 if ((tga_indexed) != 0)
                 {
                     stbi__skip(s, (int)(tga_palette_start));
-                    tga_palette = (byte*)(stbi__malloc_mad2((int)(tga_palette_len), (int)(tga_comp), (int)(0)));
+                    tga_palette = (byte*)(stbi__malloc_mad2((int)(tga_palette_len), (int)(tga_comp), 0));
                     if (tga_palette == null)
                     {
                         CRuntime.free(tga_data);
@@ -4576,7 +4576,7 @@ namespace StbSharp
                     if ((tga_rgb16) != 0)
                     {
                         byte* pal_entry = tga_palette;
-                        for (i = (int)(0); (i) < (tga_palette_len); ++i)
+                        for (i = 0; (i) < (tga_palette_len); ++i)
                         {
                             stbi__tga_read_rgb16(s, pal_entry);
                             pal_entry += tga_comp;
@@ -4590,7 +4590,7 @@ namespace StbSharp
                     }
                 }
 
-                for (i = (int)(0); (i) < (tga_width * tga_height); ++i)
+                for (i = 0; (i) < (tga_width * tga_height); ++i)
                 {
                     if ((tga_is_RLE) != 0)
                     {
@@ -4617,10 +4617,10 @@ namespace StbSharp
                         {
                             int pal_idx = (int)(((tga_bits_per_pixel) == (8)) ? stbi__get8(s) : stbi__get16le(s));
                             if ((pal_idx) >= (tga_palette_len))
-                                pal_idx = (int)(0);
+                                pal_idx = 0;
 
                             pal_idx *= (int)(tga_comp);
-                            for (j = (int)(0); (j) < (tga_comp); ++j)
+                            for (j = 0; (j) < (tga_comp); ++j)
                                 raw_data[j] = (byte)(tga_palette[pal_idx + j]);
                         }
                         else if ((tga_rgb16) != 0)
@@ -4629,14 +4629,14 @@ namespace StbSharp
                         }
                         else
                         {
-                            for (j = (int)(0); (j) < (tga_comp); ++j)
+                            for (j = 0; (j) < (tga_comp); ++j)
                                 raw_data[j] = (byte)(stbi__get8(s));
                         }
 
-                        read_next_pixel = (int)(0);
+                        read_next_pixel = 0;
                     }
 
-                    for (j = (int)(0); (j) < (tga_comp); ++j)
+                    for (j = 0; (j) < (tga_comp); ++j)
                         tga_data[i * tga_comp + j] = (byte)(raw_data[j]);
 
                     --RLE_count;
@@ -4644,7 +4644,7 @@ namespace StbSharp
 
                 if ((tga_inverted) != 0)
                 {
-                    for (j = (int)(0); (j * 2) < (tga_height); ++j)
+                    for (j = 0; (j * 2) < (tga_height); ++j)
                     {
                         int index1 = (int)(j * tga_width * tga_comp);
                         int index2 = (int)((tga_height - 1 - j) * tga_width * tga_comp);
@@ -4666,7 +4666,7 @@ namespace StbSharp
             if (((tga_comp) >= (3)) && (tga_rgb16 == 0))
             {
                 byte* tga_pixel = tga_data;
-                for (i = (int)(0); (i) < (tga_width * tga_height); ++i)
+                for (i = 0; (i) < (tga_width * tga_height); ++i)
                 {
                     byte temp = (byte)(tga_pixel[0]);
                     tga_pixel[0] = (byte)(tga_pixel[2]);
@@ -4693,7 +4693,7 @@ namespace StbSharp
             int count;
             int nleft;
             int len;
-            count = (int)(0);
+            count = 0;
             while ((nleft = (int)(pixelCount - count)) > (0))
             {
                 len = (int)(stbi__get8(s));
@@ -4704,7 +4704,7 @@ namespace StbSharp
                 {
                     len++;
                     if ((len) > (nleft))
-                        return (int)(0);
+                        return 0;
                     count += (int)(len);
                     while ((len) != 0)
                     {
@@ -4718,7 +4718,7 @@ namespace StbSharp
                     byte val;
                     len = (int)(257 - len);
                     if ((len) > (nleft))
-                        return (int)(0);
+                        return 0;
                     val = (byte)(stbi__get8(s));
                     count += (int)(len);
                     while ((len) != 0)
@@ -4765,7 +4765,7 @@ namespace StbSharp
             compression = (int)(stbi__get16be(s));
             if ((compression) > (1))
                 return ((byte*)((ulong)((stbi__err("bad compression")) != 0 ? ((byte*)null) : (null))));
-            if (stbi__mad3sizes_valid((int)(4), (int)(w), (int)(h), (int)(0)) == 0)
+            if (stbi__mad3sizes_valid((int)(4), (int)(w), (int)(h), 0) == 0)
                 return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : (null))));
 
             if (compression == 0 && bitdepth == 16 && ri.BitsPerChannel == 16)
@@ -4779,13 +4779,13 @@ namespace StbSharp
             if ((compression) != 0)
             {
                 stbi__skip(s, (int)(h * channelCount * 2));
-                for (channel = (int)(0); (channel) < (4); channel++)
+                for (channel = 0; (channel) < (4); channel++)
                 {
                     byte* p;
                     p = _out_ + channel;
                     if ((channel) >= (channelCount))
                     {
-                        for (i = (int)(0); (i) < (pixelCount); i++, p += 4)
+                        for (i = 0; (i) < (pixelCount); i++, p += 4)
                             *p = (byte)((channel) == (3) ? 255 : 0);
                     }
                     else
@@ -4800,7 +4800,7 @@ namespace StbSharp
             }
             else
             {
-                for (channel = (int)(0); (channel) < (4); channel++)
+                for (channel = 0; (channel) < (4); channel++)
                 {
                     if ((channel) >= (channelCount))
                     {
@@ -4808,14 +4808,14 @@ namespace StbSharp
                         {
                             ushort* q = ((ushort*)(_out_)) + channel;
                             ushort val = (ushort)((channel) == (3) ? 65535 : 0);
-                            for (i = (int)(0); (i) < (pixelCount); i++, q += 4)
+                            for (i = 0; (i) < (pixelCount); i++, q += 4)
                                 *q = (ushort)(val);
                         }
                         else
                         {
                             byte* p = _out_ + channel;
                             byte val = (byte)((channel) == (3) ? 255 : 0);
-                            for (i = (int)(0); (i) < (pixelCount); i++, p += 4)
+                            for (i = 0; (i) < (pixelCount); i++, p += 4)
                                 *p = (byte)(val);
                         }
                     }
@@ -4824,7 +4824,7 @@ namespace StbSharp
                         if ((ri.BitsPerChannel) == (16))
                         {
                             ushort* q = ((ushort*)(_out_)) + channel;
-                            for (i = (int)(0); (i) < (pixelCount); i++, q += 4)
+                            for (i = 0; (i) < (pixelCount); i++, q += 4)
                                 *q = ((ushort)(stbi__get16be(s)));
                         }
                         else
@@ -4832,12 +4832,12 @@ namespace StbSharp
                             byte* p = _out_ + channel;
                             if ((bitdepth) == (16))
                             {
-                                for (i = (int)(0); (i) < (pixelCount); i++, p += 4)
+                                for (i = 0; (i) < (pixelCount); i++, p += 4)
                                     *p = ((byte)(stbi__get16be(s) >> 8));
                             }
                             else
                             {
-                                for (i = (int)(0); (i) < (pixelCount); i++, p += 4)
+                                for (i = 0; (i) < (pixelCount); i++, p += 4)
                                     *p = (byte)(stbi__get8(s));
                             }
                         }
@@ -4849,7 +4849,7 @@ namespace StbSharp
             {
                 if ((ri.BitsPerChannel) == (16))
                 {
-                    for (i = (int)(0); (i) < (w * h); ++i)
+                    for (i = 0; (i) < (w * h); ++i)
                     {
                         ushort* pixel = (ushort*)(_out_) + 4 * i;
                         if ((pixel[3] != 0) && (pixel[3] != 65535))
@@ -4865,7 +4865,7 @@ namespace StbSharp
                 }
                 else
                 {
-                    for (i = (int)(0); (i) < (w * h); ++i)
+                    for (i = 0; (i) < (w * h); ++i)
                     {
                         byte* pixel = _out_ + 4 * i;
                         if ((pixel[3] != 0) && (pixel[3] != 255))
@@ -4903,12 +4903,12 @@ namespace StbSharp
             int sz;
             if ((((stbi__get8(s) != 'G') || (stbi__get8(s) != 'I')) || (stbi__get8(s) != 'F')) ||
                 (stbi__get8(s) != '8'))
-                return (int)(0);
+                return 0;
             sz = (int)(stbi__get8(s));
             if ((sz != '9') && (sz != '7'))
-                return (int)(0);
+                return 0;
             if (stbi__get8(s) != 'a')
-                return (int)(0);
+                return 0;
             return (int)(1);
         }
 
@@ -4990,9 +4990,9 @@ namespace StbSharp
             uint first = (uint)(1);
             int codesize = (int)(lzw_cs + 1);
             int codemask = (int)((1 << codesize) - 1);
-            int bits = (int)(0);
-            int valid_bits = (int)(0);
-            for (int init_code = (int)(0); (init_code) < (clear); init_code++)
+            int bits = 0;
+            int valid_bits = 0;
+            for (int init_code = 0; (init_code) < (clear); init_code++)
             {
                 (g.codes)[init_code].prefix = (short)(-1);
                 (g.codes)[init_code].first = ((byte)(init_code));
@@ -5002,7 +5002,7 @@ namespace StbSharp
             stbi__gif_lzw* p;
             int avail = (int)(clear + 2);
             int oldcode = (int)(-1);
-            int len = (int)(0);
+            int len = 0;
             for (; ; )
             {
                 if ((valid_bits) < (codesize))
@@ -5113,12 +5113,12 @@ namespace StbSharp
             int first_frame = 0;
             int pi = 0;
             int pcount = 0;
-            first_frame = (int)(0);
+            first_frame = 0;
             if ((g._out_) == (null))
             {
                 if (stbi__gif_header(s, g, ref ri, skipColorTable: false) == 0)
                     return null;
-                if (stbi__mad3sizes_valid((int)(4), (int)(g.w), (int)(g.h), (int)(0)) == 0)
+                if (stbi__mad3sizes_valid((int)(4), (int)(g.w), (int)(g.h), 0) == 0)
                     return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : (null))));
 
                 pcount = (int)(g.w * g.h);
@@ -5142,7 +5142,7 @@ namespace StbSharp
 
                 if ((dispose) == (3))
                 {
-                    for (pi = (int)(0); (pi) < (pcount); ++pi)
+                    for (pi = 0; (pi) < (pcount); ++pi)
                     {
                         if ((g.history[pi]) != 0)
                             CRuntime.memcpy(&g._out_[pi * 4], &two_back[pi * 4], (ulong)(4));
@@ -5150,7 +5150,7 @@ namespace StbSharp
                 }
                 else if ((dispose) == (2))
                 {
-                    for (pi = (int)(0); (pi) < (pcount); ++pi)
+                    for (pi = 0; (pi) < (pcount); ++pi)
                     {
                         if ((g.history[pi]) != 0)
                             CRuntime.memcpy(&g._out_[pi * 4], &g.background[pi * 4], (ulong)(4));
@@ -5192,7 +5192,7 @@ namespace StbSharp
                         else
                         {
                             g.step = (int)(g.line_size);
-                            g.parse = (int)(0);
+                            g.parse = 0;
                         }
                         if ((g.lflags & 0x80) != 0)
                         {
@@ -5213,7 +5213,7 @@ namespace StbSharp
                         pcount = (int)(g.w * g.h);
                         if (((first_frame) != 0) && ((g.bgindex) > (0)))
                         {
-                            for (pi = (int)(0); (pi) < (pcount); ++pi)
+                            for (pi = 0; (pi) < (pcount); ++pi)
                             {
                                 if ((g.history[pi]) == (0))
                                 {
@@ -5366,7 +5366,7 @@ namespace StbSharp
                 if (stbi__gif_header(s, g, ref ri, skipColorTable: true) == 0)
                 {
                     stbi__rewind(s);
-                    return (int)(0);
+                    return 0;
                 }
 
                 x = ri.Width;
@@ -5403,13 +5403,13 @@ namespace StbSharp
             if (stbi__get32be(s) != 0x38425053)
             {
                 stbi__rewind(s);
-                return (int)(0);
+                return 0;
             }
 
             if (stbi__get16be(s) != 1)
             {
                 stbi__rewind(s);
-                return (int)(0);
+                return 0;
             }
 
             stbi__skip(s, (int)(6));
@@ -5417,7 +5417,7 @@ namespace StbSharp
             if (((channelCount) < (0)) || ((channelCount) > (16)))
             {
                 stbi__rewind(s);
-                return (int)(0);
+                return 0;
             }
 
             *y = (int)(stbi__get32be(s));
@@ -5425,13 +5425,13 @@ namespace StbSharp
             if (stbi__get16be(s) != 8)
             {
                 stbi__rewind(s);
-                return (int)(0);
+                return 0;
             }
 
             if (stbi__get16be(s) != 3)
             {
                 stbi__rewind(s);
-                return (int)(0);
+                return 0;
             }
 
             *comp = (int)(4);
