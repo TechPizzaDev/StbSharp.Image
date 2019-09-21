@@ -14,12 +14,16 @@ namespace StbSharp
 		public delegate int SkipCallback(ReadContext context, int n);
         public delegate void ReadProgressCallback(double progress, Rect? rect);
 
-		public delegate void idct_block_kernel(byte* output, int out_stride, short* data);
+		public delegate void IdctBlockKernel(byte* output, int out_stride, short* data);
 
-		public delegate void YCbCr_to_RGB_kernel(
+		public delegate void YCbCrToRgbKernel(
 			byte* output, byte* y, byte* pcb, byte* pcr, int count, int step);
 
 		public delegate byte* ResamplerMethod(byte* a, byte* b, byte* c, int d, int e);
+
+        private static readonly IdctBlockKernel _cached__idct_block = stbi__idct_block;
+        private static readonly YCbCrToRgbKernel _cached__YCbCr_to_RGB_row = stbi__YCbCr_to_RGB_row;
+        private static readonly ResamplerMethod _cached__resample_row_hv_2 = stbi__resample_row_hv_2;
 
         public readonly struct Rect
         {
@@ -91,17 +95,17 @@ namespace StbSharp
 			public int[] order = new int[4];
 			public int restart_interval, todo;
 
-			public idct_block_kernel idct_block_kernel;
-			public YCbCr_to_RGB_kernel YCbCr_to_RGB_kernel;
+			public IdctBlockKernel idct_block_kernel;
+			public YCbCrToRgbKernel YCbCr_to_RGB_kernel;
 			public ResamplerMethod resample_row_hv_2_kernel;
 
-			public JpegContext(ReadContext ctx)
+            public JpegContext(ReadContext ctx)
 			{
                 s = ctx;
 
-                idct_block_kernel = stbi__idct_block;
-                YCbCr_to_RGB_kernel = stbi__YCbCr_to_RGB_row;
-                resample_row_hv_2_kernel = stbi__resample_row_hv_2;
+                idct_block_kernel = _cached__idct_block;
+                YCbCr_to_RGB_kernel = _cached__YCbCr_to_RGB_row;
+                resample_row_hv_2_kernel = _cached__resample_row_hv_2;
 
                 for (var i = 0; i < 4; ++i)
 				{
@@ -135,14 +139,14 @@ namespace StbSharp
         }
 
 		[StructLayout(LayoutKind.Sequential)]
-		public struct stbi__gif_lzw
+		public struct GifLzw
 		{
 			public short prefix;
 			public byte first;
 			public byte suffix;
 		}
 
-        public class GifContext : IDisposable
+        public struct GifContext
         {
             public int w;
             public int h;
@@ -157,7 +161,7 @@ namespace StbSharp
             public int delay;
             public byte* pal;
             public byte* lpal;
-            public stbi__gif_lzw* codes;
+            public GifLzw* codes;
             public byte* color_table;
             public int parse;
             public int step;
@@ -170,14 +174,24 @@ namespace StbSharp
             public int cur_y;
             public int line_size;
 
-            public GifContext()
+            public static GifContext Create()
             {
-                codes = (stbi__gif_lzw*)CRuntime.malloc(8192 * sizeof(stbi__gif_lzw));
-                pal = (byte*)CRuntime.malloc(256 * 4 * sizeof(byte));
-                lpal = (byte*)CRuntime.malloc(256 * 4 * sizeof(byte));
+                var g = new GifContext();
+                try
+                {
+                    g.codes = (GifLzw*)CRuntime.malloc(8192 * sizeof(GifLzw));
+                    g.pal = (byte*)CRuntime.malloc(256 * 4 * sizeof(byte));
+                    g.lpal = (byte*)CRuntime.malloc(256 * 4 * sizeof(byte));
+                    return g;
+                }
+                catch
+                {
+                    g.Dispose();
+                    throw;
+                }
             }
 
-            protected virtual void Dispose(bool disposing)
+            public void Dispose()
             {
                 if (pal != null)
                 {
@@ -196,17 +210,6 @@ namespace StbSharp
                     CRuntime.free(codes);
                     codes = null;
                 }
-            }
-
-            public void Dispose()
-            {
-                Dispose(true);
-                GC.SuppressFinalize(this);
-            }
-
-            ~GifContext()
-            {
-                Dispose(false);
             }
         }
 
