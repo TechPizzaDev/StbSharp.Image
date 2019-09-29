@@ -4344,7 +4344,7 @@ namespace StbSharp
                         if ((pixel[3] != 0) && (pixel[3] != 65535))
                         {
                             float a = (float)(pixel[3] / 65535.0f);
-                            float ra = (float)(1.0f / a);
+                            float ra = (float)(1f / a);
                             float inv_a = (float)(65535.0f * (1 - ra));
                             pixel[0] = ((ushort)(pixel[0] * ra + inv_a));
                             pixel[1] = ((ushort)(pixel[1] * ra + inv_a));
@@ -4359,9 +4359,9 @@ namespace StbSharp
                         byte* pixel = _out_ + 4 * i;
                         if ((pixel[3] != 0) && (pixel[3] != 255))
                         {
-                            float a = (float)(pixel[3] / 255.0f);
-                            float ra = (float)(1.0f / a);
-                            float inv_a = (float)(255.0f * (1 - ra));
+                            float a = (float)(pixel[3] / 255f);
+                            float ra = (float)(1f / a);
+                            float inv_a = (float)(255f * (1 - ra));
                             pixel[0] = ((byte)(pixel[0] * ra + inv_a));
                             pixel[1] = ((byte)(pixel[1] * ra + inv_a));
                             pixel[2] = ((byte)(pixel[2] * ra + inv_a));
