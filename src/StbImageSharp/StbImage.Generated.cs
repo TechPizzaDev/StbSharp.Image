@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace StbSharp
 {
@@ -16,11 +17,12 @@ namespace StbSharp
         public class ReadContext
         {
             public readonly Stream Stream;
-            public readonly byte[] ReadBuffer;
+            public readonly byte[] ReadBuffer; 
+            public readonly CancellationToken Cancellation;
 
-            public bool ReadFromCallbacks;
             public readonly ReadCallback Read;
             public readonly SkipCallback Skip;
+            public bool ReadFromCallbacks;
 
             public uint W;
             public uint H;
@@ -34,11 +36,12 @@ namespace StbSharp
             public readonly byte* DataOriginal;
             public readonly byte* DataOriginalEnd;
 
-            public ReadContext(byte* data, int len)
+            public ReadContext(byte* data, int len, CancellationToken cancellation)
             {
                 ReadFromCallbacks = false;
                 Read = null;
                 Skip = null;
+                Cancellation = cancellation;
 
                 DataLength = len;
                 DataStart = null;
@@ -46,14 +49,17 @@ namespace StbSharp
                 DataEnd = DataOriginalEnd = data + len;
             }
 
-            public ReadContext(Stream stream, byte[] buffer, ReadCallback read, SkipCallback skip)
+            public ReadContext(
+                Stream stream, byte[] readBuffer, CancellationToken cancellation,
+                ReadCallback read, SkipCallback skip)
             {
                 Stream = stream;
-                ReadBuffer = buffer;
+                ReadBuffer = readBuffer;
+                Cancellation = cancellation;
 
-                ReadFromCallbacks = true;
                 Read = read;
                 Skip = skip;
+                ReadFromCallbacks = true;
 
                 DataLength = 256;
                 DataStart = (byte*)CRuntime.malloc(DataLength);
@@ -1607,11 +1613,13 @@ namespace StbSharp
             {
                 case 0xff:
                     return (int)(stbi__err("expected marker"));
+
                 case 0xDD:
                     if (stbi__get16be(z.s) != 4)
                         return (int)(stbi__err("bad DRI len"));
                     z.restart_interval = (int)(stbi__get16be(z.s));
                     return 1;
+
                 case 0xDB:
                     L = (int)(stbi__get16be(z.s) - 2);
                     while ((L) > (0))
@@ -1630,11 +1638,10 @@ namespace StbSharp
                             z.dequant[t][stbi__jpeg_dezigzag[i]] =
                                 ((ushort)((sixteen) != 0 ? stbi__get16be(z.s) : stbi__get8(z.s)));
                         }
-
                         L -= (int)((sixteen) != 0 ? 129 : 65);
                     }
-
                     return (int)((L) == 0 ? 1 : 0);
+
                 case 0xC4:
                     L = (int)(stbi__get16be(z.s) - 2);
                     while ((L) > (0))
@@ -1670,15 +1677,12 @@ namespace StbSharp
                         }
 
                         for (i = 0; (i) < (n); ++i)
-                        {
                             huff[th].values[i] = (byte)(stbi__get8(z.s));
-                        }
 
                         if (tc != 0)
                             stbi__build_fast_ac(z.fast_ac[th], ref z.huff_ac[th]);
                         L -= (int)(n);
                     }
-
                     return (int)((L) == 0 ? 1 : 0);
             }
 
