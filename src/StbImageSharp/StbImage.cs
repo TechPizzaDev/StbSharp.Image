@@ -1,5 +1,7 @@
 ﻿using System;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace StbSharp
 {
@@ -8,22 +10,83 @@ namespace StbSharp
 		public static string LastError;
         public static int stbi__vertically_flip_on_load;
 
-        public const int STBI__ZFAST_BITS = 9;
-
-		public delegate int ReadCallback(ReadContext context, Span<byte> data);
-		public delegate int SkipCallback(ReadContext context, int n);
+        public delegate int ReadCallback(ReadContext context, Span<byte> data);
+        public delegate int SkipCallback(ReadContext context, int n);
         public delegate void ReadProgressCallback(double progress, Rect? rect);
 
-		public delegate void IdctBlockKernel(byte* output, int out_stride, short* data);
+        public class ReadContext
+        {
+            public readonly Stream Stream;
+            public readonly byte[] ReadBuffer;
+            public readonly CancellationToken Cancellation;
 
-		public delegate void YCbCrToRgbKernel(
-			byte* output, byte* y, byte* pcb, byte* pcr, int count, int step);
+            public readonly ReadCallback Read;
+            public readonly SkipCallback Skip;
+            public bool ReadFromCallbacks;
 
-		public delegate byte* ResamplerMethod(byte* a, byte* b, byte* c, int d, int e);
+            public uint W;
+            public uint H;
+            public int N;
+            public int OutN;
 
-        private static readonly IdctBlockKernel _cached__idct_block = stbi__idct_block;
-        private static readonly YCbCrToRgbKernel _cached__YCbCr_to_RGB_row = stbi__YCbCr_to_RGB_row;
-        private static readonly ResamplerMethod _cached__resample_row_hv_2 = stbi__resample_row_hv_2;
+            public readonly int DataLength;
+            public byte* DataStart;
+            public byte* Data;
+            public byte* DataEnd;
+            public readonly byte* DataOriginal;
+            public readonly byte* DataOriginalEnd;
+
+            public ReadContext(byte* data, int len, CancellationToken cancellation)
+            {
+                ReadFromCallbacks = false;
+                Read = null;
+                Skip = null;
+                Cancellation = cancellation;
+
+                DataLength = len;
+                DataStart = null;
+                Data = DataOriginal = data;
+                DataEnd = DataOriginalEnd = data + len;
+            }
+
+            public ReadContext(
+                Stream stream, byte[] readBuffer, CancellationToken cancellation,
+                ReadCallback read, SkipCallback skip)
+            {
+                Stream = stream;
+                ReadBuffer = readBuffer;
+                Cancellation = cancellation;
+
+                Read = read;
+                Skip = skip;
+                ReadFromCallbacks = true;
+
+                DataLength = 256;
+                DataStart = (byte*)CRuntime.malloc(DataLength);
+                DataOriginal = DataStart;
+                stbi__refill_buffer(this);
+                DataOriginalEnd = DataEnd;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct ReadState
+        {
+            public readonly ReadProgressCallback Progress;
+
+            public int BitsPerChannel;
+            public int Components;
+            public int AnimationDelay;
+
+            public int Width;
+            public int Height;
+            public int RequestedComponents;
+
+            public ReadState(ReadProgressCallback onProgress) : this()
+            {
+                Progress = onProgress;
+            }
+        }
 
         public readonly struct Rect
         {
@@ -40,6 +103,23 @@ namespace StbSharp
                 H = h;
             }
         }
+
+        private static int stbi__err(string str)
+        {
+            LastError = str;
+            return 0;
+        }
+
+		public delegate void IdctBlockKernel(byte* output, int out_stride, short* data);
+
+		public delegate void YCbCrToRgbKernel(
+			byte* output, byte* y, byte* pcb, byte* pcr, int count, int step);
+
+		public delegate byte* ResamplerMethod(byte* a, byte* b, byte* c, int d, int e);
+
+        private static readonly IdctBlockKernel _cached__idct_block = stbi__idct_block;
+        private static readonly YCbCrToRgbKernel _cached__YCbCr_to_RGB_row = stbi__YCbCr_to_RGB_row;
+        private static readonly ResamplerMethod _cached__resample_row_hv_2 = stbi__resample_row_hv_2;
 
 		[StructLayout(LayoutKind.Sequential)]
 		public struct JpegComponent
@@ -60,8 +140,10 @@ namespace StbSharp
 		}
 
 		public class JpegContext
-		{
-			public ReadContext s;
+        {
+            public const int STBI__ZFAST_BITS = 9;
+
+            public ReadContext s;
 			public readonly stbi__huffman[] huff_dc = new stbi__huffman[4];
 			public readonly stbi__huffman[] huff_ac = new stbi__huffman[4];
 			public readonly ushort[][] dequant;
@@ -212,11 +294,5 @@ namespace StbSharp
                 }
             }
         }
-
-		private static int stbi__err(string str)
-		{
-			LastError = str;
-			return 0;
-		}
 	}
 }
