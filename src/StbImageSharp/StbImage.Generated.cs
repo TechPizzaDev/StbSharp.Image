@@ -201,21 +201,21 @@ namespace StbSharp
         {
             if (stbi__mad2sizes_valid((int)(a), (int)(b), (int)(add)) == 0)
                 return null;
-            return CRuntime.malloc((ulong)(a * b + add));
+            return CRuntime.malloc(a * b + add);
         }
 
         public static void* stbi__malloc_mad3(int a, int b, int c, int add)
         {
             if (stbi__mad3sizes_valid((int)(a), (int)(b), (int)(c), (int)(add)) == 0)
                 return null;
-            return CRuntime.malloc((ulong)(a * b * c + add));
+            return CRuntime.malloc(a * b * c + add);
         }
 
         public static void* stbi__malloc_mad4(int a, int b, int c, int d, int add)
         {
             if (stbi__mad4sizes_valid((int)(a), (int)(b), (int)(c), (int)(d), (int)(add)) == 0)
                 return null;
-            return CRuntime.malloc((ulong)(a * b * c * d + add));
+            return CRuntime.malloc(a * b * c * d + add);
         }
 
         public static void stbi_set_flip_vertically_on_load(int flag_true_if_should_flip)
@@ -251,7 +251,7 @@ namespace StbSharp
             int i;
             int img_len = (int)(w * h * channels);
             byte* reduced;
-            reduced = (byte*)(CRuntime.malloc((ulong)(img_len)));
+            reduced = (byte*)(CRuntime.malloc(img_len));
             if ((reduced) == null)
                 return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
 
@@ -267,7 +267,7 @@ namespace StbSharp
             int i;
             int img_len = (int)(w * h * channels);
             ushort* enlarged;
-            enlarged = (ushort*)(CRuntime.malloc((ulong)(img_len * 2)));
+            enlarged = (ushort*)(CRuntime.malloc(img_len * 2));
             if ((enlarged) == null)
                 return (ushort*)((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
             for (i = 0; (i) < (img_len); ++i)
@@ -282,23 +282,23 @@ namespace StbSharp
         public static void stbi__vertical_flip(void* image, int w, int h, int bytes_per_pixel)
         {
             int row;
-            ulong bytes_per_row = (ulong)(w * bytes_per_pixel);
+            int bytes_per_row = w * bytes_per_pixel;
             byte* tmp = stackalloc byte[2048];
             byte* bytes = (byte*)(image);
             for (row = 0; (row) < (h >> 1); row++)
             {
-                byte* row0 = bytes + (ulong)row * bytes_per_row;
-                byte* row1 = bytes + (ulong)(h - row - 1) * bytes_per_row;
-                ulong bytes_left = (ulong)(bytes_per_row);
+                byte* row0 = bytes + row * bytes_per_row;
+                byte* row1 = bytes + (h - row - 1) * bytes_per_row;
+                int bytes_left = bytes_per_row;
                 while ((bytes_left) != 0)
                 {
-                    ulong bytes_copy = (ulong)(((bytes_left) < (2048)) ? bytes_left : 2048);
-                    CRuntime.memcpy(tmp, row0, (ulong)(bytes_copy));
-                    CRuntime.memcpy(row0, row1, (ulong)(bytes_copy));
-                    CRuntime.memcpy(row1, tmp, (ulong)(bytes_copy));
+                    int bytes_copy = bytes_left < 2048 ? bytes_left : 2048;
+                    CRuntime.memcpy(tmp, row0, bytes_copy);
+                    CRuntime.memcpy(row0, row1, bytes_copy);
+                    CRuntime.memcpy(row1, tmp, bytes_copy);
                     row0 += bytes_copy;
                     row1 += bytes_copy;
-                    bytes_left -= (ulong)(bytes_copy);
+                    bytes_left -= bytes_copy;
                 }
             }
         }
@@ -433,7 +433,7 @@ namespace StbSharp
                 {
                     int res;
                     int count;
-                    CRuntime.memcpy(buffer, s.Data, (ulong)(blen));
+                    CRuntime.memcpy(buffer, s.Data, blen);
                     count = (int)(s.Read(s, new Span<byte>(buffer + blen, n - blen)));
                     res = (int)((count) == (n - blen) ? 1 : 0);
                     s.Data = s.DataEnd;
@@ -443,7 +443,7 @@ namespace StbSharp
 
             if (s.Data + n <= s.DataEnd)
             {
-                CRuntime.memcpy(buffer, s.Data, (ulong)(n));
+                CRuntime.memcpy(buffer, s.Data, n);
                 s.Data += n;
                 return 1;
             }
@@ -602,7 +602,7 @@ namespace StbSharp
             if ((req_comp) == (img_n))
                 return data;
 
-            ushort* good = (ushort*)(CRuntime.malloc((ulong)(req_comp * x * y * 2)));
+            ushort* good = (ushort*)(CRuntime.malloc(req_comp * x * y * 2));
             if ((good) == null)
             {
                 CRuntime.free(data);
@@ -900,7 +900,7 @@ namespace StbSharp
             t = (int)(stbi__jpeg_huff_decode(j, ref hdc));
             if ((t) < (0))
                 return (int)(stbi__err("bad huffman code"));
-            CRuntime.memset(data, 0, (ulong)(64 * sizeof(short)));
+            CRuntime.memset(data, 0, 64 * sizeof(short));
             diff = (int)((t) != 0 ? stbi__extend_receive(j, (int)(t)) : 0);
             dc = (int)(j.img_comp[b].dc_pred + diff);
             j.img_comp[b].dc_pred = (int)(dc);
@@ -962,7 +962,7 @@ namespace StbSharp
                 stbi__grow_buffer_unsafe(j);
             if ((j.succ_high) == 0)
             {
-                CRuntime.memset(data, 0, (ulong)(64 * sizeof(short)));
+                CRuntime.memset(data, 0, 64 * sizeof(short));
                 t = (int)(stbi__jpeg_huff_decode(j, ref hdc));
                 diff = (int)((t) != 0 ? stbi__extend_receive(j, (int)(t)) : 0);
                 dc = (int)(j.img_comp[b].dc_pred + diff);
@@ -2111,7 +2111,7 @@ namespace StbSharp
             for (k = 0; (k) < (decode_n); ++k)
             {
                 ref stbi__resample r = ref res_comp[k];
-                z.img_comp[k].linebuf = (byte*)(CRuntime.malloc((ulong)(z.s.W + 3)));
+                z.img_comp[k].linebuf = (byte*)(CRuntime.malloc(z.s.W + 3));
                 if (z.img_comp[k].linebuf == null)
                 {
                     stbi__cleanup_jpeg(z);
@@ -2472,7 +2472,7 @@ namespace StbSharp
                     switch (filter)
                     {
                         case STBI__F_none:
-                            CRuntime.memcpy(cur, raw, (ulong)(nk));
+                            CRuntime.memcpy(cur, raw, nk);
                             break;
 
                         case STBI__F_sub:
@@ -2764,7 +2764,7 @@ namespace StbSharp
                             CRuntime.memcpy(
                                 final + out_y * a.s.W * out_bytes + out_x * out_bytes,
                                 a._out_ + (j * x + i) * out_bytes,
-                                (ulong)(out_bytes));
+                                out_bytes);
                         }
                     }
 
@@ -3117,7 +3117,7 @@ namespace StbSharp
                             while ((ioff + c.Length) > (idata_limit))
                                 idata_limit *= (uint)(2);
 
-                            byte* p = (byte*)(CRuntime.realloc(z.idata, (ulong)(idata_limit)));
+                            byte* p = (byte*)(CRuntime.realloc(z.idata, idata_limit));
                             if ((p) == null)
                                 return (int)(stbi__err("outofmem"));
                             z.idata = p;
@@ -4188,7 +4188,7 @@ namespace StbSharp
             if (compression == 0 && bitdepth == 16 && ri.BitsPerChannel == 16)
                 _out_ = (byte*)(stbi__malloc_mad3(8, w, h, 0));
             else
-                _out_ = (byte*)(CRuntime.malloc((ulong)(4 * w * h)));
+                _out_ = (byte*)(CRuntime.malloc(4 * w * h));
 
             if (_out_ == null)
                 return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
@@ -4541,15 +4541,15 @@ namespace StbSharp
                     return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : null)));
 
                 pcount = (int)(g.w * g.h);
-                g._out_ = (byte*)(CRuntime.malloc((ulong)(4 * pcount)));
-                g.background = (byte*)(CRuntime.malloc((ulong)(4 * pcount)));
-                g.history = (byte*)(CRuntime.malloc((ulong)(pcount)));
+                g._out_ = (byte*)(CRuntime.malloc(4 * pcount));
+                g.background = (byte*)(CRuntime.malloc(4 * pcount));
+                g.history = (byte*)(CRuntime.malloc(pcount));
                 if (((g._out_ == null) || (g.background == null)) || (g.history == null))
                     return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
 
-                CRuntime.memset(g._out_, (int)(0x00), (ulong)(4 * pcount));
-                CRuntime.memset(g.background, (int)(0x00), (ulong)(4 * pcount));
-                CRuntime.memset(g.history, (int)(0x00), (ulong)(pcount));
+                CRuntime.memset(g._out_, (int)(0x00), 4 * pcount);
+                CRuntime.memset(g.background, (int)(0x00), 4 * pcount);
+                CRuntime.memset(g.history, (int)(0x00), pcount);
                 first_frame = 1;
             }
             else
@@ -4564,7 +4564,7 @@ namespace StbSharp
                     for (pi = 0; (pi) < (pcount); ++pi)
                     {
                         if ((g.history[pi]) != 0)
-                            CRuntime.memcpy(&g._out_[pi * 4], &two_back[pi * 4], (ulong)(4));
+                            CRuntime.memcpy(&g._out_[pi * 4], &two_back[pi * 4], 4);
                     }
                 }
                 else if ((dispose) == (2))
@@ -4572,13 +4572,13 @@ namespace StbSharp
                     for (pi = 0; (pi) < (pcount); ++pi)
                     {
                         if ((g.history[pi]) != 0)
-                            CRuntime.memcpy(&g._out_[pi * 4], &g.background[pi * 4], (ulong)(4));
+                            CRuntime.memcpy(&g._out_[pi * 4], &g.background[pi * 4], 4);
                     }
                 }
-                CRuntime.memcpy(g.background, g._out_, (ulong)(4 * g.w * g.h));
+                CRuntime.memcpy(g.background, g._out_, 4 * g.w * g.h);
             }
 
-            CRuntime.memset(g.history, (int)(0x00), (ulong)(g.w * g.h));
+            CRuntime.memset(g.history, (int)(0x00), g.w * g.h);
             for (; ; )
             {
                 int tag = (int)(stbi__get8(s));
@@ -4637,7 +4637,7 @@ namespace StbSharp
                                 if ((g.history[pi]) == 0)
                                 {
                                     g.pal[g.bgindex * 4 + 3] = (byte)(255);
-                                    CRuntime.memcpy(&g._out_[pi * 4], &g.pal[g.bgindex], (ulong)(4));
+                                    CRuntime.memcpy(&g._out_[pi * 4], &g.pal[g.bgindex], 4);
                                 }
                             }
                         }
@@ -4722,17 +4722,17 @@ namespace StbSharp
                                 stride = (int)(g.w * g.h * 4);
                                 if ((_out_) != null)
                                 {
-                                    _out_ = (byte*)(CRuntime.realloc(_out_, (ulong)(layers * stride)));
+                                    _out_ = (byte*)(CRuntime.realloc(_out_, layers * stride));
                                     if ((delays) != null)
-                                        *delays = (int*)(CRuntime.realloc(*delays, (ulong)(sizeof(int) * layers)));
+                                        *delays = (int*)(CRuntime.realloc(*delays, sizeof(int) * layers));
                                 }
                                 else
                                 {
-                                    _out_ = (byte*)(CRuntime.malloc((ulong)(layers * stride)));
+                                    _out_ = (byte*)(CRuntime.malloc(layers * stride));
                                     if ((delays) != null)
-                                        *delays = (int*)(CRuntime.malloc((ulong)(layers * sizeof(int))));
+                                        *delays = (int*)(CRuntime.malloc(layers * sizeof(int)));
                                 }
-                                CRuntime.memcpy(_out_ + ((layers - 1) * stride), u, (ulong)(stride));
+                                CRuntime.memcpy(_out_ + ((layers - 1) * stride), u, stride);
                                 if ((layers) >= (2))
                                     two_back = _out_ - 2 * stride;
 
