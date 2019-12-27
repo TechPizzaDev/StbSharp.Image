@@ -12,6 +12,8 @@ namespace StbSharp
 
         public delegate int ReadCallback(ReadContext context, Span<byte> data);
         public delegate int SkipCallback(ReadContext context, int n);
+
+        public delegate void BufferReadyCallback(int width, int height, void* buffer);
         public delegate void ReadProgressCallback(double progress, Rect? rect);
 
         public class ReadContext
@@ -62,7 +64,7 @@ namespace StbSharp
                 ReadFromCallbacks = true;
 
                 DataLength = 256;
-                DataStart = (byte*)CRuntime.malloc(DataLength);
+                DataStart = (byte*)CRuntime.MAlloc(DataLength);
                 DataOriginal = DataStart;
                 stbi__refill_buffer(this);
                 DataOriginalEnd = DataEnd;
@@ -72,18 +74,21 @@ namespace StbSharp
         [StructLayout(LayoutKind.Sequential)]
         public struct ReadState
         {
+            public readonly BufferReadyCallback BufferReady;
             public readonly ReadProgressCallback Progress;
 
             public int BitsPerChannel;
             public int Components;
-            public int AnimationDelay;
 
             public int Width;
             public int Height;
             public int RequestedComponents;
 
-            public ReadState(ReadProgressCallback onProgress) : this()
+            public ReadState(
+                BufferReadyCallback onBufferReady, 
+                ReadProgressCallback onProgress) : this()
             {
+                BufferReady = onBufferReady;
                 Progress = onProgress;
             }
         }
@@ -208,7 +213,7 @@ namespace StbSharp
             }
         };
 
-        public struct stbi__resample
+        public struct ResampleData
         {
             public ResamplerMethod Resample;
             public byte* line0;
@@ -261,9 +266,9 @@ namespace StbSharp
                 var g = new GifContext();
                 try
                 {
-                    g.codes = (GifLzw*)CRuntime.malloc(8192 * sizeof(GifLzw));
-                    g.pal = (byte*)CRuntime.malloc(256 * 4 * sizeof(byte));
-                    g.lpal = (byte*)CRuntime.malloc(256 * 4 * sizeof(byte));
+                    g.codes = (GifLzw*)CRuntime.MAlloc(8192 * sizeof(GifLzw));
+                    g.pal = (byte*)CRuntime.MAlloc(256 * 4 * sizeof(byte));
+                    g.lpal = (byte*)CRuntime.MAlloc(256 * 4 * sizeof(byte));
                     return g;
                 }
                 catch
@@ -277,19 +282,19 @@ namespace StbSharp
             {
                 if (pal != null)
                 {
-                    CRuntime.free(pal);
+                    CRuntime.Free(pal);
                     pal = null;
                 }
 
                 if (lpal != null)
                 {
-                    CRuntime.free(lpal);
+                    CRuntime.Free(lpal);
                     lpal = null;
                 }
 
                 if (codes != null)
                 {
-                    CRuntime.free(codes);
+                    CRuntime.Free(codes);
                     codes = null;
                 }
             }
