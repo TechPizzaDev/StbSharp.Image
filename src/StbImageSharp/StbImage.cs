@@ -38,12 +38,12 @@ namespace StbSharp
             public readonly byte* DataOriginal;
             public readonly byte* DataOriginalEnd;
 
-            public ReadContext(byte* data, int len, CancellationToken cancellation)
+            public ReadContext(byte* data, int len, CancellationToken cancellationToken)
             {
                 ReadFromCallbacks = false;
                 Read = null;
                 Skip = null;
-                CancellationToken = cancellation;
+                CancellationToken = cancellationToken;
 
                 DataLength = len;
                 DataStart = null;
@@ -52,12 +52,12 @@ namespace StbSharp
             }
 
             public ReadContext(
-                Stream stream, byte[] readBuffer, CancellationToken cancellation,
+                Stream stream, byte[] readBuffer, CancellationToken cancellationToken,
                 ReadCallback read, SkipCallback skip)
             {
                 Stream = stream;
                 ReadBuffer = readBuffer;
-                CancellationToken = cancellation;
+                CancellationToken = cancellationToken;
 
                 Read = read;
                 Skip = skip;
