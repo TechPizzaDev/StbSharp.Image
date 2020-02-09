@@ -225,10 +225,10 @@ namespace StbSharp
         }
 
         public static void* stbi__load_main(
-            ReadContext s, int req_comp, int bytesPerComp, out ReadState ri)
+            ReadContext s, int req_comp, int? bitsPerComp, out ReadState ri)
         {
             ri = default;
-            ri.BitsPerChannel = bytesPerComp;
+            ri.BitsPerChannel = bitsPerComp;
             ri.RequestedComponents = req_comp;
 
             if ((stbi__jpeg_test(s)) != 0)
@@ -3276,13 +3276,14 @@ namespace StbSharp
 
                 result = p._out_;
                 p._out_ = null;
+
                 if (((ri.RequestedComponents) != 0) && (ri.RequestedComponents != p.s.OutN))
                 {
                     if (ri.BitsPerChannel == 8)
                         result = stbi__convert_format((byte*)result, p.s.OutN, ri.RequestedComponents, p.s.W, p.s.H);
                     else
                         result = stbi__convert_format16((ushort*)result, p.s.OutN, ri.RequestedComponents, p.s.W, p.s.H);
-
+                    
                     p.s.OutN = (int)(ri.RequestedComponents);
                     if ((result) == null)
                         return result;
@@ -4189,6 +4190,9 @@ namespace StbSharp
             if (stbi__mad3sizes_valid((int)(4), (int)(w), (int)(h), 0) == 0)
                 return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : null)));
 
+            if (bitdepth == 16 && !ri.BitsPerChannel.HasValue)
+                ri.BitsPerChannel = bitdepth;
+
             byte* _out_;
             if (compression == 0 && bitdepth == 16 && ri.BitsPerChannel == 16)
                 _out_ = (byte*)(stbi__malloc_mad3(8, w, h, 0));
@@ -4307,11 +4311,11 @@ namespace StbSharp
 
             if (((ri.RequestedComponents) != 0) && (ri.RequestedComponents != 4))
             {
-                if ((ri.BitsPerChannel) == (16))
+                if (ri.BitsPerChannel == 16)
                     _out_ = (byte*)(stbi__convert_format16((ushort*)_out_, 4, ri.RequestedComponents, (uint)w, (uint)h));
                 else
                     _out_ = stbi__convert_format(_out_, 4, ri.RequestedComponents, (uint)w, (uint)h);
-
+                
                 if ((_out_) == null)
                     return null;
             }

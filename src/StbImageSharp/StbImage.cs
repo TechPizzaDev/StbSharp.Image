@@ -77,12 +77,12 @@ namespace StbSharp
             public readonly BufferReadyCallback BufferReady;
             public readonly ReadProgressCallback Progress;
 
-            public int BitsPerChannel;
-            public int Components;
-
             public int Width;
             public int Height;
             public int RequestedComponents;
+
+            public int? BitsPerChannel;
+            public int Components;
 
             public ReadState(
                 BufferReadyCallback onBufferReady, 
