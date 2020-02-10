@@ -26,11 +26,6 @@ namespace StbSharp
             public readonly SkipCallback Skip;
             public bool ReadFromCallbacks;
 
-            public uint W;
-            public uint H;
-            public int N;
-            public int OutN;
-
             public readonly int DataLength;
             public byte* DataStart;
             public byte* Data;
@@ -81,7 +76,7 @@ namespace StbSharp
             public int Height;
             public int RequestedComponents;
 
-            public int? BitsPerChannel;
+            public int? BitsPerComponent;
             public int Components;
 
             public ReadState(
@@ -185,6 +180,8 @@ namespace StbSharp
             public IdctBlockKernel idct_block_kernel;
             public YCbCrToRgbKernel YCbCr_to_RGB_kernel;
             public ResamplerMethod resample_row_hv_2_kernel;
+
+            public ReadState ri;
 
             public JpegContext(ReadContext ctx)
             {

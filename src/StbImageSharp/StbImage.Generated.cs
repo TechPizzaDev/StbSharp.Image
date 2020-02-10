@@ -77,6 +77,7 @@ namespace StbSharp
         public struct PngContext
         {
             public readonly ReadContext s;
+
             public byte* idata;
             public byte* _out_;
             public int depth;
@@ -228,7 +229,7 @@ namespace StbSharp
             ReadContext s, int req_comp, int? bitsPerComp, out ReadState ri)
         {
             ri = default;
-            ri.BitsPerChannel = bitsPerComp;
+            ri.BitsPerComponent = bitsPerComp;
             ri.RequestedComponents = req_comp;
 
             if ((stbi__jpeg_test(s)) != 0)
@@ -315,10 +316,10 @@ namespace StbSharp
             if ((result) == null)
                 return null;
 
-            if (ri.BitsPerChannel != 8)
+            if (ri.BitsPerComponent != 8)
             {
                 result = stbi__convert_16_to_8((ushort*)result, x, y, req_comp == 0 ? comp : req_comp);
-                ri.BitsPerChannel = (int)(8);
+                ri.BitsPerComponent = (int)(8);
             }
 
             if ((stbi__vertically_flip_on_load) != 0)
@@ -341,10 +342,10 @@ namespace StbSharp
             if ((result) == null)
                 return null;
 
-            if (ri.BitsPerChannel != 16)
+            if (ri.BitsPerComponent != 16)
             {
                 result = stbi__convert_8_to_16((byte*)result, x, y, req_comp == 0 ? comp : req_comp);
-                ri.BitsPerChannel = (int)(16);
+                ri.BitsPerComponent = (int)(16);
             }
 
             if ((stbi__vertically_flip_on_load) != 0)
@@ -481,7 +482,7 @@ namespace StbSharp
             return (byte)(((r * 77) + (g * 150) + (29 * b)) >> 8);
         }
 
-        public static byte* stbi__convert_format(byte* data, int img_n, int req_comp, uint x, uint y)
+        public static byte* stbi__convert_format(byte* data, int img_n, int req_comp, int x, int y)
         {
             if ((req_comp) == (img_n))
                 return data;
@@ -596,7 +597,7 @@ namespace StbSharp
             return (ushort)(((r * 77) + (g * 150) + (29 * b)) >> 8);
         }
 
-        public static ushort* stbi__convert_format16(ushort* data, int img_n, int req_comp, uint x, uint y)
+        public static ushort* stbi__convert_format16(ushort* data, int img_n, int req_comp, int x, int y)
         {
             int i;
             int j;
@@ -1509,28 +1510,27 @@ namespace StbSharp
 
         public static void stbi__jpeg_finish(JpegContext z)
         {
-            if ((z.progressive) != 0)
+            if ((z.progressive) == 0)
+                return;
+
+            int i;
+            int j;
+            int n;
+            for (n = 0; (n) < (z.ri.Components); ++n)
             {
-                int i;
-                int j;
-                int n;
-                for (n = 0; (n) < (z.s.N); ++n)
+                int w = (int)((z.img_comp[n].x + 7) >> 3);
+                int h = (int)((z.img_comp[n].y + 7) >> 3);
+                for (j = 0; (j) < (h); ++j)
                 {
-                    int w = (int)((z.img_comp[n].x + 7) >> 3);
-                    int h = (int)((z.img_comp[n].y + 7) >> 3);
-                    for (j = 0; (j) < (h); ++j)
+                    for (i = 0; (i) < (w); ++i)
                     {
-                        for (i = 0; (i) < (w); ++i)
-                        {
-                            short* data = z.img_comp[n].coeff + 64 * (i + j * z.img_comp[n].coeff_w);
-                            stbi__jpeg_dequantize(data, z.dequant[z.img_comp[n].tq]);
-                            z.idct_block_kernel(z.img_comp[n].data + z.img_comp[n].w2 * j * 8 + i * 8,
-                                (int)(z.img_comp[n].w2), data);
-                        }
+                        short* data = z.img_comp[n].coeff + 64 * (i + j * z.img_comp[n].coeff_w);
+                        stbi__jpeg_dequantize(data, z.dequant[z.img_comp[n].tq]);
+                        z.idct_block_kernel(z.img_comp[n].data + z.img_comp[n].w2 * j * 8 + i * 8,
+                            (int)(z.img_comp[n].w2), data);
                     }
                 }
             }
-
         }
 
         public static int stbi__process_marker(JpegContext z, int m)
@@ -1685,7 +1685,7 @@ namespace StbSharp
             int i;
             int Ls = (int)(stbi__get16be(z.s));
             z.scan_n = (int)(stbi__get8(z.s));
-            if ((((z.scan_n) < (1)) || ((z.scan_n) > (4))) || ((z.scan_n) > (z.s.N)))
+            if ((((z.scan_n) < (1)) || ((z.scan_n) > (4))) || ((z.scan_n) > (z.ri.Components)))
                 return (int)(stbi__err("bad SOS component count"));
             if (Ls != 6 + 2 * z.scan_n)
                 return (int)(stbi__err("bad SOS len"));
@@ -1694,13 +1694,13 @@ namespace StbSharp
                 int id = (int)(stbi__get8(z.s));
                 int which;
                 int q = (int)(stbi__get8(z.s));
-                for (which = 0; (which) < (z.s.N); ++which)
+                for (which = 0; (which) < (z.ri.Components); ++which)
                 {
                     if ((z.img_comp[which].id) == (id))
                         break;
                 }
 
-                if ((which) == (z.s.N))
+                if ((which) == (z.ri.Components))
                     return 0;
                 z.img_comp[which].hd = (int)(q >> 4);
                 if ((z.img_comp[which].hd) > (3))
@@ -1781,23 +1781,23 @@ namespace StbSharp
             p = (int)(stbi__get8(s));
             if (p != 8)
                 return (int)(stbi__err("only 8-bit"));
-            s.H = (uint)(stbi__get16be(s));
-            if ((s.H) == 0)
+            z.ri.Height = (int)(stbi__get16be(s));
+            if ((z.ri.Height) == 0)
                 return (int)(stbi__err("no header height"));
-            s.W = (uint)(stbi__get16be(s));
-            if ((s.W) == 0)
+            z.ri.Width = (int)(stbi__get16be(s));
+            if ((z.ri.Width) == 0)
                 return (int)(stbi__err("0 width"));
             c = (int)(stbi__get8(s));
             if (((c != 3) && (c != 1)) && (c != 4))
                 return (int)(stbi__err("bad component count"));
-            s.N = (int)(c);
+            z.ri.Components = (int)(c);
             for (i = 0; (i) < (c); ++i)
             {
                 z.img_comp[i].data = null;
                 z.img_comp[i].linebuf = null;
             }
 
-            if (Lf != 8 + 3 * s.N)
+            if (Lf != 8 + 3 * z.ri.Components)
                 return (int)(stbi__err("bad SOF len"));
             z.rgb = 0;
 
@@ -1805,10 +1805,10 @@ namespace StbSharp
             rgb[0] = (byte)('R');
             rgb[1] = (byte)('G');
             rgb[2] = (byte)('B');
-            for (i = 0; (i) < (s.N); ++i)
+            for (i = 0; (i) < (z.ri.Components); ++i)
             {
                 z.img_comp[i].id = (int)(stbi__get8(s));
-                if (((s.N) == (3)) && ((z.img_comp[i].id) == (rgb[i])))
+                if (((z.ri.Components) == (3)) && ((z.img_comp[i].id) == (rgb[i])))
                     ++z.rgb;
                 q = (int)(stbi__get8(s));
                 z.img_comp[i].h = (int)(q >> 4);
@@ -1824,10 +1824,10 @@ namespace StbSharp
 
             if (scan != STBI__SCAN_load)
                 return 1;
-            if (stbi__mad3sizes_valid((int)(s.W), (int)(s.H), (int)(s.N), 0) == 0)
+            if (stbi__mad3sizes_valid((z.ri.Width), (z.ri.Height), (z.ri.Components), 0) == 0)
                 return (int)(stbi__err("too large"));
 
-            for (i = 0; (i) < (s.N); ++i)
+            for (i = 0; (i) < (z.ri.Components); ++i)
             {
                 if ((z.img_comp[i].h) > (h_max))
                     h_max = (int)(z.img_comp[i].h);
@@ -1839,12 +1839,12 @@ namespace StbSharp
             z.img_v_max = (int)(v_max);
             z.img_mcu_w = (int)(h_max * 8);
             z.img_mcu_h = (int)(v_max * 8);
-            z.img_mcu_x = (int)((s.W + z.img_mcu_w - 1) / z.img_mcu_w);
-            z.img_mcu_y = (int)((s.H + z.img_mcu_h - 1) / z.img_mcu_h);
-            for (i = 0; (i) < (s.N); ++i)
+            z.img_mcu_x = (int)((z.ri.Width + z.img_mcu_w - 1) / z.img_mcu_w);
+            z.img_mcu_y = (int)((z.ri.Height + z.img_mcu_h - 1) / z.img_mcu_h);
+            for (i = 0; (i) < (z.ri.Components); ++i)
             {
-                z.img_comp[i].x = (int)((s.W * z.img_comp[i].h + h_max - 1) / h_max);
-                z.img_comp[i].y = (int)((s.H * z.img_comp[i].v + v_max - 1) / v_max);
+                z.img_comp[i].x = (int)((z.ri.Width * z.img_comp[i].h + h_max - 1) / h_max);
+                z.img_comp[i].y = (int)((z.ri.Height * z.img_comp[i].v + v_max - 1) / v_max);
                 z.img_comp[i].w2 = (int)(z.img_mcu_x * z.img_comp[i].h * 8);
                 z.img_comp[i].h2 = (int)(z.img_mcu_y * z.img_comp[i].v * 8);
                 z.img_comp[i].coeff = null;
@@ -1944,7 +1944,7 @@ namespace StbSharp
                     uint NL = (uint)(stbi__get16be(j.s));
                     if (Ld != 4)
                         stbi__err("bad DNL len");
-                    if (NL != j.s.H)
+                    if (NL != j.ri.Height)
                         stbi__err("bad DNL height");
                 }
                 else
@@ -2077,7 +2077,7 @@ namespace StbSharp
 
         public static void stbi__cleanup_jpeg(JpegContext j)
         {
-            stbi__free_jpeg_components(j, (int)(j.s.N), 0);
+            stbi__free_jpeg_components(j, (int)(j.ri.Components), 0);
         }
 
         public static byte stbi__blinn_8x8(byte x, byte y)
@@ -2091,16 +2091,16 @@ namespace StbSharp
             if (ri.RequestedComponents < 0 || ri.RequestedComponents > 4)
                 return ((byte*)((ulong)((stbi__err("bad req_comp")) != 0 ? ((byte*)null) : null)));
 
-            z.s.N = 0;
+            z.ri.Components = 0;
             if (stbi__decode_jpeg_image(z) == 0)
             {
                 stbi__cleanup_jpeg(z);
                 return null;
             }
 
-            int n = ri.RequestedComponents != 0 ? ri.RequestedComponents : z.s.N >= 3 ? 3 : 1;
-            int is_rgb = z.s.N == 3 && (z.rgb == 3 || (z.app14_color_transform == 0 && z.jfif == 0)) ? 1 : 0;
-            int decode_n = (z.s.N == 3 && n < 3 && is_rgb == 0) ? 1 : z.s.N;
+            int n = ri.RequestedComponents != 0 ? ri.RequestedComponents : z.ri.Components >= 3 ? 3 : 1;
+            int is_rgb = z.ri.Components == 3 && (z.rgb == 3 || (z.app14_color_transform == 0 && z.jfif == 0)) ? 1 : 0;
+            int decode_n = (z.ri.Components == 3 && n < 3 && is_rgb == 0) ? 1 : z.ri.Components;
 
             int k;
             uint i;
@@ -2112,7 +2112,7 @@ namespace StbSharp
             for (k = 0; (k) < (decode_n); ++k)
             {
                 ref ResampleData r = ref res_comp[k];
-                z.img_comp[k].linebuf = (byte*)(CRuntime.MAlloc(z.s.W + 3));
+                z.img_comp[k].linebuf = (byte*)(CRuntime.MAlloc(z.ri.Width + 3));
                 if (z.img_comp[k].linebuf == null)
                 {
                     stbi__cleanup_jpeg(z);
@@ -2122,7 +2122,7 @@ namespace StbSharp
                 r.hs = (int)(z.img_h_max / z.img_comp[k].h);
                 r.vs = (int)(z.img_v_max / z.img_comp[k].v);
                 r.ystep = (int)(r.vs >> 1);
-                r.w_lores = (int)((z.s.W + r.hs - 1) / r.hs);
+                r.w_lores = (int)((z.ri.Width + r.hs - 1) / r.hs);
                 r.ypos = 0;
                 r.line0 = r.line1 = z.img_comp[k].data;
 
@@ -2138,16 +2138,16 @@ namespace StbSharp
                     r.Resample = stbi__resample_row_generic;
             }
 
-            output = (byte*)(stbi__malloc_mad3((int)(n), (int)(z.s.W), (int)(z.s.H), 1));
+            output = (byte*)(stbi__malloc_mad3((int)(n), (int)(z.ri.Width), (int)(z.ri.Height), 1));
             if (output == null)
             {
                 stbi__cleanup_jpeg(z);
                 return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
             }
 
-            for (j = (uint)(0); (j) < (z.s.H); ++j)
+            for (j = (uint)(0); (j) < (z.ri.Height); ++j)
             {
-                byte* _out_ = output + n * z.s.W * j;
+                byte* _out_ = output + n * z.ri.Width * j;
                 for (k = 0; (k) < (decode_n); ++k)
                 {
                     ref ResampleData r = ref res_comp[k];
@@ -2172,11 +2172,11 @@ namespace StbSharp
                 if ((n) >= (3))
                 {
                     byte* y = coutput[0];
-                    if ((z.s.N) == (3))
+                    if ((z.ri.Components) == (3))
                     {
                         if ((is_rgb) != 0)
                         {
-                            for (i = (uint)(0); (i) < (z.s.W); ++i)
+                            for (i = (uint)(0); (i) < (z.ri.Width); ++i)
                             {
                                 _out_[0] = y[i];
                                 _out_[1] = coutput[1][i];
@@ -2187,14 +2187,14 @@ namespace StbSharp
                         }
                         else
                         {
-                            z.YCbCr_to_RGB_kernel(_out_, y, coutput[1], coutput[2], (int)(z.s.W), (int)(n));
+                            z.YCbCr_to_RGB_kernel(_out_, y, coutput[1], coutput[2], (int)(z.ri.Width), (int)(n));
                         }
                     }
-                    else if ((z.s.N) == (4))
+                    else if ((z.ri.Components) == (4))
                     {
                         if ((z.app14_color_transform) == 0)
                         {
-                            for (i = (uint)(0); (i) < (z.s.W); ++i)
+                            for (i = (uint)(0); (i) < (z.ri.Width); ++i)
                             {
                                 byte m = (byte)(coutput[3][i]);
                                 _out_[0] = stbi__blinn_8x8(coutput[0][i], m);
@@ -2206,8 +2206,8 @@ namespace StbSharp
                         }
                         else if ((z.app14_color_transform) == 2)
                         {
-                            z.YCbCr_to_RGB_kernel(_out_, y, coutput[1], coutput[2], (int)(z.s.W), (int)(n));
-                            for (i = (uint)(0); (i) < (z.s.W); ++i)
+                            z.YCbCr_to_RGB_kernel(_out_, y, coutput[1], coutput[2], (int)(z.ri.Width), (int)(n));
+                            for (i = (uint)(0); (i) < (z.ri.Width); ++i)
                             {
                                 byte m = (byte)(coutput[3][i]);
                                 _out_[0] = stbi__blinn_8x8((byte)(255 - _out_[0]), m);
@@ -2218,11 +2218,11 @@ namespace StbSharp
                         }
                         else
                         {
-                            z.YCbCr_to_RGB_kernel(_out_, y, coutput[1], coutput[2], (int)(z.s.W), (int)(n));
+                            z.YCbCr_to_RGB_kernel(_out_, y, coutput[1], coutput[2], (int)(z.ri.Width), (int)(n));
                         }
                     }
                     else
-                        for (i = (uint)(0); (i) < (z.s.W); ++i)
+                        for (i = (uint)(0); (i) < (z.ri.Width); ++i)
                         {
                             _out_[0] = _out_[1] = _out_[2] = y[i];
                             _out_[3] = 255;
@@ -2236,12 +2236,12 @@ namespace StbSharp
                     {
                         if ((n) == (1))
                         {
-                            for (; (i) < (z.s.W); ++i)
+                            for (; (i) < (z.ri.Width); ++i)
                                 *_out_++ = stbi__compute_y(coutput[0][i], coutput[1][i], coutput[2][i]);
                         }
                         else
                         {
-                            for (; (i) < (z.s.W); ++i)
+                            for (; (i) < (z.ri.Width); ++i)
                             {
                                 _out_[0] = stbi__compute_y(coutput[0][i], coutput[1][i], coutput[2][i]);
                                 _out_[1] = 255;
@@ -2249,9 +2249,9 @@ namespace StbSharp
                             }
                         }
                     }
-                    else if (((z.s.N) == (4)) && ((z.app14_color_transform) == 0))
+                    else if (((z.ri.Components) == (4)) && ((z.app14_color_transform) == 0))
                     {
-                        for (; (i) < (z.s.W); ++i)
+                        for (; (i) < (z.ri.Width); ++i)
                         {
                             byte m = coutput[3][i];
                             byte r = stbi__blinn_8x8(coutput[0][i], m);
@@ -2262,9 +2262,9 @@ namespace StbSharp
                             _out_ += n;
                         }
                     }
-                    else if (((z.s.N) == (4)) && ((z.app14_color_transform) == 2))
+                    else if (((z.ri.Components) == (4)) && ((z.app14_color_transform) == 2))
                     {
-                        for (; (i) < (z.s.W); ++i)
+                        for (; (i) < (z.ri.Width); ++i)
                         {
                             _out_[0] = stbi__blinn_8x8((byte)(255 - coutput[0][i]), coutput[3][i]);
                             _out_[1] = 255;
@@ -2277,12 +2277,12 @@ namespace StbSharp
                         i = 0;
                         if ((n) == (1))
                         {
-                            for (; (i) < (z.s.W); ++i)
+                            for (; (i) < (z.ri.Width); ++i)
                                 _out_[i] = (byte)(y[i]);
                         }
                         else
                         {
-                            for (; (i) < (z.s.W); ++i)
+                            for (; (i) < (z.ri.Width); ++i)
                             {
                                 *_out_++ = (byte)(y[i]);
                                 *_out_++ = 255;
@@ -2294,9 +2294,9 @@ namespace StbSharp
 
             stbi__cleanup_jpeg(z);
 
-            ri.Width = (int)z.s.W;
-            ri.Height = (int)z.s.H;
-            ri.Components = z.s.N >= 3 ? 3 : 1;
+            ri.Width = (int)z.ri.Width;
+            ri.Height = (int)z.ri.Height;
+            ri.Components = z.ri.Components >= 3 ? 3 : 1;
 
             return output;
         }
@@ -2327,9 +2327,9 @@ namespace StbSharp
                 return 0;
             }
 
-            x = (int)(j.s.W);
-            y = (int)(j.s.H);
-            comp = (int)((j.s.N) >= (3) ? 3 : 1);
+            x = (int)(j.ri.Width);
+            y = (int)(j.ri.Height);
+            comp = (int)((j.ri.Components) >= (3) ? 3 : 1);
             return 1;
         }
 
@@ -2369,8 +2369,8 @@ namespace StbSharp
         }
 
         public static int stbi__create_png_image_raw(
-            ref PngContext a, byte* raw, uint raw_len, int out_n, uint x, uint y,
-            int depth, int color)
+            ref PngContext a, byte* raw, uint raw_len, int out_n,
+            int x, int y, int comp, int depth, int color)
         {
             int bytes = (int)((depth) == (16) ? 2 : 1);
             uint i;
@@ -2379,7 +2379,7 @@ namespace StbSharp
             uint img_len;
             uint img_width_bytes;
             int k;
-            int img_n = (int)(a.s.N);
+            int img_n = (int)(comp);
             int out_bytes = (int)(out_n * bytes);
             int filter_bytes = (int)(img_n * bytes);
             int width = (int)(x);
@@ -2691,7 +2691,7 @@ namespace StbSharp
 
         public static int stbi__create_png_image(
             ref PngContext a, byte* image_data, uint image_data_len, int out_n,
-            int depth, int color, int interlaced)
+            int width, int height, int comp, int depth, int color, int interlaced)
         {
             int bytes = (int)((depth) == (16) ? 2 : 1);
             int out_bytes = (int)(out_n * bytes);
@@ -2699,9 +2699,9 @@ namespace StbSharp
             if (interlaced == 0)
                 return (int)(stbi__create_png_image_raw(
                     ref a, image_data, (uint)(image_data_len), (int)(out_n),
-                    (uint)(a.s.W), (uint)(a.s.H), (int)(depth), (int)(color)));
+                    (width), (height), comp, (int)(depth), (int)(color)));
 
-            byte* final = (byte*)(stbi__malloc_mad3((int)(a.s.W), (int)(a.s.H), (int)(out_bytes), 0));
+            byte* final = (byte*)(stbi__malloc_mad3((int)(width), (int)(height), (int)(out_bytes), 0));
 
             int* xorig = stackalloc int[7];
             xorig[0] = 0;
@@ -2743,14 +2743,14 @@ namespace StbSharp
             {
                 int i;
                 int j;
-                int x = (int)((a.s.W - xorig[p] + xspc[p] - 1) / xspc[p]);
-                int y = (int)((a.s.H - yorig[p] + yspc[p] - 1) / yspc[p]);
+                int x = (int)((width - xorig[p] + xspc[p] - 1) / xspc[p]);
+                int y = (int)((height - yorig[p] + yspc[p] - 1) / yspc[p]);
                 if (((x) != 0) && ((y) != 0))
                 {
-                    uint img_len = (uint)(((((a.s.N * x * depth) + 7) >> 3) + 1) * y);
+                    uint img_len = (uint)(((((comp * x * depth) + 7) >> 3) + 1) * y);
                     if (stbi__create_png_image_raw(
                         ref a, image_data, (uint)(image_data_len), (int)(out_n),
-                        (uint)(x), (uint)(y), (int)(depth), (int)(color)) == 0)
+                        x, y, comp, (int)(depth), (int)(color)) == 0)
                     {
                         CRuntime.Free(final);
                         return 0;
@@ -2763,7 +2763,7 @@ namespace StbSharp
                             int out_y = (int)(j * yspc[p] + yorig[p]);
                             int out_x = (int)(i * xspc[p] + xorig[p]);
                             CRuntime.MemCopy(
-                                final + out_y * a.s.W * out_bytes + out_x * out_bytes,
+                                final + out_y * width * out_bytes + out_x * out_bytes,
                                 a._out_ + (j * x + i) * out_bytes,
                                 out_bytes);
                         }
@@ -2779,11 +2779,11 @@ namespace StbSharp
             return 1;
         }
 
-        public static int stbi__compute_transparency(ref PngContext z, byte* tc, int out_n)
+        public static int stbi__compute_transparency(
+            ref PngContext z, int width, int height, byte* tc, int out_n)
         {
-            ReadContext s = z.s;
             uint i;
-            uint pixel_count = (uint)(s.W * s.H);
+            uint pixel_count = (uint)(width * height);
             byte* p = z._out_;
             if ((out_n) == 2)
             {
@@ -2806,11 +2806,11 @@ namespace StbSharp
             return 1;
         }
 
-        public static int stbi__compute_transparency16(ref PngContext z, ushort* tc, int out_n)
+        public static int stbi__compute_transparency16(
+            ref PngContext z, int width, int height, ushort* tc, int out_n)
         {
-            ReadContext s = z.s;
             uint i;
-            uint pixel_count = (uint)(s.W * s.H);
+            uint pixel_count = (uint)(width * height);
             ushort* p = (ushort*)(z._out_);
             if ((out_n) == 2)
             {
@@ -2833,10 +2833,11 @@ namespace StbSharp
             return 1;
         }
 
-        public static int stbi__expand_png_palette(ref PngContext a, byte* palette, int len, int pal_img_n)
+        public static int stbi__expand_png_palette(
+            ref PngContext a, int width, int height, byte* palette, int len, int pal_img_n)
         {
             uint i;
-            uint pixel_count = (uint)(a.s.W * a.s.H);
+            uint pixel_count = (uint)(width * height);
             byte* p;
             byte* temp_out;
             byte* orig = a._out_;
@@ -2873,13 +2874,13 @@ namespace StbSharp
             return 1;
         }
 
-        public static void stbi__de_iphone(ref PngContext z)
+        public static void stbi__de_iphone(ref PngContext z, ref ReadState ri)
         {
             ReadContext s = z.s;
             uint i;
-            uint pixel_count = (uint)(s.W * s.H);
+            uint pixel_count = (uint)(ri.Width * ri.Height);
             byte* p = z._out_;
-            if ((s.OutN) == (3))
+            if ((ri.RequestedComponents) == (3))
             {
                 for (i = (uint)(0); (i) < (pixel_count); ++i)
                 {
@@ -2927,7 +2928,7 @@ namespace StbSharp
         }
 
         public static int stbi__parse_png_file(
-            ref PngContext z, ref ReadState readState, int scan, int req_comp)
+            ref PngContext z, ref ReadState ri, int scan, int req_comp)
         {
             ReadContext s = z.s;
             z.idata = null;
@@ -2946,7 +2947,7 @@ namespace StbSharp
             uint ioff = (uint)(0);
             uint idata_limit = (uint)(0);
             uint i;
-            uint pal_len = (uint)(0);
+            int pal_len = 0;
             int first = 1;
             int k;
             int interlace = 0;
@@ -2974,19 +2975,22 @@ namespace StbSharp
                         if (c.Length != 13)
                             return (int)(stbi__err("bad IHDR length"));
 
-                        s.W = (uint)(stbi__get32be(s));
-                        if ((s.W) > (1 << 24))
+                        ri.Width = (int)(stbi__get32be(s));
+                        if ((ri.Width) > (1 << 24))
                             return (int)(stbi__err("too large"));
 
-                        s.H = (uint)(stbi__get32be(s));
-                        if ((s.H) > (1 << 24))
+                        ri.Height = (int)(stbi__get32be(s));
+                        if ((ri.Height) > (1 << 24))
                             return (int)(stbi__err("too large"));
 
-                        if ((s.W == 0) || (s.H == 0))
+                        if ((ri.Width == 0) || (ri.Height == 0))
                             return (int)(stbi__err("0-pixel image"));
 
                         z.depth = (int)(stbi__get8(s));
-                        if (((((z.depth != 1) && (z.depth != 2)) && (z.depth != 4)) && (z.depth != 8)) &&
+                        if (((((z.depth != 1) &&
+                            (z.depth != 2)) &&
+                            (z.depth != 4)) &&
+                            (z.depth != 8)) &&
                             (z.depth != 16))
                             return (int)(stbi__err("1/2/4/8/16-bit only"));
 
@@ -3015,16 +3019,16 @@ namespace StbSharp
 
                         if (pal_img_n == 0)
                         {
-                            s.N = (int)(((color & 2) != 0 ? 3 : 1) + ((color & 4) != 0 ? 1 : 0));
-                            if (((1 << 30) / s.W / s.N) < (s.H))
+                            ri.Components = (int)(((color & 2) != 0 ? 3 : 1) + ((color & 4) != 0 ? 1 : 0));
+                            if (((1 << 30) / ri.Width / ri.Components) < (ri.Height))
                                 return (int)(stbi__err("too large"));
                             if ((scan) == (STBI__SCAN_header))
                                 return 1;
                         }
                         else
                         {
-                            s.N = 1;
-                            if (((1 << 30) / s.W / 4) < (s.H))
+                            ri.Components = 1;
+                            if (((1 << 30) / ri.Width / 4) < (ri.Height))
                                 return (int)(stbi__err("too large"));
                         }
                         break;
@@ -3037,7 +3041,7 @@ namespace StbSharp
                         if ((c.Length) > (256 * 3))
                             return (int)(stbi__err("invalid PLTE"));
 
-                        pal_len = (uint)(c.Length / 3);
+                        pal_len = (int)(c.Length / 3);
                         if (pal_len * 3 != c.Length)
                             return (int)(stbi__err("invalid PLTE"));
 
@@ -3062,7 +3066,7 @@ namespace StbSharp
                         {
                             if ((scan) == (STBI__SCAN_header))
                             {
-                                s.N = (int)(4);
+                                ri.Components = (int)(4);
                                 return 1;
                             }
 
@@ -3076,20 +3080,20 @@ namespace StbSharp
                         }
                         else
                         {
-                            if ((s.N & 1) == 0)
+                            if ((ri.Components & 1) == 0)
                                 return (int)(stbi__err("tRNS with alpha"));
-                            if (c.Length != (uint)(s.N) * 2)
+                            if (c.Length != (uint)(ri.Components) * 2)
                                 return (int)(stbi__err("bad tRNS len"));
                             has_transparency = (byte)(1);
 
                             if ((z.depth) == (16))
                             {
-                                for (k = 0; (k) < (s.N); ++k)
+                                for (k = 0; (k) < (ri.Components); ++k)
                                     tc16[k] = ((ushort)(stbi__get16be(s)));
                             }
                             else
                             {
-                                for (k = 0; (k) < (s.N); ++k)
+                                for (k = 0; (k) < (ri.Components); ++k)
                                     tc[k] = (byte)((byte)(stbi__get16be(s) & 255) * stbi__depth_scale_table[z.depth]);
                             }
                         }
@@ -3104,7 +3108,7 @@ namespace StbSharp
                             return (int)(stbi__err("no PLTE"));
                         if ((scan) == (STBI__SCAN_header))
                         {
-                            s.N = (int)(pal_img_n);
+                            ri.Components = (int)(pal_img_n);
                             return 1;
                         }
 
@@ -3141,16 +3145,16 @@ namespace StbSharp
                         if ((z.idata) == null)
                             return (int)(stbi__err("no IDAT"));
 
-                        uint bpl = (uint)((s.W * z.depth + 7) / 8);
-                        int raw_len = (int)(bpl * s.H * s.N + s.H);
+                        uint bpl = (uint)((ri.Width * z.depth + 7) / 8);
+                        int raw_len = (int)(bpl * ri.Height * ri.Components + ri.Height);
                         bool parseHeader = !is_iphone;
 
-                        IMemoryResult decompressed;
+                        IMemoryResult deflated;
                         try
                         {
                             var data = new ReadOnlySpan<byte>(z.idata, (int)ioff);
-                            decompressed = zlib_deflate_decompress(data, raw_len, parseHeader);
-                            if (decompressed == null)
+                            deflated = zlib_deflate_decompress(data, raw_len, parseHeader);
+                            if (deflated == null)
                                 return 0;
                         }
                         finally
@@ -3161,48 +3165,50 @@ namespace StbSharp
 
                         try
                         {
-                            if (req_comp == s.N + 1 && req_comp != 3 && pal_img_n == 0 || has_transparency != 0)
-                                s.OutN = (int)(s.N + 1);
+                            if (req_comp == ri.Components + 1 &&
+                                req_comp != 3 &&
+                                pal_img_n == 0 ||
+                                has_transparency != 0)
+                                ri.RequestedComponents = (int)(ri.Components + 1);
                             else
-                                s.OutN = (int)(s.N);
-
-
+                                ri.RequestedComponents = (int)(ri.Components);
 
                             if (stbi__create_png_image(
-                                ref z, (byte*)decompressed.Pointer, (uint)decompressed.Length, 
-                                s.OutN, z.depth, color, interlace) == 0)
+                                ref z, (byte*)deflated.Pointer, (uint)deflated.Length, ri.RequestedComponents,
+                                ri.Width, ri.Height, ri.Components, z.depth, color, interlace) == 0)
                                 return 0;
 
                             if ((has_transparency) != 0)
                             {
                                 if ((z.depth) == (16))
-                                    if (stbi__compute_transparency16(ref z, tc16, (int)(s.OutN)) == 0)
+                                    if (stbi__compute_transparency16(ref z, ri.Width, ri.Height, tc16, (int)(ri.RequestedComponents)) == 0)
                                         return 0;
-                                    else if (stbi__compute_transparency(ref z, tc, (int)(s.OutN)) == 0)
+                                    else if (stbi__compute_transparency(ref z, ri.Width, ri.Height, tc, (int)(ri.RequestedComponents)) == 0)
                                         return 0;
                             }
 
-                            if (is_iphone && stbi__de_iphone_flag != 0 && s.OutN > 2)
-                                stbi__de_iphone(ref z);
+                            if (is_iphone && stbi__de_iphone_flag != 0 && ri.RequestedComponents > 2)
+                                stbi__de_iphone(ref z, ref ri);
 
                             if ((pal_img_n) != 0)
                             {
-                                s.N = (int)(pal_img_n);
-                                s.OutN = (int)(pal_img_n);
+                                ri.Components = (int)(pal_img_n);
+                                ri.RequestedComponents = (int)(pal_img_n);
                                 if ((req_comp) >= (3))
-                                    s.OutN = (int)(req_comp);
+                                    ri.RequestedComponents = (int)(req_comp);
 
-                                if (stbi__expand_png_palette(ref z, palette, (int)(pal_len), (int)(s.OutN)) == 0)
+                                if (stbi__expand_png_palette(
+                                    ref z, ri.Width, ri.Height, palette, pal_len, (ri.RequestedComponents)) == 0)
                                     return 0;
                             }
                             else if ((has_transparency) != 0)
-                                s.N++;
+                                ri.Components++;
 
                             return 1;
                         }
                         finally
                         {
-                            decompressed.Dispose();
+                            deflated.Dispose();
                         }
                     }
 
@@ -3270,28 +3276,24 @@ namespace StbSharp
             if (stbi__parse_png_file(ref p, ref ri, STBI__SCAN_load, ri.RequestedComponents) != 0)
             {
                 if ((p.depth) < (8))
-                    ri.BitsPerChannel = (int)(8);
+                    ri.BitsPerComponent = (int)(8);
                 else
-                    ri.BitsPerChannel = (int)(p.depth);
+                    ri.BitsPerComponent = (int)(p.depth);
 
                 result = p._out_;
                 p._out_ = null;
 
-                if (((ri.RequestedComponents) != 0) && (ri.RequestedComponents != p.s.OutN))
+                if (((ri.RequestedComponents) != 0) && (ri.RequestedComponents != ri.Components))
                 {
-                    if (ri.BitsPerChannel == 8)
-                        result = stbi__convert_format((byte*)result, p.s.OutN, ri.RequestedComponents, p.s.W, p.s.H);
+                    if (ri.BitsPerComponent == 8)
+                        result = stbi__convert_format((byte*)result, ri.Components, ri.RequestedComponents, ri.Width, ri.Height);
                     else
-                        result = stbi__convert_format16((ushort*)result, p.s.OutN, ri.RequestedComponents, p.s.W, p.s.H);
-                    
-                    p.s.OutN = (int)(ri.RequestedComponents);
+                        result = stbi__convert_format16((ushort*)result, ri.Components, ri.RequestedComponents, ri.Width, ri.Height);
+
+                    ri.Components = (int)(ri.RequestedComponents);
                     if ((result) == null)
                         return result;
                 }
-
-                ri.Width = (int)(p.s.W);
-                ri.Height = (int)(p.s.H);
-                ri.Components = (int)(p.s.N);
             }
 
             CRuntime.Free(p._out_);
@@ -3314,29 +3316,21 @@ namespace StbSharp
             return (int)(r);
         }
 
-        public static bool stbi__png_info_raw(
-            ref PngContext p, ref ReadState ri, out int x, out int y, out int comp)
+        public static bool stbi__png_info_raw(ref PngContext p, out ReadState ri)
         {
+            ri = new ReadState();
             if (stbi__parse_png_file(ref p, ref ri, (int)(STBI__SCAN_header), 0) == 0)
             {
                 stbi__rewind(p.s);
-                x = 0;
-                y = 0;
-                comp = 0;
                 return false;
             }
-
-            x = (int)(p.s.W);
-            y = (int)(p.s.H);
-            comp = (int)(p.s.N);
             return true;
         }
 
-        public static bool stbi__png_info(ReadContext s, out int x, out int y, out int comp)
+        public static bool stbi__png_info(ReadContext s, out ReadState ri)
         {
             var p = new PngContext(s);
-            var ri = new ReadState();
-            return stbi__png_info_raw(ref p, ref ri, out x, out y, out comp);
+            return stbi__png_info_raw(ref p, out ri);
         }
 
         public static int stbi__bmp_test_raw(ReadContext s)
@@ -3430,35 +3424,40 @@ namespace StbSharp
             return (int)(result);
         }
 
-        public static void* stbi__bmp_parse_header(ReadContext s, BmpInfo* info)
+        public static void* stbi__bmp_parse_header(ReadContext s, ref BmpInfo info, ref ReadState ri)
         {
-            int hsz;
             if ((stbi__get8(s) != 'B') || (stbi__get8(s) != 'M'))
                 return ((byte*)((ulong)((stbi__err("not BMP")) != 0 ? ((byte*)null) : null)));
+
             stbi__get32le(s);
             stbi__get16le(s);
             stbi__get16le(s);
-            info->offset = (int)(stbi__get32le(s));
-            info->hsz = (int)(hsz = (int)(stbi__get32le(s)));
-            info->mr = (uint)(info->mg = (uint)(info->mb = (uint)(info->ma = (uint)(0))));
+
+            int hsz;
+            info.offset = (int)(stbi__get32le(s));
+            info.hsz = (int)(hsz = (int)(stbi__get32le(s)));
+            info.mr = (uint)(info.mg = (uint)(info.mb = (uint)(info.ma = (uint)(0))));
             if (((((hsz != 12) && (hsz != 40)) && (hsz != 56)) && (hsz != 108)) && (hsz != 124))
                 return ((byte*)((ulong)((stbi__err("unknown BMP")) != 0 ? ((byte*)null) : null)));
+
             if ((hsz) == (12))
             {
-                s.W = (uint)(stbi__get16le(s));
-                s.H = (uint)(stbi__get16le(s));
+                ri.Width = (stbi__get16le(s));
+                ri.Height = (stbi__get16le(s));
             }
             else
             {
-                s.W = (uint)(stbi__get32le(s));
-                s.H = (uint)(stbi__get32le(s));
+                ri.Width = (int)(stbi__get32le(s));
+                ri.Height = (int)(stbi__get32le(s));
             }
+            ri.Height = (CRuntime.FastAbs(ri.Height));
 
             if (stbi__get16le(s) != 1)
                 return ((byte*)((ulong)((stbi__err("bad BMP")) != 0 ? ((byte*)null) : null)));
-            info->bpp = (int)(stbi__get16le(s));
-            if ((info->bpp) == (1))
+            info.bpp = (int)(stbi__get16le(s));
+            if ((info.bpp) == (1))
                 return ((byte*)((ulong)((stbi__err("monochrome")) != 0 ? ((byte*)null) : null)));
+
             if (hsz != 12)
             {
                 int compress = (int)(stbi__get32le(s));
@@ -3479,31 +3478,31 @@ namespace StbSharp
                         stbi__get32le(s);
                     }
 
-                    if (((info->bpp) == (16)) || ((info->bpp) == (32)))
+                    if (((info.bpp) == (16)) || ((info.bpp) == (32)))
                     {
                         if ((compress) == 0)
                         {
-                            if ((info->bpp) == (32))
+                            if ((info.bpp) == (32))
                             {
-                                info->mr = (uint)(0xffu << 16);
-                                info->mg = (uint)(0xffu << 8);
-                                info->mb = (uint)(0xffu << 0);
-                                info->ma = (uint)(0xffu << 24);
-                                info->all_a = (uint)(0);
+                                info.mr = (uint)(0xffu << 16);
+                                info.mg = (uint)(0xffu << 8);
+                                info.mb = (uint)(0xffu << 0);
+                                info.ma = (uint)(0xffu << 24);
+                                info.all_a = (uint)(0);
                             }
                             else
                             {
-                                info->mr = (uint)(31u << 10);
-                                info->mg = (uint)(31u << 5);
-                                info->mb = (uint)(31u << 0);
+                                info.mr = (uint)(31u << 10);
+                                info.mg = (uint)(31u << 5);
+                                info.mb = (uint)(31u << 0);
                             }
                         }
                         else if ((compress) == (3))
                         {
-                            info->mr = (uint)(stbi__get32le(s));
-                            info->mg = (uint)(stbi__get32le(s));
-                            info->mb = (uint)(stbi__get32le(s));
-                            if (((info->mr) == (info->mg)) && ((info->mg) == (info->mb)))
+                            info.mr = (uint)(stbi__get32le(s));
+                            info.mg = (uint)(stbi__get32le(s));
+                            info.mb = (uint)(stbi__get32le(s));
+                            if (((info.mr) == (info.mg)) && ((info.mg) == (info.mb)))
                             {
                                 return ((byte*)((ulong)((stbi__err("bad BMP")) != 0 ? ((byte*)null) : null)));
                             }
@@ -3518,10 +3517,10 @@ namespace StbSharp
                     if ((hsz != 108) && (hsz != 124))
                         return ((byte*)((ulong)((stbi__err("bad BMP")) != 0 ? ((byte*)null) : null)));
 
-                    info->mr = (uint)(stbi__get32le(s));
-                    info->mg = (uint)(stbi__get32le(s));
-                    info->mb = (uint)(stbi__get32le(s));
-                    info->ma = (uint)(stbi__get32le(s));
+                    info.mr = (uint)(stbi__get32le(s));
+                    info.mg = (uint)(stbi__get32le(s));
+                    info.mb = (uint)(stbi__get32le(s));
+                    info.ma = (uint)(stbi__get32le(s));
                     stbi__get32le(s);
                     for (i = 0; (i) < (12); ++i)
                         stbi__get32le(s);
@@ -3536,6 +3535,8 @@ namespace StbSharp
                 }
             }
 
+            ri.Components = (int)((info.ma) != 0 ? 4 : 3);
+            ri.BitsPerComponent = info.bpp / ri.Components;
             return (void*)(1);
         }
 
@@ -3543,10 +3544,9 @@ namespace StbSharp
         {
             var info = new BmpInfo();
             info.all_a = (uint)(255);
-            if ((stbi__bmp_parse_header(s, &info)) == null)
+            if ((stbi__bmp_parse_header(s, ref info, ref ri)) == null)
                 return null;
-            
-            s.H = (uint)(CRuntime.FastAbs((int)(s.H)));
+
             uint mr = (uint)(info.mr);
             uint mg = (uint)(info.mg);
             uint mb = (uint)(info.mb);
@@ -3557,21 +3557,20 @@ namespace StbSharp
             if ((info.hsz) == (12))
                 if ((info.bpp) < (24))
                     psize = (int)((info.offset - 14 - 24) / 3);
-            else
+                else
                 if ((info.bpp) < (16))
                     psize = (int)((info.offset - 14 - info.hsz) >> 2);
 
             int target;
-            s.N = (int)((ma) != 0 ? 4 : 3);
             if (((ri.RequestedComponents) != 0) && ((ri.RequestedComponents) >= (3)))
                 target = (int)(ri.RequestedComponents);
             else
-                target = (int)(s.N);
+                target = ri.Components;
 
-            if (stbi__mad3sizes_valid((int)(target), (int)(s.W), (int)(s.H), 0) == 0)
+            if (stbi__mad3sizes_valid((int)(target), (int)(ri.Width), (int)(ri.Height), 0) == 0)
                 return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : null)));
 
-            byte* _out_ = (byte*)(stbi__malloc_mad3((int)(target), (int)(s.W), (int)(s.H), 0));
+            byte* _out_ = (byte*)(stbi__malloc_mad3((int)(target), (int)(ri.Width), (int)(ri.Height), 0));
             if (_out_ == null)
                 return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
 
@@ -3601,9 +3600,9 @@ namespace StbSharp
 
                 stbi__skip(s, (int)(info.offset - 14 - info.hsz - psize * ((info.hsz) == (12) ? 3 : 4)));
                 if ((info.bpp) == (4))
-                    width = (int)((s.W + 1) >> 1);
+                    width = (int)((ri.Width + 1) >> 1);
                 else if ((info.bpp) == (8))
-                    width = (int)(s.W);
+                    width = (int)(ri.Width);
                 else
                 {
                     CRuntime.Free(_out_);
@@ -3611,9 +3610,9 @@ namespace StbSharp
                 }
 
                 pad = (int)((-width) & 3);
-                for (j = 0; (j) < ((int)(s.H)); ++j)
+                for (j = 0; (j) < ((int)(ri.Height)); ++j)
                 {
-                    for (i = 0; (i) < ((int)(s.W)); i += (int)2)
+                    for (i = 0; (i) < ((int)(ri.Width)); i += (int)2)
                     {
                         int v = (int)(stbi__get8(s));
                         int v2 = 0;
@@ -3628,7 +3627,7 @@ namespace StbSharp
                         _out_[z++] = (byte)(pal[v * 4 + 2]);
                         if ((target) == (4))
                             _out_[z++] = 255;
-                        if ((i + 1) == ((int)(s.W)))
+                        if ((i + 1) == ((int)(ri.Width)))
                             break;
                         v = (int)(((info.bpp) == (8)) ? stbi__get8(s) : v2);
                         _out_[z++] = (byte)(pal[v * 4 + 0]);
@@ -3645,9 +3644,9 @@ namespace StbSharp
             {
                 stbi__skip(s, (int)(info.offset - 14 - info.hsz));
                 if ((info.bpp) == (24))
-                    width = (int)(3 * s.W);
+                    width = (int)(3 * ri.Width);
                 else if ((info.bpp) == (16))
-                    width = (int)(2 * s.W);
+                    width = (int)(2 * ri.Width);
                 else
                     width = 0;
                 pad = (int)((-width) & 3);
@@ -3684,9 +3683,9 @@ namespace StbSharp
                 if ((easy) != 0)
                 {
                     byte a;
-                    for (; j < s.H; ++j)
+                    for (; j < ri.Height; ++j)
                     {
-                        for (i = 0; (i) < s.W; ++i)
+                        for (i = 0; (i) < ri.Width; ++i)
                         {
                             _out_[z++] = stbi__get8(s);
                             _out_[z++] = stbi__get8(s);
@@ -3704,9 +3703,9 @@ namespace StbSharp
                 {
                     uint v;
                     int a;
-                    for (; j < s.H; ++j)
+                    for (; j < ri.Height; ++j)
                     {
-                        for (i = 0; (i) < s.W; ++i)
+                        for (i = 0; (i) < ri.Width; ++i)
                         {
                             v = (uint)(info.bpp == 16 ? (uint)stbi__get16le(s) : stbi__get32le(s));
                             _out_[z++] = (byte)((stbi__shiftsigned((int)(v & mr), rshift, rcount)) & 255);
@@ -3724,18 +3723,18 @@ namespace StbSharp
             }
 
             if (((target) == (4)) && ((all_a) == 0))
-                for (i = (int)(4 * s.W * s.H - 1); (i) >= (0); i -= 4)
+                for (i = (int)(4 * ri.Width * ri.Height - 1); (i) >= (0); i -= 4)
                     _out_[i] = 255;
 
-            int flip_vertically = (int)(((int)(s.H)) > (0) ? 1 : 0);
+            int flip_vertically = (int)(((int)(ri.Height)) > (0) ? 1 : 0);
             if ((flip_vertically) != 0)
             {
                 byte t;
-                for (j = 0; (j) < ((int)(s.H) >> 1); ++j)
+                for (j = 0; (j) < ((int)(ri.Height) >> 1); ++j)
                 {
-                    byte* p1 = _out_ + j * s.W * target;
-                    byte* p2 = _out_ + (s.H - 1 - j) * s.W * target;
-                    for (i = 0; (i) < ((int)(s.W) * target); ++i)
+                    byte* p1 = _out_ + j * ri.Width * target;
+                    byte* p2 = _out_ + (ri.Height - 1 - j) * ri.Width * target;
+                    for (i = 0; (i) < ((int)(ri.Width) * target); ++i)
                     {
                         t = (byte)(p1[i]);
                         p1[i] = (byte)(p2[i]);
@@ -3746,14 +3745,10 @@ namespace StbSharp
 
             if (((ri.RequestedComponents) != 0) && (ri.RequestedComponents != target))
             {
-                _out_ = stbi__convert_format(_out_, target, ri.RequestedComponents, s.W, s.H);
+                _out_ = stbi__convert_format(_out_, target, ri.RequestedComponents, ri.Width, ri.Height);
                 if ((_out_) == null)
                     return _out_;
             }
-
-            ri.Width = (int)(s.W);
-            ri.Height = (int)(s.H);
-            ri.Components = (int)(s.N);
 
             return _out_;
         }
@@ -3819,7 +3814,7 @@ namespace StbSharp
             }
             else
             {
-                if (tga_image_type != 2 && tga_image_type != 3 && 
+                if (tga_image_type != 2 && tga_image_type != 3 &&
                     tga_image_type != 10 && tga_image_type != 11)
                 {
                     stbi__rewind(s);
@@ -3916,7 +3911,7 @@ namespace StbSharp
 
             res = 1;
 
-        ErrorEnd:
+            ErrorEnd:
             stbi__rewind(s);
             return (int)(res);
         }
@@ -4104,7 +4099,7 @@ namespace StbSharp
             }
 
             if (((ri.RequestedComponents) != 0) && (ri.RequestedComponents != tga_comp))
-                tga_data = stbi__convert_format(tga_data, tga_comp, ri.RequestedComponents, (uint)tga_width, (uint)tga_height);
+                tga_data = stbi__convert_format(tga_data, tga_comp, ri.RequestedComponents, tga_width, tga_height);
             //tga_palette_start = tga_palette_len = tga_palette_bits = tga_x_origin = tga_y_origin = 0; // why
             return tga_data;
         }
@@ -4190,11 +4185,11 @@ namespace StbSharp
             if (stbi__mad3sizes_valid((int)(4), (int)(w), (int)(h), 0) == 0)
                 return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : null)));
 
-            if (bitdepth == 16 && !ri.BitsPerChannel.HasValue)
-                ri.BitsPerChannel = bitdepth;
+            if (!ri.BitsPerComponent.HasValue)
+                ri.BitsPerComponent = bitdepth;
 
             byte* _out_;
-            if (compression == 0 && bitdepth == 16 && ri.BitsPerChannel == 16)
+            if (compression == 0 && bitdepth == 16 && ri.BitsPerComponent == 16)
                 _out_ = (byte*)(stbi__malloc_mad3(8, w, h, 0));
             else
                 _out_ = (byte*)(CRuntime.MAlloc(4 * w * h));
@@ -4232,7 +4227,7 @@ namespace StbSharp
                 {
                     if ((channel) >= (channelCount))
                     {
-                        if (((bitdepth) == (16)) && ((ri.BitsPerChannel) == (16)))
+                        if (((bitdepth) == (16)) && ((ri.BitsPerComponent) == (16)))
                         {
                             ushort* q = ((ushort*)(_out_)) + channel;
                             ushort val = (ushort)((channel) == (3) ? 65535 : 0);
@@ -4249,7 +4244,7 @@ namespace StbSharp
                     }
                     else
                     {
-                        if ((ri.BitsPerChannel) == (16))
+                        if ((ri.BitsPerComponent) == (16))
                         {
                             ushort* q = ((ushort*)(_out_)) + channel;
                             for (i = 0; (i) < (pixelCount); i++, q += 4)
@@ -4275,7 +4270,7 @@ namespace StbSharp
 
             if ((channelCount) >= (4))
             {
-                if ((ri.BitsPerChannel) == (16))
+                if ((ri.BitsPerComponent) == (16))
                 {
                     for (i = 0; (i) < (w * h); ++i)
                     {
@@ -4311,11 +4306,11 @@ namespace StbSharp
 
             if (((ri.RequestedComponents) != 0) && (ri.RequestedComponents != 4))
             {
-                if (ri.BitsPerChannel == 16)
-                    _out_ = (byte*)(stbi__convert_format16((ushort*)_out_, 4, ri.RequestedComponents, (uint)w, (uint)h));
+                if (ri.BitsPerComponent == 16)
+                    _out_ = (byte*)(stbi__convert_format16((ushort*)_out_, 4, ri.RequestedComponents, w, h));
                 else
-                    _out_ = stbi__convert_format(_out_, 4, ri.RequestedComponents, (uint)w, (uint)h);
-                
+                    _out_ = stbi__convert_format(_out_, 4, ri.RequestedComponents, w, h);
+
                 if ((_out_) == null)
                     return null;
             }
@@ -4734,7 +4729,7 @@ namespace StbSharp
                                 CRuntime.MemCopy(_out_ + ((layers - 1) * stride), u, stride);
                                 if ((layers) >= 2)
                                     two_back = _out_ - 2 * stride;
-                                
+
                                 delays[layers - 1] = g.delay;
                             }
                         }
@@ -4745,7 +4740,7 @@ namespace StbSharp
                         CRuntime.Free(g.background);
 
                         if (ri.RequestedComponents != 0 && ri.RequestedComponents != 4)
-                            _out_ = stbi__convert_format(_out_, 4, ri.RequestedComponents, (uint)(layers * g.w), (uint)g.h);
+                            _out_ = stbi__convert_format(_out_, 4, ri.RequestedComponents, (layers * g.w), g.h);
 
                         return _out_;
                     }
@@ -4772,7 +4767,7 @@ namespace StbSharp
                     ri.Width = (int)(g.w);
                     ri.Height = (int)(g.h);
                     if (ri.RequestedComponents != 0 && ri.RequestedComponents != 4)
-                        u = stbi__convert_format(u, 4, ri.RequestedComponents, (uint)g.w, (uint)g.h);
+                        u = stbi__convert_format(u, 4, ri.RequestedComponents, g.w, g.h);
                 }
                 else if ((g._out_) != null)
                     CRuntime.Free(g._out_);
@@ -4811,18 +4806,16 @@ namespace StbSharp
             }
         }
 
-        public static bool stbi__bmp_info(ReadContext s, out int x, out int y, out int comp)
+        public static bool stbi__bmp_info(ReadContext s, out ReadState ri)
         {
-            void* p;
-            BmpInfo info = new BmpInfo();
+            var info = new BmpInfo();
             info.all_a = (uint)(255);
-            p = stbi__bmp_parse_header(s, &info);
+
+            ri = new ReadState();
+            void* p = stbi__bmp_parse_header(s, ref info, ref ri);
             stbi__rewind(s);
 
-            x = (int)(s.W);
-            y = (int)(s.H);
-            comp = (int)((info.ma) != 0 ? 4 : 3);
-            return (p) != null;
+            return p != null;
         }
 
         public static int stbi__psd_info(ReadContext s, int* x, int* y, int* comp)
