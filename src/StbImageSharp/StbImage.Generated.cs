@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace StbSharp
 {
@@ -208,9 +207,15 @@ namespace StbSharp
 
         public static void* stbi__malloc_mad3(int a, int b, int c, int add)
         {
+            int length;
+
             if (stbi__mad3sizes_valid((int)(a), (int)(b), (int)(c), (int)(add)) == 0)
+            {
+                length = 0;
                 return null;
-            return CRuntime.MAlloc(a * b * c + add);
+            }
+            length = a * b * c + add;
+            return CRuntime.MAlloc(length);
         }
 
         public static void* stbi__malloc_mad4(int a, int b, int c, int d, int add)
@@ -225,7 +230,7 @@ namespace StbSharp
             stbi__vertically_flip_on_load = (int)(flag_true_if_should_flip);
         }
 
-        public static void* stbi__load_main(
+        public static IMemoryResult stbi__load_main(
             ReadContext s, int req_comp, int? bitsPerComp, out ReadState ri)
         {
             ri = default;
@@ -245,7 +250,8 @@ namespace StbSharp
             if ((stbi__tga_test(s)) != 0)
                 return stbi__tga_load(s, ref ri);
 
-            return (byte*)((ulong)((stbi__err("unknown image type")) != 0 ? ((byte*)null) : null));
+            stbi__err("unknown image type");
+            return null;
         }
 
         public static byte* stbi__convert_16_to_8(ushort* orig, int w, int h, int channels)
@@ -264,21 +270,26 @@ namespace StbSharp
             return reduced;
         }
 
-        public static ushort* stbi__convert_8_to_16(byte* orig, int w, int h, int channels)
+        public static IMemoryResult stbi__convert_8_to_16(IMemoryResult orig, int w, int h, int channels)
         {
-            int i;
             int img_len = (int)(w * h * channels);
-            ushort* enlarged;
-            enlarged = (ushort*)(CRuntime.MAlloc(img_len * 2));
+            int enlarged_len = img_len * 2;
+            ushort* enlarged = (ushort*)(CRuntime.MAlloc(enlarged_len));
             if ((enlarged) == null)
-                return (ushort*)((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
-            for (i = 0; (i) < (img_len); ++i)
             {
-                enlarged[i] = ((ushort)((orig[i] << 8) + orig[i]));
+                stbi__err("outofmem");
+                return null;
             }
 
-            CRuntime.Free(orig);
-            return enlarged;
+            using (orig)
+            {
+                var origPtr = (byte*)orig.Pointer;
+
+                for (int i = 0; (i) < (img_len); ++i)
+                    enlarged[i] = ((ushort)((origPtr[i] << 8) + origPtr[i]));
+                
+                return new HGlobalMemoryResult(enlarged, enlarged_len);
+            }
         }
 
         public static void stbi__vertical_flip(void* image, int w, int h, int bytes_per_pixel)
@@ -331,10 +342,10 @@ namespace StbSharp
             return (byte*)(result);
         }
 
-        public static ushort* stbi__load_and_postprocess_16bit(
+        public static IMemoryResult stbi__load_and_postprocess_16bit(
             ReadContext s, out int x, out int y, out int comp, int req_comp)
         {
-            void* result = stbi__load_main(s, req_comp, 16, out ReadState ri);
+            var result = stbi__load_main(s, req_comp, 16, out ReadState ri);
             x = ri.Width;
             y = ri.Height;
             comp = ri.Components;
@@ -344,7 +355,7 @@ namespace StbSharp
 
             if (ri.BitsPerComponent != 16)
             {
-                result = stbi__convert_8_to_16((byte*)result, x, y, req_comp == 0 ? comp : req_comp);
+                result = stbi__convert_8_to_16(result, x, y, req_comp == 0 ? comp : req_comp);
                 ri.BitsPerComponent = (int)(16);
             }
 
@@ -354,7 +365,7 @@ namespace StbSharp
                 stbi__vertical_flip(result, (int)(x), (int)(y), (int)(channels * 2));
             }
 
-            return (ushort*)(result);
+            return result;
         }
 
         public static void stbi__refill_buffer(ReadContext s)
@@ -482,114 +493,120 @@ namespace StbSharp
             return (byte)(((r * 77) + (g * 150) + (29 * b)) >> 8);
         }
 
-        public static byte* stbi__convert_format(byte* data, int img_n, int req_comp, int x, int y)
+        public static IMemoryResult stbi__convert_format(
+            IMemoryResult data, int img_n, int req_comp, int width, int height)
         {
             if ((req_comp) == (img_n))
                 return data;
 
-            byte* good = (byte*)(stbi__malloc_mad3((int)(req_comp), (int)(x), (int)(y), 0));
+            int goodLength = req_comp * width * height;
+            byte* good = (byte*)(stbi__malloc_mad3((int)(req_comp), (int)(width), (int)(height), 0));
             if ((good) == null)
             {
-                CRuntime.Free(data);
-                return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
+                data.Dispose();
+                stbi__err("outofmem");
+                return null;
             }
 
-            int i;
-            int j;
-
-            for (j = 0; (j) < ((int)(y)); ++j)
+            using (data)
             {
-                byte* src = data + j * x * img_n;
-                byte* dest = good + j * x * req_comp;
-                switch (img_n * 8 + req_comp)
+                int i;
+                var dataPtr = (byte*)data.Pointer;
+
+                for (int j = 0; (j) < ((int)(height)); ++j)
                 {
-                    case ((1) * 8 + 2):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 1, dest += 2)
-                        {
-                            dest[0] = (byte)(src[0]);
-                            dest[1] = 255;
-                        }
-                        break;
+                    byte* src = dataPtr + j * width * img_n;
+                    byte* dest = good + j * width * req_comp;
 
-                    case ((1) * 8 + (3)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 1, dest += 3)
-                            dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
-                        break;
+                    switch (img_n * 8 + req_comp)
+                    {
+                        case ((1) * 8 + 2):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 2)
+                            {
+                                dest[0] = (byte)(src[0]);
+                                dest[1] = 255;
+                            }
+                            break;
 
-                    case ((1) * 8 + (4)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 1, dest += 4)
-                        {
-                            dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
-                            dest[3] = 255;
-                        }
-                        break;
+                        case ((1) * 8 + (3)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 3)
+                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
+                            break;
 
-                    case (2 * 8 + (1)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 2, dest += 1)
-                            dest[0] = (byte)(src[0]);
-                        break;
+                        case ((1) * 8 + (4)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 4)
+                            {
+                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
+                                dest[3] = 255;
+                            }
+                            break;
 
-                    case (2 * 8 + (3)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 2, dest += 3)
-                            dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
-                        break;
+                        case (2 * 8 + (1)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 1)
+                                dest[0] = (byte)(src[0]);
+                            break;
 
-                    case (2 * 8 + (4)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 2, dest += 4)
-                        {
-                            dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
-                            dest[3] = (byte)(src[1]);
-                        }
-                        break;
+                        case (2 * 8 + (3)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 3)
+                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
+                            break;
 
-                    case ((3) * 8 + (4)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 3, dest += 4)
-                        {
-                            dest[0] = (byte)(src[0]);
+                        case (2 * 8 + (4)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 4)
+                            {
+                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
+                                dest[3] = (byte)(src[1]);
+                            }
+                            break;
+
+                        case ((3) * 8 + (4)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 4)
+                            {
+                                dest[0] = (byte)(src[0]);
+                                dest[1] = (byte)(src[1]);
+                                dest[2] = (byte)(src[2]);
+                                dest[3] = 255;
+                            }
+                            break;
+
+                        case ((3) * 8 + (1)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 1)
+                                dest[0] = (byte)(stbi__compute_y((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                            break;
+
+                        case ((3) * 8 + 2):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 2)
+                            {
+                                dest[0] = (byte)(stbi__compute_y((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                                dest[1] = 255;
+                            }
+                            break;
+
+                        case ((4) * 8 + (1)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 1)
+                                dest[0] = (byte)(stbi__compute_y((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                            break;
+
+                        case ((4) * 8 + 2):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 2)
+                                dest[0] = (byte)(stbi__compute_y((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                            dest[1] = (byte)(src[3]);
+                            break;
+
+                        case ((4) * 8 + (3)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 3)
+                                dest[0] = (byte)(src[0]);
                             dest[1] = (byte)(src[1]);
                             dest[2] = (byte)(src[2]);
-                            dest[3] = 255;
-                        }
-                        break;
+                            break;
 
-                    case ((3) * 8 + (1)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 3, dest += 1)
-                            dest[0] = (byte)(stbi__compute_y((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                        break;
-
-                    case ((3) * 8 + 2):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 3, dest += 2)
-                        {
-                            dest[0] = (byte)(stbi__compute_y((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                            dest[1] = 255;
-                        }
-                        break;
-
-                    case ((4) * 8 + (1)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 4, dest += 1)
-                            dest[0] = (byte)(stbi__compute_y((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                        break;
-
-                    case ((4) * 8 + 2):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 4, dest += 2)
-                            dest[0] = (byte)(stbi__compute_y((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                        dest[1] = (byte)(src[3]);
-                        break;
-
-                    case ((4) * 8 + (3)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 4, dest += 3)
-                            dest[0] = (byte)(src[0]);
-                        dest[1] = (byte)(src[1]);
-                        dest[2] = (byte)(src[2]);
-                        break;
-
-                    default:
-                        return ((byte*)((ulong)((stbi__err("0")) != 0 ? ((byte*)null) : null)));
+                        default:
+                            stbi__err("0");
+                            return null;
+                    }
                 }
+                return new HGlobalMemoryResult(good, goodLength);
             }
-
-            CRuntime.Free(data);
-            return good;
         }
 
         public static ushort stbi__compute_y_16(int r, int g, int b)
@@ -597,115 +614,122 @@ namespace StbSharp
             return (ushort)(((r * 77) + (g * 150) + (29 * b)) >> 8);
         }
 
-        public static ushort* stbi__convert_format16(ushort* data, int img_n, int req_comp, int x, int y)
+        public static IMemoryResult stbi__convert_format16(
+            IMemoryResult data, int img_n, int req_comp, int width, int height)
         {
-            int i;
-            int j;
             if ((req_comp) == (img_n))
                 return data;
 
-            ushort* good = (ushort*)(CRuntime.MAlloc(req_comp * x * y * 2));
+            int goodLength = req_comp * width * height * 2;
+            ushort* good = (ushort*)(CRuntime.MAlloc(goodLength));
             if ((good) == null)
             {
-                CRuntime.Free(data);
-                return (ushort*)((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
+                data.Dispose();
+                stbi__err("outofmem");
+                return null;
             }
 
-            for (j = 0; (j) < ((int)(y)); ++j)
+            using (data)
             {
-                ushort* src = data + j * x * img_n;
-                ushort* dest = good + j * x * req_comp;
-                switch (((img_n) * 8 + (req_comp)))
+                int i;
+                var dataPtr = (ushort*)data.Pointer;
+
+                for (int j = 0; (j) < ((int)(height)); ++j)
                 {
-                    case ((1) * 8 + 2):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 1, dest += 2)
-                        {
-                            dest[0] = (ushort)(src[0]);
+                    ushort* src = dataPtr + j * width * img_n;
+                    ushort* dest = good + j * width * req_comp;
+
+                    switch (((img_n) * 8 + (req_comp)))
+                    {
+                        case ((1) * 8 + 2):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 2)
+                            {
+                                dest[0] = (ushort)(src[0]);
+                                dest[1] = (ushort)(0xffff);
+                            }
+                            break;
+
+                        case ((1) * 8 + (3)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 3)
+                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
+                            break;
+
+                        case ((1) * 8 + (4)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 4)
+                            {
+                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
+                                dest[3] = (ushort)(0xffff);
+                            }
+                            break;
+
+                        case (2 * 8 + (1)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 1)
+                                dest[0] = (ushort)(src[0]);
+                            break;
+
+                        case (2 * 8 + (3)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 3)
+                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
+                            break;
+
+                        case (2 * 8 + (4)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 4)
+                            {
+                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
+                                dest[3] = (ushort)(src[1]);
+                            }
+                            break;
+
+                        case ((3) * 8 + (4)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 4)
+                            {
+                                dest[0] = (ushort)(src[0]);
+                                dest[1] = (ushort)(src[1]);
+                                dest[2] = (ushort)(src[2]);
+                                dest[3] = (ushort)(0xffff);
+                            }
+                            break;
+
+                        case ((3) * 8 + (1)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 1)
+                                dest[0] = (ushort)(stbi__compute_y_16((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                            break;
+
+                        case ((3) * 8 + 2):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 2)
+                                dest[0] = (ushort)(stbi__compute_y_16((int)(src[0]), (int)(src[1]), (int)(src[2])));
                             dest[1] = (ushort)(0xffff);
-                        }
-                        break;
+                            break;
 
-                    case ((1) * 8 + (3)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 1, dest += 3)
-                            dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
-                        break;
+                        case ((4) * 8 + (1)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 1)
+                                dest[0] = (ushort)(stbi__compute_y_16((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                            break;
 
-                    case ((1) * 8 + (4)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 1, dest += 4)
-                        {
-                            dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
-                            dest[3] = (ushort)(0xffff);
-                        }
-                        break;
+                        case ((4) * 8 + 2):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 2)
+                            {
+                                dest[0] = (ushort)(stbi__compute_y_16((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                                dest[1] = (ushort)(src[3]);
+                            }
+                            break;
 
-                    case (2 * 8 + (1)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 2, dest += 1)
-                            dest[0] = (ushort)(src[0]);
-                        break;
+                        case ((4) * 8 + (3)):
+                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 3)
+                            {
+                                dest[0] = (ushort)(src[0]);
+                                dest[1] = (ushort)(src[1]);
+                                dest[2] = (ushort)(src[2]);
+                            }
+                            break;
 
-                    case (2 * 8 + (3)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 2, dest += 3)
-                            dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
-                        break;
-
-                    case (2 * 8 + (4)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 2, dest += 4)
-                        {
-                            dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
-                            dest[3] = (ushort)(src[1]);
-                        }
-                        break;
-
-                    case ((3) * 8 + (4)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 3, dest += 4)
-                        {
-                            dest[0] = (ushort)(src[0]);
-                            dest[1] = (ushort)(src[1]);
-                            dest[2] = (ushort)(src[2]);
-                            dest[3] = (ushort)(0xffff);
-                        }
-                        break;
-
-                    case ((3) * 8 + (1)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 3, dest += 1)
-                            dest[0] = (ushort)(stbi__compute_y_16((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                        break;
-
-                    case ((3) * 8 + 2):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 3, dest += 2)
-                            dest[0] = (ushort)(stbi__compute_y_16((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                        dest[1] = (ushort)(0xffff);
-                        break;
-
-                    case ((4) * 8 + (1)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 4, dest += 1)
-                            dest[0] = (ushort)(stbi__compute_y_16((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                        break;
-
-                    case ((4) * 8 + 2):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 4, dest += 2)
-                        {
-                            dest[0] = (ushort)(stbi__compute_y_16((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                            dest[1] = (ushort)(src[3]);
-                        }
-                        break;
-
-                    case ((4) * 8 + (3)):
-                        for (i = (int)(x - 1); (i) >= (0); --i, src += 4, dest += 3)
-                        {
-                            dest[0] = (ushort)(src[0]);
-                            dest[1] = (ushort)(src[1]);
-                            dest[2] = (ushort)(src[2]);
-                        }
-                        break;
-
-                    default:
-                        return (ushort*)((byte*)((ulong)((stbi__err("0")) != 0 ? ((byte*)null) : null)));
+                        default:
+                            stbi__err("0");
+                            return null;
+                    }
                 }
+                return new HGlobalMemoryResult(good, goodLength);
             }
-
-            CRuntime.Free(data);
-            return good;
         }
 
         public static int stbi__build_huffman(ref stbi__huffman h, int* count)
@@ -1179,6 +1203,7 @@ namespace StbSharp
                     int x1;
                     int x2;
                     int x3;
+
                     p2 = (int)(d[16]);
                     p3 = (int)(d[48]);
                     p1 = (int)((p2 + p3) * ((int)((0.5411961f) * 4096 + 0.5)));
@@ -1217,14 +1242,15 @@ namespace StbSharp
                     x1 += (int)(512);
                     x2 += (int)(512);
                     x3 += (int)(512);
+
                     v[0] = (int)((x0 + t3) >> 10);
-                    v[56] = (int)((x0 - t3) >> 10);
                     v[8] = (int)((x1 + t2) >> 10);
-                    v[48] = (int)((x1 - t2) >> 10);
                     v[16] = (int)((x2 + t1) >> 10);
-                    v[40] = (int)((x2 - t1) >> 10);
                     v[24] = (int)((x3 + t0) >> 10);
                     v[32] = (int)((x3 - t0) >> 10);
+                    v[40] = (int)((x2 - t1) >> 10);
+                    v[48] = (int)((x1 - t2) >> 10);
+                    v[56] = (int)((x0 - t3) >> 10);
                 }
             }
 
@@ -1243,6 +1269,7 @@ namespace StbSharp
                 int x1;
                 int x2;
                 int x3;
+
                 p2 = (int)(v[2]);
                 p3 = (int)(v[6]);
                 p1 = (int)((p2 + p3) * ((int)((0.5411961f) * 4096 + 0.5)));
@@ -1281,14 +1308,15 @@ namespace StbSharp
                 x1 += (int)(65536 + (128 << 17));
                 x2 += (int)(65536 + (128 << 17));
                 x3 += (int)(65536 + (128 << 17));
+
                 o[0] = (byte)(stbi__clamp((int)((x0 + t3) >> 17)));
-                o[7] = (byte)(stbi__clamp((int)((x0 - t3) >> 17)));
                 o[1] = (byte)(stbi__clamp((int)((x1 + t2) >> 17)));
-                o[6] = (byte)(stbi__clamp((int)((x1 - t2) >> 17)));
                 o[2] = (byte)(stbi__clamp((int)((x2 + t1) >> 17)));
-                o[5] = (byte)(stbi__clamp((int)((x2 - t1) >> 17)));
                 o[3] = (byte)(stbi__clamp((int)((x3 + t0) >> 17)));
                 o[4] = (byte)(stbi__clamp((int)((x3 - t0) >> 17)));
+                o[5] = (byte)(stbi__clamp((int)((x2 - t1) >> 17)));
+                o[6] = (byte)(stbi__clamp((int)((x1 - t2) >> 17)));
+                o[7] = (byte)(stbi__clamp((int)((x0 - t3) >> 17)));
             }
         }
 
@@ -1317,9 +1345,7 @@ namespace StbSharp
             j.code_bits = 0;
             j.code_buffer = (uint)(0);
             j.nomore = 0;
-            j.img_comp[0].dc_pred =
-                (int)(j.img_comp[1].dc_pred =
-                    (int)(j.img_comp[2].dc_pred = (int)(j.img_comp[3].dc_pred = 0)));
+            j.img_comp[0].dc_pred = j.img_comp[1].dc_pred = j.img_comp[2].dc_pred = j.img_comp[3].dc_pred = 0;
             j.marker = (byte)(0xff);
             j.todo = (int)((j.restart_interval) != 0 ? j.restart_interval : 0x7fffffff);
             j.eob_run = 0;
@@ -3264,15 +3290,18 @@ namespace StbSharp
                     resultLength = (int)dst.Length;
                 }
             }
-            return new HGlobalMemoryResult((IntPtr)resultPtr, resultLength);
+            return new HGlobalMemoryResult(resultPtr, resultLength);
         }
 
-        public static void* stbi__do_png(ref PngContext p, ref ReadState ri)
+        public static IMemoryResult stbi__do_png(ref PngContext p, ref ReadState ri)
         {
             if (((ri.RequestedComponents) < (0)) || ((ri.RequestedComponents) > (4)))
-                return ((byte*)((ulong)((stbi__err("bad comp request")) != 0 ? ((byte*)null) : null)));
+            {
+                stbi__err("bad comp request");
+                return null;
+            }
 
-            void* result = null;
+            IMemoryResult result = null;
             if (stbi__parse_png_file(ref p, ref ri, STBI__SCAN_load, ri.RequestedComponents) != 0)
             {
                 if ((p.depth) < (8))
@@ -3280,15 +3309,16 @@ namespace StbSharp
                 else
                     ri.BitsPerComponent = (int)(p.depth);
 
-                result = p._out_;
+                int bytesPerComp = ri.BitsPerComponent / 8 ?? 1;
+                result = new HGlobalMemoryResult(p._out_, ri.Components * ri.Width * ri.Height * bytesPerComp);
                 p._out_ = null;
 
                 if (((ri.RequestedComponents) != 0) && (ri.RequestedComponents != ri.Components))
                 {
                     if (ri.BitsPerComponent == 8)
-                        result = stbi__convert_format((byte*)result, ri.Components, ri.RequestedComponents, ri.Width, ri.Height);
+                        result = stbi__convert_format(result, ri.Components, ri.RequestedComponents, ri.Width, ri.Height);
                     else
-                        result = stbi__convert_format16((ushort*)result, ri.Components, ri.RequestedComponents, ri.Width, ri.Height);
+                        result = stbi__convert_format16(result, ri.Components, ri.RequestedComponents, ri.Width, ri.Height);
 
                     ri.Components = (int)(ri.RequestedComponents);
                     if ((result) == null)
@@ -3303,7 +3333,7 @@ namespace StbSharp
             return result;
         }
 
-        public static void* stbi__png_load(ReadContext s, ref ReadState ri)
+        public static IMemoryResult stbi__png_load(ReadContext s, ref ReadState ri)
         {
             var p = new PngContext(s);
             return stbi__do_png(ref p, ref ri);
@@ -3540,7 +3570,7 @@ namespace StbSharp
             return (void*)(1);
         }
 
-        public static void* stbi__bmp_load(ReadContext s, ref ReadState ri)
+        public static IMemoryResult stbi__bmp_load(ReadContext s, ref ReadState ri)
         {
             var info = new BmpInfo();
             info.all_a = (uint)(255);
@@ -3568,11 +3598,17 @@ namespace StbSharp
                 target = ri.Components;
 
             if (stbi__mad3sizes_valid((int)(target), (int)(ri.Width), (int)(ri.Height), 0) == 0)
-                return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : null)));
+            {
+                stbi__err("too large");
+                return null;
+            }
 
             byte* _out_ = (byte*)(stbi__malloc_mad3((int)(target), (int)(ri.Width), (int)(ri.Height), 0));
             if (_out_ == null)
-                return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
+            {
+                stbi__err("outofmem");
+                return null;
+            }
 
             int i;
             int j;
@@ -3584,7 +3620,8 @@ namespace StbSharp
                 if (((psize) == 0) || ((psize) > (256)))
                 {
                     CRuntime.Free(_out_);
-                    return ((byte*)((ulong)((stbi__err("invalid")) != 0 ? ((byte*)null) : null)));
+                    stbi__err("invalid");
+                    return null;
                 }
 
                 byte* pal = stackalloc byte[256 * 4];
@@ -3606,7 +3643,8 @@ namespace StbSharp
                 else
                 {
                     CRuntime.Free(_out_);
-                    return ((byte*)((ulong)((stbi__err("bad bpp")) != 0 ? ((byte*)null) : null)));
+                    stbi__err("bad bpp");
+                    return null;
                 }
 
                 pad = (int)((-width) & 3);
@@ -3665,7 +3703,8 @@ namespace StbSharp
                     if (((mr == 0) || (mg == 0)) || (mb == 0))
                     {
                         CRuntime.Free(_out_);
-                        return stbi__err("bad masks") != 0 ? (byte*)null : null;
+                        stbi__err("bad masks");
+                        return null;
                     }
 
                     rshift = (int)(stbi__high_bit((uint)(mr)) - 7);
@@ -4062,7 +4101,7 @@ namespace StbSharp
                     for (j = 0; (j) < (tga_comp); ++j)
                         tga_data[i * tga_comp + j] = (byte)(raw_data[j]);
 
-                    --RLE_count;
+                    RLE_count--;
                 }
 
                 if ((tga_inverted) != 0)
@@ -4100,6 +4139,7 @@ namespace StbSharp
 
             if (((ri.RequestedComponents) != 0) && (ri.RequestedComponents != tga_comp))
                 tga_data = stbi__convert_format(tga_data, tga_comp, ri.RequestedComponents, tga_width, tga_height);
+
             //tga_palette_start = tga_palette_len = tga_palette_bits = tga_x_origin = tga_y_origin = 0; // why
             return tga_data;
         }
@@ -4307,7 +4347,7 @@ namespace StbSharp
             if (((ri.RequestedComponents) != 0) && (ri.RequestedComponents != 4))
             {
                 if (ri.BitsPerComponent == 16)
-                    _out_ = (byte*)(stbi__convert_format16((ushort*)_out_, 4, ri.RequestedComponents, w, h));
+                    _out_ = stbi__convert_format16(_out_, 4, ri.RequestedComponents, w, h);
                 else
                     _out_ = stbi__convert_format(_out_, 4, ri.RequestedComponents, w, h);
 
@@ -4530,7 +4570,7 @@ namespace StbSharp
             }
         }
 
-        public static byte* stbi__gif_load_next(
+        public static IMemoryResult stbi__gif_load_next(
             ReadContext s, ref GifContext g, ref ReadState ri, byte* two_back)
         {
             int dispose = 0;
@@ -4542,15 +4582,22 @@ namespace StbSharp
             {
                 if (stbi__gif_header(s, ref g, ref ri, skipColorTable: false) == 0)
                     return null;
+
                 if (stbi__mad3sizes_valid((int)(4), (int)(g.w), (int)(g.h), 0) == 0)
-                    return ((byte*)((ulong)((stbi__err("too large")) != 0 ? ((byte*)null) : null)));
+                {
+                    stbi__err("too large");
+                    return null;
+                }
 
                 pcount = (int)(g.w * g.h);
                 g._out_ = (byte*)(CRuntime.MAlloc(4 * pcount));
                 g.background = (byte*)(CRuntime.MAlloc(4 * pcount));
                 g.history = (byte*)(CRuntime.MAlloc(pcount));
                 if (((g._out_ == null) || (g.background == null)) || (g.history == null))
-                    return ((byte*)((ulong)((stbi__err("outofmem")) != 0 ? ((byte*)null) : null)));
+                {
+                    stbi__err("outofmem");
+                    return null;
+                }
 
                 CRuntime.MemSet(g._out_, (int)(0x00), 4 * pcount);
                 CRuntime.MemSet(g.background, (int)(0x00), 4 * pcount);
@@ -4596,7 +4643,10 @@ namespace StbSharp
                         int w = (int)(stbi__get16le(s));
                         int h = (int)(stbi__get16le(s));
                         if (((x + w) > (g.w)) || ((y + h) > (g.h)))
-                            return ((byte*)((ulong)((stbi__err("bad Image Descriptor")) != 0 ? ((byte*)null) : null)));
+                        {
+                            stbi__err("bad image descriptor");
+                            return null;
+                        }
 
                         g.line_size = (int)(g.w * 4);
                         g.start_x = (int)(x * 4);
@@ -4608,6 +4658,7 @@ namespace StbSharp
                         if ((w) == 0)
                             g.cur_y = (int)(g.max_y);
                         g.lflags = (int)(stbi__get8(s));
+
                         if ((g.lflags & 0x40) != 0)
                         {
                             g.step = (int)(8 * g.line_size);
@@ -4620,7 +4671,11 @@ namespace StbSharp
                         }
                         if ((g.lflags & 0x80) != 0)
                         {
-                            stbi__gif_parse_colortable(s, g.lpal, (int)(2 << (g.lflags & 7)), (int)((g.eflags & 0x01) != 0 ? g.transparent : -1));
+                            stbi__gif_parse_colortable(
+                                s, g.lpal,
+                                (int)(2 << (g.lflags & 7)),
+                                (int)((g.eflags & 0x01) != 0 ? g.transparent : -1));
+
                             g.color_table = (byte*)(g.lpal);
                         }
                         else if ((g.flags & 0x80) != 0)
@@ -4628,7 +4683,10 @@ namespace StbSharp
                             g.color_table = (byte*)(g.pal);
                         }
                         else
-                            return ((byte*)((ulong)((stbi__err("missing color table")) != 0 ? ((byte*)null) : null)));
+                        {
+                            stbi__err("missing color table");
+                            return null;
+                        }
 
                         byte* o = stbi__process_gif_raster(s, ref g);
                         if (o == null)
@@ -4690,12 +4748,13 @@ namespace StbSharp
                         return null;
 
                     default:
-                        return ((byte*)((ulong)((stbi__err("unknown code")) != 0 ? ((byte*)null) : null)));
+                        stbi__err("unknown code");
+                        return null;
                 }
             }
         }
 
-        public static void* stbi__load_gif_main(
+        public static IMemoryResult stbi__load_gif_main(
             ReadContext s, out List<int> delays, out int layers, ref ReadState ri)
         {
             layers = 0;
@@ -4703,7 +4762,7 @@ namespace StbSharp
 
             if (stbi__gif_test(s) != 0)
             {
-                byte* u = null;
+                IMemoryResult u = null;
                 byte* _out_ = null;
                 byte* two_back = null;
                 int stride = 0;
@@ -4716,22 +4775,23 @@ namespace StbSharp
                         do
                         {
                             u = stbi__gif_load_next(s, ref g, ref ri, two_back);
-                            if (u != null)
-                            {
-                                ri.Width = (int)(g.w);
-                                ri.Height = (int)(g.h);
-                                layers++;
-                                stride = (int)(g.w * g.h * 4);
+                            if (u == null)
+                                break;
 
-                                _out_ = _out_ != null
-                                    ? (byte*)(CRuntime.ReAlloc(_out_, layers * stride))
-                                    : (byte*)(CRuntime.MAlloc(layers * stride));
-                                CRuntime.MemCopy(_out_ + ((layers - 1) * stride), u, stride);
-                                if ((layers) >= 2)
-                                    two_back = _out_ - 2 * stride;
+                            ri.Width = (int)(g.w);
+                            ri.Height = (int)(g.h);
+                            layers++;
+                            stride = (int)(g.w * g.h * 4);
 
-                                delays[layers - 1] = g.delay;
-                            }
+                            _out_ = _out_ != null
+                                ? (byte*)(CRuntime.ReAlloc(_out_, layers * stride))
+                                : (byte*)(CRuntime.MAlloc(layers * stride));
+                            CRuntime.MemCopy(_out_ + ((layers - 1) * stride), (byte*)u.Pointer, stride);
+
+                            if ((layers) >= 2)
+                                two_back = _out_ - 2 * stride;
+
+                            delays[layers - 1] = g.delay;
                         }
                         while (u != null);
 
@@ -4739,10 +4799,12 @@ namespace StbSharp
                         CRuntime.Free(g.history);
                         CRuntime.Free(g.background);
 
-                        if (ri.RequestedComponents != 0 && ri.RequestedComponents != 4)
-                            _out_ = stbi__convert_format(_out_, 4, ri.RequestedComponents, (layers * g.w), g.h);
+                        IMemoryResult result = new HGlobalMemoryResult(_out_, layers * stride);
 
-                        return _out_;
+                        if (ri.RequestedComponents != 0 && ri.RequestedComponents != 4)
+                            result = stbi__convert_format(result, 4, ri.RequestedComponents, (layers * g.w), g.h);
+
+                        return result;
                     }
                 }
                 finally
@@ -4752,16 +4814,17 @@ namespace StbSharp
             }
             else
             {
-                return ((byte*)((ulong)((stbi__err("not GIF")) != 0 ? ((byte*)null) : null)));
+                stbi__err("not GIF");
+                return null;
             }
         }
 
-        public static void* stbi__gif_load(ReadContext s, ref ReadState ri)
+        public static IMemoryResult stbi__gif_load(ReadContext s, ref ReadState ri)
         {
             var g = GifContext.Create();
             try
             {
-                byte* u = stbi__gif_load_next(s, ref g, ref ri, null);
+                IMemoryResult u = stbi__gif_load_next(s, ref g, ref ri, null);
                 if ((u) != null)
                 {
                     ri.Width = (int)(g.w);
