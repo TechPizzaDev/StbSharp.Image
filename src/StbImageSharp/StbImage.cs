@@ -69,20 +69,28 @@ namespace StbSharp
         [StructLayout(LayoutKind.Sequential)]
         public struct ReadState
         {
+            public readonly int? RequestedComponents;
+            public readonly int? RequestedDepth;
+
             public readonly BufferReadyCallback BufferReady;
             public readonly ReadProgressCallback Progress;
 
             public int Width;
             public int Height;
-            public int RequestedComponents;
-
-            public int? BitsPerComponent;
+            public int Depth;
             public int Components;
 
+            public int OutDepth;
+            public int OutComponents;
+            
             public ReadState(
-                BufferReadyCallback onBufferReady, 
-                ReadProgressCallback onProgress) : this()
+                int? requestedComponents,
+                int? requestedDepth,
+                BufferReadyCallback onBufferReady = null,
+                ReadProgressCallback onProgress = null) : this()
             {
+                RequestedComponents = requestedComponents;
+                RequestedDepth = requestedDepth;
                 BufferReady = onBufferReady;
                 Progress = onProgress;
             }
@@ -181,11 +189,14 @@ namespace StbSharp
             public YCbCrToRgbKernel YCbCr_to_RGB_kernel;
             public ResamplerMethod resample_row_hv_2_kernel;
 
+            public int decode_n;
+            public bool is_rgb;
             public ReadState ri;
 
-            public JpegContext(ReadContext ctx)
+            public JpegContext(ReadContext context, ReadState readState)
             {
-                s = ctx;
+                s = context;
+                ri = readState;
 
                 idct_block_kernel = _cached__idct_block;
                 YCbCr_to_RGB_kernel = _cached__YCbCr_to_RGB_row;
@@ -204,7 +215,7 @@ namespace StbSharp
                 for (var i = 0; i < fast_ac.Length; ++i)
                     fast_ac[i] = new short[1 << STBI__ZFAST_BITS];
 
-                dequant = new ushort [4][];
+                dequant = new ushort[4][];
                 for (var i = 0; i < dequant.Length; ++i)
                     dequant[i] = new ushort[64];
             }
@@ -230,10 +241,8 @@ namespace StbSharp
             public byte suffix;
         }
 
-        public struct GifContext
+        public struct GifContext : IDisposable
         {
-            public int w;
-            public int h;
             public byte* _out_;
             public byte* background;
             public byte* history;
