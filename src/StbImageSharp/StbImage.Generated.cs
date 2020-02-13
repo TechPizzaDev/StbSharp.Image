@@ -2987,7 +2987,7 @@ namespace StbSharp
 
             if (stbi__check_png_header(s) == 0)
                 return scan == STBI__SCAN_type ? 0 : (int)(stbi__err("bad png sig"));
-            
+
             if ((scan) == (STBI__SCAN_type))
                 return 1;
 
@@ -3045,7 +3045,7 @@ namespace StbSharp
                             ri.Depth != 8 &&
                             ri.Depth != 16)
                             return (int)(stbi__err("1/2/4/8/16-bit only"));
-                        
+
                         if (ri.Depth < 8)
                             ri.OutDepth = 8;
                         else
@@ -3563,6 +3563,7 @@ namespace StbSharp
                             info.mr = (uint)(stbi__get32le(s));
                             info.mg = (uint)(stbi__get32le(s));
                             info.mb = (uint)(stbi__get32le(s));
+
                             if (((info.mr) == (info.mg)) && ((info.mg) == (info.mb)))
                             {
                                 stbi__err("bad BMP");
@@ -3578,7 +3579,6 @@ namespace StbSharp
                 }
                 else
                 {
-                    int i;
                     if ((hsz != 108) && (hsz != 124))
                     {
                         stbi__err("bad BMP");
@@ -3589,8 +3589,9 @@ namespace StbSharp
                     info.mg = (uint)(stbi__get32le(s));
                     info.mb = (uint)(stbi__get32le(s));
                     info.ma = (uint)(stbi__get32le(s));
+
                     stbi__get32le(s);
-                    for (i = 0; (i) < (12); ++i)
+                    for (int i = 0; (i) < (12); ++i)
                         stbi__get32le(s);
 
                     if ((hsz) == (124))
@@ -3603,10 +3604,20 @@ namespace StbSharp
                 }
             }
 
-            ri.OutComponents = ri.Components = (int)((info.ma) != 0 ? 4 : 3);
-            
-            ri.OutDepth = ri.Depth = info.bpp / ri.Components;
-            
+
+            if (info.bpp == 24 && info.ma == 0xff000000)
+                ri.Components = 3;
+            else
+                ri.Components = info.ma != 0 ? 4 : 3;
+
+            if (ri.RequestedComponents.HasValue && ri.RequestedComponents >= 3)
+                ri.OutComponents = ri.RequestedComponents.Value;
+            else
+                ri.OutComponents = ri.Components;
+
+            ri.Depth = info.bpp / ri.Components;
+            ri.OutDepth = ri.RequestedDepth ?? ri.Depth;
+
             return true;
         }
 
@@ -3616,12 +3627,6 @@ namespace StbSharp
             info.all_a = (uint)(255);
             if (!stbi__bmp_parse_header(s, ref info, ref ri))
                 return null;
-
-            uint mr = (uint)(info.mr);
-            uint mg = (uint)(info.mg);
-            uint mb = (uint)(info.mb);
-            uint ma = (uint)(info.ma);
-            uint all_a = (uint)(info.all_a);
 
             int psize = 0;
             if ((info.hsz) == (12))
@@ -3634,16 +3639,6 @@ namespace StbSharp
                 if ((info.bpp) < (16))
                     psize = (int)((info.offset - 14 - info.hsz) >> 2);
             }
-
-            if (info.bpp == 24 && ma == 0xff000000)
-                ri.Components = 3;
-            else
-                ri.Components = ma != 0 ? 4 : 3;
-
-            if (((ri.RequestedComponents) != 0) && ((ri.RequestedComponents) >= (3)))
-                ri.OutComponents = (int)(ri.RequestedComponents);
-            else
-                ri.OutComponents = ri.Components;
 
             if (stbi__mad3sizes_valid(ri.OutComponents, (int)(ri.Width), (int)(ri.Height), 0) == 0)
             {
@@ -3741,28 +3736,34 @@ namespace StbSharp
                 if ((info.bpp) == (24))
                     easy = 1;
                 else if ((info.bpp) == (32))
-                    if ((((mb == 0xff) && (mg == 0xff00)) && (mr == 0x00ff0000)) && (ma == 0xff000000))
+                    if (info.mb == 0xff &&
+                        info.mg == 0xff00 &&
+                        info.mr == 0x00ff0000 &&
+                        info.ma == 0xff000000)
                         easy = (int)2;
 
                 int rshift = 0, gshift = 0, bshift = 0, ashift = 0;
                 int rcount = 0, gcount = 0, bcount = 0, acount = 0;
                 if (easy == 0)
                 {
-                    if (((mr == 0) || (mg == 0)) || (mb == 0))
+                    if (info.mr == 0 || info.mg == 0 || info.mb == 0)
                     {
                         CRuntime.Free(_out_);
                         stbi__err("bad masks");
                         return null;
                     }
 
-                    rshift = (int)(stbi__high_bit((uint)(mr)) - 7);
-                    rcount = (int)(stbi__bitcount((uint)(mr)));
-                    gshift = (int)(stbi__high_bit((uint)(mg)) - 7);
-                    gcount = (int)(stbi__bitcount((uint)(mg)));
-                    bshift = (int)(stbi__high_bit((uint)(mb)) - 7);
-                    bcount = (int)(stbi__bitcount((uint)(mb)));
-                    ashift = (int)(stbi__high_bit((uint)(ma)) - 7);
-                    acount = (int)(stbi__bitcount((uint)(ma)));
+                    rshift = (int)(stbi__high_bit((uint)(info.mr)) - 7);
+                    rcount = (int)(stbi__bitcount((uint)(info.mr)));
+
+                    gshift = (int)(stbi__high_bit((uint)(info.mg)) - 7);
+                    gcount = (int)(stbi__bitcount((uint)(info.mg)));
+
+                    bshift = (int)(stbi__high_bit((uint)(info.mb)) - 7);
+                    bcount = (int)(stbi__bitcount((uint)(info.mb)));
+
+                    ashift = (int)(stbi__high_bit((uint)(info.ma)) - 7);
+                    acount = (int)(stbi__bitcount((uint)(info.ma)));
                 }
 
                 int z = 0;
@@ -3774,12 +3775,13 @@ namespace StbSharp
                     {
                         for (i = 0; (i) < ri.Width; ++i)
                         {
-                            _out_[z++] = stbi__get8(s);
-                            _out_[z++] = stbi__get8(s);
-                            _out_[z++] = stbi__get8(s);
+                            _out_[z + 2] = stbi__get8(s);
+                            _out_[z + 1] = stbi__get8(s);
+                            _out_[z] = stbi__get8(s);
+                            z += 3;
 
                             a = (byte)(easy == 2 ? stbi__get8(s) : 255);
-                            all_a |= (uint)(a);
+                            info.all_a |= (uint)(a);
                             if (ri.OutComponents == (4))
                                 _out_[z++] = (byte)(a);
                         }
@@ -3795,12 +3797,12 @@ namespace StbSharp
                         for (i = 0; (i) < ri.Width; ++i)
                         {
                             v = (uint)(info.bpp == 16 ? (uint)stbi__get16le(s) : stbi__get32le(s));
-                            _out_[z++] = (byte)((stbi__shiftsigned((int)(v & mr), rshift, rcount)) & 255);
-                            _out_[z++] = (byte)((stbi__shiftsigned((int)(v & mg), gshift, gcount)) & 255);
-                            _out_[z++] = (byte)((stbi__shiftsigned((int)(v & mb), bshift, bcount)) & 255);
+                            _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mr), rshift, rcount)) & 255);
+                            _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mg), gshift, gcount)) & 255);
+                            _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mb), bshift, bcount)) & 255);
 
-                            a = ma != 0 ? stbi__shiftsigned((int)(v & ma), ashift, acount) : 255;
-                            all_a |= (uint)(a);
+                            a = info.ma != 0 ? stbi__shiftsigned((int)(v & info.ma), ashift, acount) : 255;
+                            info.all_a |= (uint)(a);
                             if (ri.OutComponents == (4))
                                 _out_[z++] = (byte)(a & 255);
                         }
@@ -3809,7 +3811,7 @@ namespace StbSharp
                 }
             }
 
-            if ((ri.OutComponents == (4)) && ((all_a) == 0))
+            if ((ri.OutComponents == (4)) && ((info.all_a) == 0))
                 for (i = (int)(4 * ri.Width * ri.Height - 1); (i) >= (0); i -= 4)
                     _out_[i] = 255;
 
