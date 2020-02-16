@@ -10,10 +10,6 @@ namespace StbSharp
 {
     public static unsafe partial class StbImage
     {
-        // TODO move to the ReadContext
-        public static int stbi__unpremultiply_on_load = 1;
-        public static int stbi__de_iphone_flag = 1;
-
         [StructLayout(LayoutKind.Sequential)]
         public struct stbi__huffman
         {
@@ -116,17 +112,17 @@ namespace StbSharp
         public const int STBI__F_avg_first = 5;
         public const int STBI__F_paeth_first = 6;
 
-        internal static uint[] stbi__bmask =
+        private static uint[] stbi__bmask =
         {
             0, 1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047, 4095, 8191, 16383, 32767, 65535
         };
 
-        internal static int[] stbi__jbias =
+        private static int[] stbi__jbias =
         {
             0, -1, -3, -7, -15, -31, -63, -127, -255, -511, -1023, -2047, -4095, -8191, -16383, -32767
         };
 
-        internal static byte[] stbi__jpeg_dezigzag =
+        private static byte[] stbi__jpeg_dezigzag =
         {
             0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40,
             48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29,
@@ -134,18 +130,18 @@ namespace StbSharp
             47, 55, 62, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63
         };
 
-        internal static byte[] png_sig = { 137, 80, 78, 71, 13, 10, 26, 10 };
+        private static byte[] png_sig = { 137, 80, 78, 71, 13, 10, 26, 10 };
 
-        internal static byte[] first_row_filter =
+        private static byte[] first_row_filter =
         {
             STBI__F_none, STBI__F_sub, STBI__F_none, STBI__F_avg_first, STBI__F_paeth_first
         };
 
-        internal static byte[] stbi__depth_scale_table = { 0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01 };
+        private static byte[] stbi__depth_scale_table = { 0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01 };
 
         public static void stbi__rewind(ReadContext s)
         {
-            s.Data = s.DataOriginal;
+            s.Data = s.DataOriginalStart;
             s.DataEnd = s.DataOriginalEnd;
         }
 
@@ -224,11 +220,6 @@ namespace StbSharp
             return CRuntime.MAlloc(a * b * c * d + add);
         }
 
-        public static void stbi_set_flip_vertically_on_load(int flag_true_if_should_flip)
-        {
-            stbi__vertically_flip_on_load = (int)(flag_true_if_should_flip);
-        }
-
         public static IMemoryResult stbi__load_main(ReadContext s, ref ReadState ri)
         {
             if ((stbi__jpeg_test(s)) != 0)
@@ -300,74 +291,48 @@ namespace StbSharp
             }
         }
 
-        public static void stbi__vertical_flip(byte* imageBytes, int w, int h, int bytesPerComp)
+        public static void stbi__vertical_flip(byte* data, int w, int h, int comp, int depth)
         {
-            int bytes_per_row = w * bytesPerComp;
-            byte* tmp = stackalloc byte[2048];
+            int stride = w * comp * depth / 8;
+            byte* rowBuffer = stackalloc byte[2048];
             for (int row = 0; (row) < (h >> 1); row++)
             {
-                byte* row0 = imageBytes + row * bytes_per_row;
-                byte* row1 = imageBytes + (h - row - 1) * bytes_per_row;
-                int bytes_left = bytes_per_row;
-                while ((bytes_left) != 0)
+                byte* row1 = data + row * stride;
+                byte* row2 = data + (h - row - 1) * stride;
+
+                int bytes_left = stride;
+                while (bytes_left != 0)
                 {
                     int bytes_copy = bytes_left < 2048 ? bytes_left : 2048;
-                    CRuntime.MemCopy(tmp, row0, bytes_copy);
-                    CRuntime.MemCopy(row0, row1, bytes_copy);
-                    CRuntime.MemCopy(row1, tmp, bytes_copy);
-                    row0 += bytes_copy;
+                    CRuntime.MemCopy(rowBuffer, row1, bytes_copy);
+                    CRuntime.MemCopy(row1, row2, bytes_copy);
+                    CRuntime.MemCopy(row2, rowBuffer, bytes_copy);
                     row1 += bytes_copy;
+                    row2 += bytes_copy;
                     bytes_left -= bytes_copy;
                 }
             }
         }
 
-        public static void stbi__vertical_flip(IMemoryResult imageBytes, int w, int h, int bytesPerComp)
+        public static void stbi__vertical_flip(IMemoryResult data, int w, int h, int comp, int depth)
         {
-            stbi__vertical_flip((byte*)imageBytes.Pointer, w, h, bytesPerComp);
+            stbi__vertical_flip((byte*)data.Pointer, w, h, comp, depth);
         }
 
-        public static IMemoryResult stbi__load_and_postprocess_8bit(
-            ReadContext s, int req_comp, out ReadState ri)
+        public static IMemoryResult stbi__load_and_postprocess(
+            ReadContext s, int? requestedComponents, int? requestedDepth, out ReadState ri)
         {
-            ri = new ReadState(req_comp, 8);
+            ri = new ReadState(requestedComponents, requestedDepth);
+
             var result = stbi__load_main(s, ref ri);
-            if ((result) == null)
+            if (result == null)
                 return null;
 
-            if (ri.OutDepth != 8)
-            {
-                result = stbi__convert_16_to_8(result, ri.Width, ri.Height, ri.OutComponents);
-                ri.OutDepth = (int)(8);
-            }
+            result = stbi__convert_format(result, ref ri);
 
-            if ((stbi__vertically_flip_on_load) != 0)
-            {
-                stbi__vertical_flip(result, ri.Width, ri.Height, ri.OutComponents);
-            }
-
-            return result;
-        }
-
-        public static IMemoryResult stbi__load_and_postprocess_16bit(
-            ReadContext s, int req_comp, out ReadState ri)
-        {
-            ri = new ReadState(req_comp, 16);
-            var result = stbi__load_main(s, ref ri);
-            if ((result) == null)
-                return null;
-
-            if (ri.OutDepth != 16)
-            {
-                result = stbi__convert_8_to_16(result, ri.Width, ri.Height, ri.OutComponents);
-                ri.OutDepth = 16;
-            }
-
-            if ((stbi__vertically_flip_on_load) != 0)
-            {
-                stbi__vertical_flip(result, ri.Width, ri.Height, ri.OutComponents * 2);
-            }
-
+            if (s.vertically_flip_on_load)
+                stbi__vertical_flip(result, ri.Width, ri.Height, ri.OutComponents, ri.OutDepth);
+            
             return result;
         }
 
@@ -440,31 +405,29 @@ namespace StbSharp
             s.Data += n;
         }
 
-        public static int stbi__getn(ReadContext s, byte* buffer, int n)
+        public static bool stbi__getn(ReadContext s, Span<byte> destination)
         {
             if ((s.Read) != null)
             {
-                int blen = (int)(s.DataEnd - s.Data);
-                if ((blen) < (n))
+                int bufLen = (int)(s.DataEnd - s.Data);
+                if ((bufLen) < (destination.Length))
                 {
-                    int res;
-                    int count;
-                    CRuntime.MemCopy(buffer, s.Data, blen);
-                    count = (int)(s.Read(s, new Span<byte>(buffer + blen, n - blen)));
-                    res = (int)((count) == (n - blen) ? 1 : 0);
+                    new Span<byte>(s.Data, bufLen).CopyTo(destination);
+
+                    int count = s.Read(s, destination.Slice(bufLen));
                     s.Data = s.DataEnd;
-                    return (int)(res);
+                    return count == destination.Length - bufLen ? true : false;
                 }
             }
 
-            if (s.Data + n <= s.DataEnd)
+            if (s.Data + destination.Length <= s.DataEnd)
             {
-                CRuntime.MemCopy(buffer, s.Data, n);
-                s.Data += n;
-                return 1;
+                new Span<byte>(s.Data, destination.Length).CopyTo(destination);
+
+                s.Data += destination.Length;
+                return true;
             }
-            else
-                return 0;
+            return false;
         }
 
         public static int stbi__get16be(ReadContext s)
@@ -868,13 +831,11 @@ namespace StbSharp
 
         public static int stbi__jpeg_huff_decode(JpegContext j, ref stbi__huffman h)
         {
-            uint temp;
-            int c;
-            int k;
             if ((j.code_bits) < (16))
                 stbi__grow_buffer_unsafe(j);
-            c = (int)((j.code_buffer >> (32 - 9)) & ((1 << 9) - 1));
-            k = (int)(h.fast[c]);
+
+            int c = (int)((j.code_buffer >> (32 - 9)) & ((1 << 9) - 1));
+            int k = (int)(h.fast[c]);
             if ((k) < (255))
             {
                 int s = (int)(h.size[k]);
@@ -885,10 +846,10 @@ namespace StbSharp
                 return (int)(h.values[k]);
             }
 
-            temp = (uint)(j.code_buffer >> 16);
+            uint tmp = (uint)(j.code_buffer >> 16);
             for (k = (int)(9 + 1); ; ++k)
             {
-                if ((temp) < (h.maxcode[k]))
+                if ((tmp) < (h.maxcode[k]))
                     break;
             }
 
@@ -2887,18 +2848,16 @@ namespace StbSharp
         public static int stbi__expand_png_palette(
             ref PngContext a, int width, int height, byte* palette, int len, int pal_img_n)
         {
-            uint i;
             uint pixel_count = (uint)(width * height);
-            byte* p;
-            byte* temp_out;
-            byte* orig = a._out_;
-            p = (byte*)(stbi__malloc_mad2((int)(pixel_count), (int)(pal_img_n), 0));
+            byte* p = (byte*)(stbi__malloc_mad2((int)(pixel_count), (int)(pal_img_n), 0));
             if ((p) == null)
                 return (int)(stbi__err("outofmem"));
-            temp_out = p;
+
+            byte* orig = a._out_;
+            byte* tmp_out = p;
             if ((pal_img_n) == (3))
             {
-                for (i = (uint)(0); (i) < (pixel_count); ++i)
+                for (uint i = 0; (i) < (pixel_count); ++i)
                 {
                     int n = (int)(orig[i] * 4);
                     p[0] = (byte)(palette[n]);
@@ -2909,7 +2868,7 @@ namespace StbSharp
             }
             else
             {
-                for (i = (uint)(0); (i) < (pixel_count); ++i)
+                for (uint i = 0; (i) < (pixel_count); ++i)
                 {
                     int n = (int)(orig[i] * 4);
                     p[0] = (byte)(palette[n]);
@@ -2921,7 +2880,7 @@ namespace StbSharp
             }
 
             CRuntime.Free(a._out_);
-            a._out_ = temp_out;
+            a._out_ = tmp_out;
             return 1;
         }
 
@@ -2943,7 +2902,7 @@ namespace StbSharp
             }
             else
             {
-                if ((stbi__unpremultiply_on_load) != 0)
+                if (s.unpremultiply_on_load)
                 {
                     for (i = (uint)(0); (i) < (pixel_count); ++i)
                     {
@@ -3186,7 +3145,7 @@ namespace StbSharp
                             z.idata = p;
                         }
 
-                        if (stbi__getn(s, z.idata + ioff, (int)(c.Length)) == 0)
+                        if (!stbi__getn(s, new Span<byte>(z.idata + ioff, (int)c.Length)))
                             return (int)(stbi__err("outofdata"));
 
                         ioff += (uint)(c.Length);
@@ -3206,12 +3165,12 @@ namespace StbSharp
                         int raw_len = (int)(bpl * ri.Height * ri.Components + ri.Height);
                         bool parseHeader = !is_iphone;
 
-                        IMemoryResult deflated;
+                        IMemoryResult decompressed;
                         try
                         {
                             var data = new ReadOnlySpan<byte>(z.idata, (int)ioff);
-                            deflated = zlib_deflate_decompress(data, raw_len, parseHeader);
-                            if (deflated == null)
+                            decompressed = zlib_deflate_decompress(data, raw_len, parseHeader);
+                            if (decompressed == null)
                                 return 0;
                         }
                         finally
@@ -3220,7 +3179,7 @@ namespace StbSharp
                             z.idata = null;
                         }
 
-                        using (deflated)
+                        using (decompressed)
                         {
                             if (ri.RequestedComponents == ri.Components + 1 &&
                                 ri.RequestedComponents != 3 &&
@@ -3231,11 +3190,11 @@ namespace StbSharp
                                 ri.OutComponents = (int)(ri.Components);
 
                             if (stbi__create_png_image(
-                                ref z, (byte*)deflated.Pointer, (uint)deflated.Length, ri.OutComponents,
+                                ref z, (byte*)decompressed.Pointer, (uint)decompressed.Length, ri.OutComponents,
                                 ri.Width, ri.Height, ri.Components, ri.Depth, color, interlace) == 0)
                                 return 0;
 
-                            if ((has_transparency) != 0)
+                            if (has_transparency != 0)
                             {
                                 if (ri.Depth == (16))
                                     if (stbi__compute_transparency16(ref z, ri.Width, ri.Height, tc16, (int)(ri.OutComponents)) == 0)
@@ -3244,10 +3203,10 @@ namespace StbSharp
                                         return 0;
                             }
 
-                            if (is_iphone && stbi__de_iphone_flag != 0 && ri.OutComponents > 2)
+                            if (is_iphone && s.de_iphone_flag && ri.OutComponents > 2)
                                 stbi__de_iphone(ref z, ref ri);
 
-                            if ((pal_img_n) != 0)
+                            if (pal_img_n != 0)
                             {
                                 ri.Components = (int)(pal_img_n);
                                 ri.OutComponents = (int)(pal_img_n);
@@ -3653,188 +3612,218 @@ namespace StbSharp
                 return null;
             }
 
-            int i;
-            int j;
-            int width;
-            int pad;
-            if ((info.bpp) < (16))
+            int easy = 0;
+            if ((info.bpp) == (24))
             {
-                int z = 0;
-                if (((psize) == 0) || ((psize) > (256)))
+                easy = 1;
+            }
+            else if ((info.bpp) == (32))
+            {
+                if (info.mb == 0xff &&
+                    info.mg == 0xff00 &&
+                    info.mr == 0x00ff0000 &&
+                    info.ma == 0xff000000)
                 {
-                    CRuntime.Free(_out_);
-                    stbi__err("invalid");
-                    return null;
-                }
-
-                byte* pal = stackalloc byte[256 * 4];
-                for (i = 0; (i) < (psize); ++i)
-                {
-                    pal[i * 4 + 2] = (byte)(stbi__get8(s));
-                    pal[i * 4 + 1] = (byte)(stbi__get8(s));
-                    pal[i * 4 + 0] = (byte)(stbi__get8(s));
-                    if (info.hsz != 12)
-                        stbi__get8(s);
-                    pal[i * 4 + 3] = 255;
-                }
-
-                stbi__skip(s, (int)(info.offset - 14 - info.hsz - psize * ((info.hsz) == (12) ? 3 : 4)));
-                if ((info.bpp) == (4))
-                    width = (int)((ri.Width + 1) >> 1);
-                else if ((info.bpp) == (8))
-                    width = (int)(ri.Width);
-                else
-                {
-                    CRuntime.Free(_out_);
-                    stbi__err("bad bpp");
-                    return null;
-                }
-
-                pad = (int)((-width) & 3);
-                for (j = 0; (j) < ((int)(ri.Height)); ++j)
-                {
-                    for (i = 0; (i) < ((int)(ri.Width)); i += (int)2)
-                    {
-                        int v = (int)(stbi__get8(s));
-                        int v2 = 0;
-                        if ((info.bpp) == (4))
-                        {
-                            v2 = (int)(v & 15);
-                            v >>= 4;
-                        }
-
-                        _out_[z++] = (byte)(pal[v * 4 + 0]);
-                        _out_[z++] = (byte)(pal[v * 4 + 1]);
-                        _out_[z++] = (byte)(pal[v * 4 + 2]);
-                        if (ri.OutComponents == (4))
-                            _out_[z++] = 255;
-                        if ((i + 1) == ((int)(ri.Width)))
-                            break;
-                        v = (int)(((info.bpp) == (8)) ? stbi__get8(s) : v2);
-                        _out_[z++] = (byte)(pal[v * 4 + 0]);
-                        _out_[z++] = (byte)(pal[v * 4 + 1]);
-                        _out_[z++] = (byte)(pal[v * 4 + 2]);
-                        if (ri.OutComponents == (4))
-                            _out_[z++] = 255;
-                    }
-
-                    stbi__skip(s, (int)(pad));
+                    easy = 2;
                 }
             }
-            else
+
+            int rowComp = easy == 2 ? 4 : 3;
+            int rowBufferSize = ri.Width * Math.Max(ri.OutComponents, rowComp);
+            byte* rowBuffer = (byte*)CRuntime.MAlloc(rowBufferSize);
+            var rowBufferSpan = new Span<byte>(rowBuffer, rowBufferSize);
+            try
             {
-                stbi__skip(s, (int)(info.offset - 14 - info.hsz));
-                if ((info.bpp) == (24))
-                    width = (int)(3 * ri.Width);
-                else if ((info.bpp) == (16))
-                    width = (int)(2 * ri.Width);
-                else
-                    width = 0;
-                pad = (int)((-width) & 3);
-
-                int easy = 0;
-                if ((info.bpp) == (24))
-                    easy = 1;
-                else if ((info.bpp) == (32))
-                    if (info.mb == 0xff &&
-                        info.mg == 0xff00 &&
-                        info.mr == 0x00ff0000 &&
-                        info.ma == 0xff000000)
-                        easy = (int)2;
-
-                int rshift = 0, gshift = 0, bshift = 0, ashift = 0;
-                int rcount = 0, gcount = 0, bcount = 0, acount = 0;
-                if (easy == 0)
+                int width;
+                int pad;
+                if ((info.bpp) < (16))
                 {
-                    if (info.mr == 0 || info.mg == 0 || info.mb == 0)
+                    int z = 0;
+                    if (((psize) == 0) || ((psize) > (256)))
                     {
                         CRuntime.Free(_out_);
-                        stbi__err("bad masks");
+                        stbi__err("invalid");
                         return null;
                     }
 
-                    rshift = (int)(stbi__high_bit((uint)(info.mr)) - 7);
-                    rcount = (int)(stbi__bitcount((uint)(info.mr)));
-
-                    gshift = (int)(stbi__high_bit((uint)(info.mg)) - 7);
-                    gcount = (int)(stbi__bitcount((uint)(info.mg)));
-
-                    bshift = (int)(stbi__high_bit((uint)(info.mb)) - 7);
-                    bcount = (int)(stbi__bitcount((uint)(info.mb)));
-
-                    ashift = (int)(stbi__high_bit((uint)(info.ma)) - 7);
-                    acount = (int)(stbi__bitcount((uint)(info.ma)));
-                }
-
-                int z = 0;
-                j = 0;
-                if ((easy) != 0)
-                {
-                    byte a;
-                    for (; j < ri.Height; ++j)
+                    byte* pal = stackalloc byte[256 * 4];
+                    for (int x = 0; (x) < (psize); ++x)
                     {
-                        for (i = 0; (i) < ri.Width; ++i)
-                        {
-                            _out_[z + 2] = stbi__get8(s);
-                            _out_[z + 1] = stbi__get8(s);
-                            _out_[z] = stbi__get8(s);
-                            z += 3;
+                        pal[x * 4 + 2] = (byte)(stbi__get8(s));
+                        pal[x * 4 + 1] = (byte)(stbi__get8(s));
+                        pal[x * 4 + 0] = (byte)(stbi__get8(s));
+                        if (info.hsz != 12)
+                            stbi__get8(s);
+                        pal[x * 4 + 3] = 255;
+                    }
 
-                            a = (byte)(easy == 2 ? stbi__get8(s) : 255);
-                            info.all_a |= (uint)(a);
+                    stbi__skip(s, (int)(info.offset - 14 - info.hsz - psize * ((info.hsz) == (12) ? 3 : 4)));
+                    if ((info.bpp) == (4))
+                        width = (int)((ri.Width + 1) >> 1);
+                    else if ((info.bpp) == (8))
+                        width = (int)(ri.Width);
+                    else
+                    {
+                        CRuntime.Free(_out_);
+                        stbi__err("bad bpp");
+                        return null;
+                    }
+
+                    pad = (int)((-width) & 3);
+                    for (int y = 0; (y) < ((int)(ri.Height)); ++y)
+                    {
+                        for (int x = 0; (x) < ((int)(ri.Width)); x += 2)
+                        {
+                            int v = (int)(stbi__get8(s));
+                            int v2 = 0;
+                            if ((info.bpp) == (4))
+                            {
+                                v2 = (int)(v & 15);
+                                v >>= 4;
+                            }
+
+                            _out_[z++] = (byte)(pal[v * 4 + 0]);
+                            _out_[z++] = (byte)(pal[v * 4 + 1]);
+                            _out_[z++] = (byte)(pal[v * 4 + 2]);
+
                             if (ri.OutComponents == (4))
-                                _out_[z++] = (byte)(a);
+                                _out_[z++] = 255;
+
+                            if ((x + 1) == ((int)(ri.Width)))
+                                break;
+
+                            v = (int)(((info.bpp) == (8)) ? stbi__get8(s) : v2);
+                            _out_[z++] = (byte)(pal[v * 4 + 0]);
+                            _out_[z++] = (byte)(pal[v * 4 + 1]);
+                            _out_[z++] = (byte)(pal[v * 4 + 2]);
+
+                            if (ri.OutComponents == (4))
+                                _out_[z++] = 255;
                         }
+
                         stbi__skip(s, (int)(pad));
                     }
                 }
                 else
                 {
-                    uint v;
-                    int a;
-                    for (; j < ri.Height; ++j)
+                    stbi__skip(s, (int)(info.offset - 14 - info.hsz));
+
+                    if ((info.bpp) == (24))
+                        width = (int)(3 * ri.Width);
+                    else if ((info.bpp) == (16))
+                        width = (int)(2 * ri.Width);
+                    else
+                        width = 0;
+                    pad = (int)((-width) & 3);
+
+                    int rshift = 0, gshift = 0, bshift = 0, ashift = 0;
+                    int rcount = 0, gcount = 0, bcount = 0, acount = 0;
+                    if (easy == 0)
                     {
-                        for (i = 0; (i) < ri.Width; ++i)
+                        if (info.mr == 0 || info.mg == 0 || info.mb == 0)
                         {
-                            v = (uint)(info.bpp == 16 ? (uint)stbi__get16le(s) : stbi__get32le(s));
-                            _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mr), rshift, rcount)) & 255);
-                            _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mg), gshift, gcount)) & 255);
-                            _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mb), bshift, bcount)) & 255);
-
-                            a = info.ma != 0 ? stbi__shiftsigned((int)(v & info.ma), ashift, acount) : 255;
-                            info.all_a |= (uint)(a);
-                            if (ri.OutComponents == (4))
-                                _out_[z++] = (byte)(a & 255);
+                            CRuntime.Free(_out_);
+                            stbi__err("bad masks");
+                            return null;
                         }
-                        stbi__skip(s, (int)(pad));
+
+                        rshift = (int)(stbi__high_bit((uint)(info.mr)) - 7);
+                        rcount = (int)(stbi__bitcount((uint)(info.mr)));
+
+                        gshift = (int)(stbi__high_bit((uint)(info.mg)) - 7);
+                        gcount = (int)(stbi__bitcount((uint)(info.mg)));
+
+                        bshift = (int)(stbi__high_bit((uint)(info.mb)) - 7);
+                        bcount = (int)(stbi__bitcount((uint)(info.mb)));
+
+                        ashift = (int)(stbi__high_bit((uint)(info.ma)) - 7);
+                        acount = (int)(stbi__bitcount((uint)(info.ma)));
                     }
-                }
-            }
 
-            if ((ri.OutComponents == (4)) && ((info.all_a) == 0))
-                for (i = (int)(4 * ri.Width * ri.Height - 1); (i) >= (0); i -= 4)
-                    _out_[i] = 255;
-
-            bool flip_vertically = ri.Height > 0;
-            if (flip_vertically)
-            {
-                byte t;
-                for (j = 0; (j) < ((int)(ri.Height) >> 1); ++j)
-                {
-                    byte* p1 = _out_ + j * ri.Width * ri.OutComponents;
-                    byte* p2 = _out_ + (ri.Height - 1 - j) * ri.Width * ri.OutComponents;
-                    for (i = 0; (i) < ((int)(ri.Width) * ri.OutComponents); ++i)
+                    int z = 0;
+                    if (easy != 0)
                     {
-                        t = (byte)(p1[i]);
-                        p1[i] = (byte)(p2[i]);
-                        p2[i] = (byte)(t);
+                        var rowBufferSlice = new Span<byte>(rowBuffer, ri.Width * rowComp);
+
+                        byte a = 255;
+                        if (easy != 2)
+                            info.all_a = a;
+
+                        for (int y = 0; y < ri.Height; ++y)
+                        {
+                            if (!stbi__getn(s, rowBufferSlice))
+                                break;
+
+                            for (int x = 0, o = 0; x < ri.Width; x++, z += rowComp)
+                            {
+                                _out_[z + 2] = rowBuffer[o++];
+                                _out_[z + 1] = rowBuffer[o++];
+                                _out_[z] = rowBuffer[o++];
+
+                                if (easy == 2)
+                                {
+                                    a = rowBuffer[o++];
+                                    info.all_a |= a;
+                                }
+
+                                if (ri.OutComponents == 4)
+                                    _out_[z + 3] = a;
+                            }
+                            stbi__skip(s, (int)(pad));
+                        }
+                    }
+                    else
+                    {
+                        uint v;
+                        int a;
+                        for (int y = 0; y < ri.Height; ++y)
+                        {
+                            for (int x = 0; x < ri.Width; x++)
+                            {
+                                v = (uint)(info.bpp == 16 ? (uint)stbi__get16le(s) : stbi__get32le(s));
+                                _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mr), rshift, rcount)) & 255);
+                                _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mg), gshift, gcount)) & 255);
+                                _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mb), bshift, bcount)) & 255);
+
+                                a = info.ma != 0 ? stbi__shiftsigned((int)(v & info.ma), ashift, acount) : 255;
+                                info.all_a |= (uint)(a);
+
+                                if (ri.OutComponents == (4))
+                                    _out_[z++] = (byte)(a & 255);
+                            }
+                            stbi__skip(s, (int)(pad));
+                        }
                     }
                 }
-            }
 
-            IMemoryResult result = new HGlobalMemoryResult(_out_, ri.OutComponents * ri.Width * ri.Height);
-            result = stbi__convert_format(result, ref ri);
-            return result;
+                int outStride = (ri.Width * ri.OutComponents);
+                if (ri.OutComponents == 4 && info.all_a == 0)
+                    for (int x = outStride * ri.Height - 1; (x) >= (0); x -= ri.OutComponents)
+                        _out_[x] = 255;
+
+                bool flip_vertically = ri.Height > 0;
+                if (flip_vertically)
+                {
+                    int rows = (ri.Height >> 1);
+                    for (int y = 0; (y) < rows; ++y)
+                    {
+                        var row1 = new Span<byte>(_out_ + y * outStride, outStride);
+                        var row2 = new Span<byte>(_out_ + (ri.Height - 1 - y) * outStride, outStride);
+
+                        row1.CopyTo(rowBufferSpan);
+                        row2.CopyTo(row1);
+                        rowBufferSpan.CopyTo(row2);
+                    }
+                }
+
+                IMemoryResult result = new HGlobalMemoryResult(_out_, outStride * ri.Height);
+                result = stbi__convert_format(result, ref ri);
+                return result;
+            }
+            finally
+            {
+                CRuntime.Free(rowBuffer);
+            }
         }
 
         public static int stbi__tga_get_comp(int bits_per_pixel, int is_grey, out int bitsPerComp)
@@ -4075,7 +4064,7 @@ namespace StbSharp
                 {
                     int row = (int)((tga_inverted) != 0 ? ri.Height - i - 1 : i);
                     byte* tga_row = _out_ + row * ri.Width * ri.OutComponents;
-                    stbi__getn(s, tga_row, (int)(ri.Width * ri.OutComponents));
+                    stbi__getn(s, new Span<byte>(tga_row, ri.Width * ri.OutComponents));
                 }
             }
             else
@@ -4083,8 +4072,8 @@ namespace StbSharp
                 byte* tga_palette = null;
                 if ((tga_indexed) != 0)
                 {
-                    stbi__skip(s, (int)(tga_palette_start));
-                    tga_palette = (byte*)(stbi__malloc_mad2((int)(tga_palette_len), (int)(ri.OutComponents), 0));
+                    stbi__skip(s, (tga_palette_start));
+                    tga_palette = (byte*)(stbi__malloc_mad2((tga_palette_len), (ri.OutComponents), 0));
                     if (tga_palette == null)
                     {
                         CRuntime.Free(_out_);
@@ -4101,7 +4090,7 @@ namespace StbSharp
                             pal_entry += ri.OutComponents;
                         }
                     }
-                    else if (stbi__getn(s, tga_palette, (int)(tga_palette_len * ri.OutComponents)) == 0)
+                    else if (!stbi__getn(s, new Span<byte>(tga_palette, tga_palette_len * ri.OutComponents)))
                     {
                         CRuntime.Free(_out_);
                         CRuntime.Free(tga_palette);
@@ -4166,9 +4155,9 @@ namespace StbSharp
                         int index2 = (int)((ri.Height - 1 - j) * ri.Width * ri.OutComponents);
                         for (i = (int)(ri.Width * ri.OutComponents); (i) > (0); --i)
                         {
-                            byte temp = (byte)(_out_[index1]);
+                            byte tmp = (byte)(_out_[index1]);
                             _out_[index1] = (byte)(_out_[index2]);
-                            _out_[index2] = (byte)(temp);
+                            _out_[index2] = (byte)(tmp);
                             ++index1;
                             ++index2;
                         }
@@ -4456,7 +4445,7 @@ namespace StbSharp
         }
 
         public static int stbi__gif_header(
-            ReadContext s, ref GifContext g, ref ReadState ri, bool skipColorTable)
+            ReadContext s, GifContext g, ref ReadState ri, bool skipColorTable)
         {
             byte version;
             if ((((stbi__get8(s) != 'G') || (stbi__get8(s) != 'I')) || (stbi__get8(s) != 'F')) ||
@@ -4484,17 +4473,16 @@ namespace StbSharp
             return 1;
         }
 
-        public static void stbi__out_gif_code(ref GifContext g, ushort code)
+        public static void stbi__out_gif_code(GifContext g, ushort code)
         {
-            byte* p;
-            byte* c;
             if ((g.codes[code].prefix) >= (0))
-                stbi__out_gif_code(ref g, (ushort)(g.codes[code].prefix));
+                stbi__out_gif_code(g, (ushort)(g.codes[code].prefix));
+
             if ((g.cur_y) >= (g.max_y))
                 return;
 
-            p = &g._out_[g.cur_x + g.cur_y];
-            c = &g.color_table[g.codes[code].suffix * 4];
+            byte* p = &g._out_[g.cur_x + g.cur_y];
+            byte* c = &g.color_table[g.codes[code].suffix * 4];
             if ((c[3]) >= (128))
             {
                 p[0] = (byte)(c[2]);
@@ -4598,7 +4586,7 @@ namespace StbSharp
                             return null;
                         }
 
-                        stbi__out_gif_code(ref g, (ushort)(code));
+                        stbi__out_gif_code(g, (ushort)(code));
                         if (((avail & codemask) == 0) && (avail <= 0x0FFF))
                         {
                             codesize++;
@@ -4646,7 +4634,7 @@ namespace StbSharp
         }
 
         public static IMemoryResult stbi__gif_load_next(
-            ReadContext s, ref GifContext g, ref ReadState ri, byte* two_back)
+            ReadContext s, GifContext g, ref ReadState ri, byte* two_back)
         {
             int dispose = 0;
             int first_frame = 0;
@@ -4655,7 +4643,7 @@ namespace StbSharp
 
             if ((g._out_) == null)
             {
-                if (stbi__gif_header(s, ref g, ref ri, skipColorTable: false) == 0)
+                if (stbi__gif_header(s, g, ref ri, skipColorTable: false) == 0)
                     return null;
 
                 ri.OutComponents = ri.Components;
@@ -4850,47 +4838,40 @@ namespace StbSharp
                 int stride = 0;
                 delays = new List<int>();
 
-                var g = GifContext.Create();
-                try
+                using (var g = new GifContext())
                 {
+                    do
                     {
-                        do
-                        {
-                            u = stbi__gif_load_next(s, ref g, ref ri, two_back);
-                            if (u == null)
-                                break;
+                        u = stbi__gif_load_next(s, g, ref ri, two_back);
+                        if (u == null)
+                            break;
 
-                            layers++;
-                            stride = (int)(ri.Width * ri.Height * 4);
+                        delays.Add(g.delay);
+                        layers = delays.Count;
 
-                            _out_ = _out_ != null
-                                ? (byte*)(CRuntime.ReAlloc(_out_, layers * stride))
-                                : (byte*)(CRuntime.MAlloc(layers * stride));
-                            CRuntime.MemCopy(_out_ + ((layers - 1) * stride), (byte*)u.Pointer, stride);
+                        stride = (int)(ri.Width * ri.Height * 4);
 
-                            if ((layers) >= 2)
-                                two_back = _out_ - 2 * stride;
+                        _out_ = _out_ != null
+                            ? (byte*)(CRuntime.ReAlloc(_out_, layers * stride))
+                            : (byte*)(CRuntime.MAlloc(layers * stride));
+                        CRuntime.MemCopy(_out_ + ((layers - 1) * stride), (byte*)u.Pointer, stride);
 
-                            delays[layers - 1] = g.delay;
-                        }
-                        while (u != null);
-
-                        CRuntime.Free(g._out_);
-                        CRuntime.Free(g.history);
-                        CRuntime.Free(g.background);
-
-                        IMemoryResult result = new HGlobalMemoryResult(_out_, layers * stride);
-
-                        if (ri.RequestedComponents.HasValue && ri.RequestedComponents != ri.OutComponents)
-                            result = stbi__convert_format8(
-                                result, ri.OutComponents, ri.RequestedComponents.Value, (layers * ri.Width), ri.Height);
-
-                        return result;
+                        if (layers >= 2)
+                            two_back = _out_ - 2 * stride;
                     }
-                }
-                finally
-                {
-                    g.Dispose();
+                    while (u != null);
+
+                    CRuntime.Free(g._out_);
+                    CRuntime.Free(g.history);
+                    CRuntime.Free(g.background);
+
+                    IMemoryResult result = new HGlobalMemoryResult(_out_, layers * stride);
+
+                    if (ri.RequestedComponents.HasValue && ri.RequestedComponents != ri.OutComponents)
+                        result = stbi__convert_format8(
+                            result, ri.OutComponents, ri.RequestedComponents.Value, (layers * ri.Width), ri.Height);
+
+                    return result;
                 }
             }
             else
@@ -4902,10 +4883,9 @@ namespace StbSharp
 
         public static IMemoryResult stbi__gif_load(ReadContext s, ref ReadState ri)
         {
-            var g = GifContext.Create();
-            try
+            using (var g = new GifContext())
             {
-                IMemoryResult u = stbi__gif_load_next(s, ref g, ref ri, null);
+                IMemoryResult u = stbi__gif_load_next(s, g, ref ri, null);
                 if ((u) != null)
                 {
                     if (ri.RequestedComponents.HasValue && ri.RequestedComponents != 4)
@@ -4918,28 +4898,19 @@ namespace StbSharp
                 }
                 return u;
             }
-            finally
-            {
-                g.Dispose();
-            }
         }
 
         public static int stbi__gif_info(ReadContext s, out ReadState ri)
         {
-            var g = GifContext.Create();
-            try
+            using (var g = new GifContext())
             {
                 ri = new ReadState();
-                if (stbi__gif_header(s, ref g, ref ri, skipColorTable: true) == 0)
+                if (stbi__gif_header(s, g, ref ri, skipColorTable: true) == 0)
                 {
                     stbi__rewind(s);
                     return 0;
                 }
                 return 1;
-            }
-            finally
-            {
-                g.Dispose();
             }
         }
 

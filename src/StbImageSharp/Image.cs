@@ -8,7 +8,6 @@ namespace StbSharp
     public static unsafe partial class StbImage
     {
         public static string LastError;
-        public static int stbi__vertically_flip_on_load;
 
         public delegate int ReadCallback(ReadContext context, Span<byte> data);
         public delegate int SkipCallback(ReadContext context, int n);
@@ -16,7 +15,7 @@ namespace StbSharp
         public delegate void BufferReadyCallback(int width, int height, void* buffer);
         public delegate void ReadProgressCallback(double progress, Rect? rect);
 
-        public class ReadContext
+        public class ReadContext : IDisposable
         {
             public readonly Stream Stream;
             public readonly byte[] ReadBuffer;
@@ -27,11 +26,15 @@ namespace StbSharp
             public bool ReadFromCallbacks;
 
             public readonly int DataLength;
+            public byte* DataOriginalStart { get; private set; }
+            public readonly byte* DataOriginalEnd;
             public byte* DataStart;
             public byte* Data;
             public byte* DataEnd;
-            public readonly byte* DataOriginal;
-            public readonly byte* DataOriginalEnd;
+
+            public bool vertically_flip_on_load = false;
+            public bool unpremultiply_on_load = true;
+            public bool de_iphone_flag = true;
 
             public ReadContext(byte* data, int len, CancellationToken cancellationToken)
             {
@@ -42,7 +45,8 @@ namespace StbSharp
 
                 DataLength = len;
                 DataStart = null;
-                Data = DataOriginal = data;
+                DataOriginalStart = data;
+                Data = DataOriginalStart;
                 DataEnd = DataOriginalEnd = data + len;
             }
 
@@ -59,10 +63,29 @@ namespace StbSharp
                 ReadFromCallbacks = true;
 
                 DataLength = 256;
-                DataStart = (byte*)CRuntime.MAlloc(DataLength);
-                DataOriginal = DataStart;
+                DataOriginalStart = (byte*)CRuntime.MAlloc(DataLength);
+
+                DataStart = DataOriginalStart;
                 stbi__refill_buffer(this);
                 DataOriginalEnd = DataEnd;
+            }
+
+
+            protected virtual void Dispose(bool disposing)
+            {
+                CRuntime.Free(DataOriginalStart);
+                DataOriginalStart = null;
+            }
+
+            public void Dispose()
+            {
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
+
+            ~ReadContext()
+            {
+                Dispose(false);
             }
         }
 
@@ -82,7 +105,7 @@ namespace StbSharp
 
             public int OutDepth;
             public int OutComponents;
-            
+
             public ReadState(
                 int? requestedComponents,
                 int? requestedDepth,
@@ -96,6 +119,7 @@ namespace StbSharp
             }
         }
 
+        [StructLayout(LayoutKind.Sequential)]
         public readonly struct Rect
         {
             public readonly int X;
@@ -221,6 +245,7 @@ namespace StbSharp
             }
         };
 
+        [StructLayout(LayoutKind.Sequential)]
         public struct ResampleData
         {
             public ResamplerMethod Resample;
@@ -241,7 +266,7 @@ namespace StbSharp
             public byte suffix;
         }
 
-        public struct GifContext : IDisposable
+        public class GifContext : IDisposable
         {
             public byte* _out_;
             public byte* background;
@@ -267,42 +292,41 @@ namespace StbSharp
             public int cur_y;
             public int line_size;
 
-            public static GifContext Create()
+            public GifContext()
             {
-                var g = new GifContext();
                 try
                 {
-                    g.codes = (GifLzw*)CRuntime.MAlloc(8192 * sizeof(GifLzw));
-                    g.pal = (byte*)CRuntime.MAlloc(256 * 4 * sizeof(byte));
-                    g.lpal = (byte*)CRuntime.MAlloc(256 * 4 * sizeof(byte));
-                    return g;
+                    pal = (byte*)CRuntime.MAlloc(256 * 4 * sizeof(byte));
+                    lpal = (byte*)CRuntime.MAlloc(256 * 4 * sizeof(byte));
+                    codes = (GifLzw*)CRuntime.MAlloc(8192 * sizeof(GifLzw));
                 }
                 catch
                 {
-                    g.Dispose();
-                    throw;
+                    Dispose();
                 }
+            }
+
+            protected virtual void Dispose(bool disposing)
+            {
+                CRuntime.Free(pal);
+                pal = null;
+
+                CRuntime.Free(lpal);
+                lpal = null;
+
+                CRuntime.Free(codes);
+                codes = null;
             }
 
             public void Dispose()
             {
-                if (pal != null)
-                {
-                    CRuntime.Free(pal);
-                    pal = null;
-                }
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
 
-                if (lpal != null)
-                {
-                    CRuntime.Free(lpal);
-                    lpal = null;
-                }
-
-                if (codes != null)
-                {
-                    CRuntime.Free(codes);
-                    codes = null;
-                }
+            ~GifContext()
+            {
+                Dispose(false);
             }
         }
     }
