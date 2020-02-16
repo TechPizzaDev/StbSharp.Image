@@ -24,32 +24,6 @@ namespace StbSharp
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct stbi__zhuffman
-        {
-            public fixed ushort fast[1 << 9];
-            public fixed ushort firstcode[16];
-            public fixed int maxcode[17];
-            public fixed ushort firstsymbol[16];
-            public fixed byte size[288];
-            public fixed ushort value[288];
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        public struct stbi__zbuf
-        {
-            public byte* zbuffer;
-            public byte* zbuffer_end;
-            public int num_bits;
-            public uint code_buffer;
-            public byte* zout;
-            public byte* zout_start;
-            public byte* zout_end;
-            public int z_expandable;
-            public stbi__zhuffman z_length;
-            public stbi__zhuffman z_distance;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
         public readonly struct PngChunkHeader
         {
             public const uint CgBI = ('C' << 24) + ('g' << 16) + ('B' << 8) + 'I';
@@ -87,7 +61,7 @@ namespace StbSharp
         {
             public int bpp;
             public int offset;
-            public int hsz;
+            public int headerSize;
             public uint mr;
             public uint mg;
             public uint mb;
@@ -332,7 +306,7 @@ namespace StbSharp
 
             if (s.vertically_flip_on_load)
                 stbi__vertical_flip(result, ri.Width, ri.Height, ri.OutComponents, ri.OutDepth);
-            
+
             return result;
         }
 
@@ -3438,21 +3412,24 @@ namespace StbSharp
             stbi__get16le(s);
             stbi__get16le(s);
 
-            int hsz;
-            info.offset = (int)(stbi__get32le(s));
-            info.hsz = (int)(hsz = (int)(stbi__get32le(s)));
-            info.mr = info.mg = info.mb = info.ma = (uint)(0);
+            info.offset = (int)stbi__get32le(s);
+            info.headerSize = (int)stbi__get32le(s);
+            info.mr = info.mg = info.mb = info.ma = 0;
 
-            if (((((hsz != 12) && (hsz != 40)) && (hsz != 56)) && (hsz != 108)) && (hsz != 124))
+            if (info.headerSize != 12 &&
+                info.headerSize != 40 &&
+                info.headerSize != 56 &&
+                info.headerSize != 108 &&
+                info.headerSize != 124)
             {
                 stbi__err("unknown BMP");
                 return false;
             }
 
-            if ((hsz) == (12))
+            if (info.headerSize == 12)
             {
-                ri.Width = (stbi__get16le(s));
-                ri.Height = (stbi__get16le(s));
+                ri.Width = stbi__get16le(s);
+                ri.Height = stbi__get16le(s);
             }
             else
             {
@@ -3468,13 +3445,13 @@ namespace StbSharp
             }
 
             info.bpp = (int)(stbi__get16le(s));
-            if ((info.bpp) == (1))
+            if (info.bpp == 1)
             {
                 stbi__err("monochrome");
                 return false;
             }
 
-            if (hsz != 12)
+            if (info.headerSize != 12)
             {
                 int compress = (int)(stbi__get32le(s));
                 if (((compress) == (1)) || ((compress) == 2))
@@ -3488,9 +3465,10 @@ namespace StbSharp
                 stbi__get32le(s);
                 stbi__get32le(s);
                 stbi__get32le(s);
-                if (((hsz) == (40)) || ((hsz) == (56)))
+                if (info.headerSize == 40 ||
+                    info.headerSize == 56)
                 {
-                    if ((hsz) == (56))
+                    if (info.headerSize == 56)
                     {
                         stbi__get32le(s);
                         stbi__get32le(s);
@@ -3538,7 +3516,8 @@ namespace StbSharp
                 }
                 else
                 {
-                    if ((hsz != 108) && (hsz != 124))
+                    if (info.headerSize != 108 && 
+                        info.headerSize != 124)
                     {
                         stbi__err("bad BMP");
                         return false;
@@ -3553,7 +3532,7 @@ namespace StbSharp
                     for (int i = 0; (i) < (12); ++i)
                         stbi__get32le(s);
 
-                    if ((hsz) == (124))
+                    if (info.headerSize == 124)
                     {
                         stbi__get32le(s);
                         stbi__get32le(s);
@@ -3583,12 +3562,13 @@ namespace StbSharp
         public static IMemoryResult stbi__bmp_load(ReadContext s, ref ReadState ri)
         {
             var info = new BmpInfo();
-            info.all_a = (uint)(255);
+            info.all_a = 255;
+
             if (!stbi__bmp_parse_header(s, ref info, ref ri))
                 return null;
 
             int psize = 0;
-            if ((info.hsz) == (12))
+            if ((info.headerSize) == (12))
             {
                 if ((info.bpp) < (24))
                     psize = (int)((info.offset - 14 - 24) / 3);
@@ -3596,7 +3576,7 @@ namespace StbSharp
             else
             {
                 if ((info.bpp) < (16))
-                    psize = (int)((info.offset - 14 - info.hsz) >> 2);
+                    psize = (int)((info.offset - 14 - info.headerSize) >> 2);
             }
 
             if (stbi__mad3sizes_valid(ri.OutComponents, (int)(ri.Width), (int)(ri.Height), 0) == 0)
@@ -3629,7 +3609,7 @@ namespace StbSharp
             }
 
             int rowComp = easy == 2 ? 4 : 3;
-            int rowBufferSize = ri.Width * Math.Max(ri.OutComponents, rowComp);
+            int rowBufferSize = ri.Width * Math.Max(ri.Components, ri.OutComponents);
             byte* rowBuffer = (byte*)CRuntime.MAlloc(rowBufferSize);
             var rowBufferSpan = new Span<byte>(rowBuffer, rowBufferSize);
             try
@@ -3652,12 +3632,13 @@ namespace StbSharp
                         pal[x * 4 + 2] = (byte)(stbi__get8(s));
                         pal[x * 4 + 1] = (byte)(stbi__get8(s));
                         pal[x * 4 + 0] = (byte)(stbi__get8(s));
-                        if (info.hsz != 12)
+                        if (info.headerSize != 12)
                             stbi__get8(s);
                         pal[x * 4 + 3] = 255;
                     }
 
-                    stbi__skip(s, (int)(info.offset - 14 - info.hsz - psize * ((info.hsz) == (12) ? 3 : 4)));
+                    stbi__skip(s, (info.offset - 14 - info.headerSize - psize * (info.headerSize == 12 ? 3 : 4)));
+
                     if ((info.bpp) == (4))
                         width = (int)((ri.Width + 1) >> 1);
                     else if ((info.bpp) == (8))
@@ -3670,34 +3651,34 @@ namespace StbSharp
                     }
 
                     pad = (int)((-width) & 3);
-                    for (int y = 0; (y) < ((int)(ri.Height)); ++y)
+                    for (int y = 0; (y) < ri.Height; ++y)
                     {
-                        for (int x = 0; (x) < ((int)(ri.Width)); x += 2)
+                        for (int x = 0; (x) < ri.Width; x += 2)
                         {
-                            int v = (int)(stbi__get8(s));
                             int v2 = 0;
+                            int v1 = (int)(stbi__get8(s));
                             if ((info.bpp) == (4))
                             {
-                                v2 = (int)(v & 15);
-                                v >>= 4;
+                                v2 = (int)(v1 & 15);
+                                v1 >>= 4;
                             }
 
-                            _out_[z++] = (byte)(pal[v * 4 + 0]);
-                            _out_[z++] = (byte)(pal[v * 4 + 1]);
-                            _out_[z++] = (byte)(pal[v * 4 + 2]);
+                            _out_[z++] = (byte)(pal[v1 * 4 + 0]);
+                            _out_[z++] = (byte)(pal[v1 * 4 + 1]);
+                            _out_[z++] = (byte)(pal[v1 * 4 + 2]);
 
-                            if (ri.OutComponents == (4))
+                            if (ri.OutComponents == 4)
                                 _out_[z++] = 255;
 
                             if ((x + 1) == ((int)(ri.Width)))
                                 break;
 
-                            v = (int)(((info.bpp) == (8)) ? stbi__get8(s) : v2);
-                            _out_[z++] = (byte)(pal[v * 4 + 0]);
-                            _out_[z++] = (byte)(pal[v * 4 + 1]);
-                            _out_[z++] = (byte)(pal[v * 4 + 2]);
+                            v1 = (int)(((info.bpp) == (8)) ? stbi__get8(s) : v2);
+                            _out_[z++] = (byte)(pal[v1 * 4 + 0]);
+                            _out_[z++] = (byte)(pal[v1 * 4 + 1]);
+                            _out_[z++] = (byte)(pal[v1 * 4 + 2]);
 
-                            if (ri.OutComponents == (4))
+                            if (ri.OutComponents == 4)
                                 _out_[z++] = 255;
                         }
 
@@ -3706,7 +3687,7 @@ namespace StbSharp
                 }
                 else
                 {
-                    stbi__skip(s, (int)(info.offset - 14 - info.hsz));
+                    stbi__skip(s, (int)(info.offset - 14 - info.headerSize));
 
                     if ((info.bpp) == (24))
                         width = (int)(3 * ri.Width);
@@ -3740,14 +3721,14 @@ namespace StbSharp
                         acount = (int)(stbi__bitcount((uint)(info.ma)));
                     }
 
+                    byte a = 255;
                     int z = 0;
                     if (easy != 0)
                     {
                         var rowBufferSlice = new Span<byte>(rowBuffer, ri.Width * rowComp);
 
-                        byte a = 255;
                         if (easy != 2)
-                            info.all_a = a;
+                            info.all_a = 255;
 
                         for (int y = 0; y < ri.Height; ++y)
                         {
@@ -3758,7 +3739,7 @@ namespace StbSharp
                             {
                                 _out_[z + 2] = rowBuffer[o++];
                                 _out_[z + 1] = rowBuffer[o++];
-                                _out_[z] = rowBuffer[o++];
+                                _out_[z + 0] = rowBuffer[o++];
 
                                 if (easy == 2)
                                 {
@@ -3769,37 +3750,43 @@ namespace StbSharp
                                 if (ri.OutComponents == 4)
                                     _out_[z + 3] = a;
                             }
-                            stbi__skip(s, (int)(pad));
+                            stbi__skip(s, pad);
                         }
                     }
                     else
                     {
-                        uint v;
-                        int a;
+                        if (info.ma == 0)
+                            info.all_a = 255;
+
                         for (int y = 0; y < ri.Height; ++y)
                         {
-                            for (int x = 0; x < ri.Width; x++)
+                            for (int x = 0; x < ri.Width; x++, z += rowComp)
                             {
-                                v = (uint)(info.bpp == 16 ? (uint)stbi__get16le(s) : stbi__get32le(s));
-                                _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mr), rshift, rcount)) & 255);
-                                _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mg), gshift, gcount)) & 255);
-                                _out_[z++] = (byte)((stbi__shiftsigned((int)(v & info.mb), bshift, bcount)) & 255);
+                                uint v = info.bpp == 16 ? (uint)stbi__get16le(s) : stbi__get32le(s);
+                                _out_[z + 0] = (byte)(stbi__shiftsigned((int)(v & info.mr), rshift, rcount) & 0xff);
+                                _out_[z + 1] = (byte)(stbi__shiftsigned((int)(v & info.mg), gshift, gcount) & 0xff);
+                                _out_[z + 2] = (byte)(stbi__shiftsigned((int)(v & info.mb), bshift, bcount) & 0xff);
 
-                                a = info.ma != 0 ? stbi__shiftsigned((int)(v & info.ma), ashift, acount) : 255;
-                                info.all_a |= (uint)(a);
+                                if (info.ma != 0)
+                                {
+                                    a = (byte)(stbi__shiftsigned((int)(v & info.ma), ashift, acount) & 0xff);
+                                    info.all_a |= a;
+                                }
 
-                                if (ri.OutComponents == (4))
-                                    _out_[z++] = (byte)(a & 255);
+                                if (ri.OutComponents == 4)
+                                    _out_[z + 3] = a;
                             }
-                            stbi__skip(s, (int)(pad));
+                            stbi__skip(s, pad);
                         }
                     }
                 }
 
-                int outStride = (ri.Width * ri.OutComponents);
+                int outStride = ri.Width * ri.OutComponents;
                 if (ri.OutComponents == 4 && info.all_a == 0)
-                    for (int x = outStride * ri.Height - 1; (x) >= (0); x -= ri.OutComponents)
+                {
+                    for (int x = outStride * ri.Height - 1; x >= 0; x -= 4)
                         _out_[x] = 255;
+                }
 
                 bool flip_vertically = ri.Height > 0;
                 if (flip_vertically)
