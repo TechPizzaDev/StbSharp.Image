@@ -20,21 +20,6 @@ namespace StbSharp
                 public uint all_a;
             }
 
-            public static int TestRaw(ReadContext s)
-            {
-                if (s.ReadByte() != 'B' &&
-                    s.ReadByte() != 'M')
-                    return 0;
-
-                s.ReadInt32LE();
-                s.ReadInt16LE();
-                s.ReadInt16LE();
-                s.ReadInt32LE();
-                int sz = (int)s.ReadInt32LE();
-                bool r = sz == 12 || sz == 40 || sz == 56 || sz == 108 || sz == 124;
-                return r ? 1 : 0;
-            }
-
             public static bool Test(ReadContext s)
             {
                 var info = new BmpInfo();

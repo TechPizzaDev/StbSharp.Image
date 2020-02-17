@@ -151,7 +151,7 @@ namespace StbSharp
             public byte ReadByte()
             {
                 if (Data < DataEnd)
-                    return (byte)Data++;
+                    return (byte)*Data++;
 
                 if (ReadFromCallbacks)
                 {
