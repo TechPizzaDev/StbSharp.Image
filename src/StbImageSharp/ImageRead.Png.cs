@@ -649,7 +649,7 @@ namespace StbSharp
 
             }
 
-            public static bool Load(ref PngContext z, ref ReadState ri, ScanMode scan)
+            public static bool LoadCore(ref PngContext z, ref ReadState ri, ScanMode scan)
             {
                 ReadContext s = z.s;
                 z.idata = null;
@@ -1060,7 +1060,7 @@ namespace StbSharp
                 }
 
                 IMemoryResult result = null;
-                if (Load(ref p, ref ri, ScanMode.Load))
+                if (LoadCore(ref p, ref ri, ScanMode.Load))
                 {
                     result = new HGlobalMemoryResult(p._out_, ri.OutComponents * ri.Width * ri.Height * ri.OutDepth / 8);
                     p._out_ = null;
@@ -1074,7 +1074,7 @@ namespace StbSharp
                 return result;
             }
 
-            public static IMemoryResult LoadImage(ReadContext s, ref ReadState ri)
+            public static IMemoryResult Load(ReadContext s, ref ReadState ri)
             {
                 var p = new PngContext(s);
                 return Load(ref p, ref ri);
@@ -1090,7 +1090,7 @@ namespace StbSharp
             public static bool InfoCore(ref PngContext p, out ReadState ri)
             {
                 ri = new ReadState();
-                if (!Load(ref p, ref ri, ScanMode.Header))
+                if (!LoadCore(ref p, ref ri, ScanMode.Header))
                 {
                     p.s.Rewind();
                     return false;

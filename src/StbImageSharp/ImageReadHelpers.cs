@@ -5,23 +5,18 @@ namespace StbSharp
 {
     public static unsafe partial class ImageRead
     {
-        public const int STBI_grey = 1;
-        public const int STBI_grey_alpha = 2;
-        public const int STBI_rgb = 3;
-        public const int STBI_rgb_alpha = 4;
-
         public static int AreValidAddSizes(int a, int b)
         {
-            if ((b) < (0))
+            if (b < 0)
                 return 0;
             return (a <= 2147483647 - b) ? 1 : 0;
         }
 
         public static int AreValidMul2Sizes(int a, int b)
         {
-            if (((a) < (0)) || ((b) < (0)))
+            if ((a < 0) || (b < 0))
                 return 0;
-            if ((b) == 0)
+            if (b == 0)
                 return 1;
             return (a <= 2147483647 / b) ? 1 : 0;
         }
@@ -29,8 +24,8 @@ namespace StbSharp
         public static int AreValidMad2Sizes(int a, int b, int add)
         {
             return (int)
-                (((AreValidMul2Sizes((int)(a), (int)(b))) != 0) &&
-                 ((AreValidAddSizes((int)(a * b), (int)(add))) != 0)
+                ((AreValidMul2Sizes((int)a, (int)b) != 0) &&
+                 (AreValidAddSizes((int)(a * b), (int)add) != 0)
                     ? 1
                     : 0);
         }
@@ -39,16 +34,16 @@ namespace StbSharp
         {
             return
                 (int)
-                ((((AreValidMul2Sizes((int)(a), (int)(b))) != 0) &&
-                  ((AreValidMul2Sizes((int)(a * b), (int)(c))) != 0)) &&
-                 ((AreValidAddSizes((int)(a * b * c), (int)(add))) != 0)
+                ((AreValidMul2Sizes((int)a, (int)b) != 0) &&
+                  (AreValidMul2Sizes((int)(a * b), (int)c) != 0) &&
+                 (AreValidAddSizes((int)(a * b * c), (int)add) != 0)
                     ? 1
                     : 0);
         }
 
         public static void* MAllocMad2(int a, int b, int add)
         {
-            if (AreValidMad2Sizes((int)(a), (int)(b), (int)(add)) == 0)
+            if (AreValidMad2Sizes((int)a, (int)b, (int)add) == 0)
                 return null;
 
             int length = a * b + add;
@@ -57,7 +52,7 @@ namespace StbSharp
 
         public static void* MAllocMad3(int a, int b, int c, int add)
         {
-            if (AreValidMad3Sizes((int)(a), (int)(b), (int)(c), (int)(add)) == 0)
+            if (AreValidMad3Sizes((int)a, (int)b, (int)c, (int)add) == 0)
                 return null;
 
             int length = a * b * c + add;
@@ -73,8 +68,8 @@ namespace StbSharp
                 return null;
             }
 
-            byte* reduced = (byte*)(CRuntime.MAlloc(img_len));
-            if ((reduced) == null)
+            byte* reduced = (byte*)CRuntime.MAlloc(img_len);
+            if (reduced == null)
             {
                 Error("outofmem");
                 return null;
@@ -83,8 +78,8 @@ namespace StbSharp
             using (orig)
             {
                 var origPtr = (ushort*)orig.Pointer;
-                for (int i = 0; (i) < (img_len); ++i)
-                    reduced[i] = ((byte)((origPtr[i] >> 8) & 0xFF));
+                for (int i = 0; i < img_len; ++i)
+                    reduced[i] = (byte)((origPtr[i] >> 8) & 0xFF);
             }
             return new HGlobalMemoryResult(reduced, img_len);
         }
@@ -99,8 +94,8 @@ namespace StbSharp
             }
 
             int enlarged_len = img_len * 2;
-            ushort* enlarged = (ushort*)(CRuntime.MAlloc(enlarged_len));
-            if ((enlarged) == null)
+            ushort* enlarged = (ushort*)CRuntime.MAlloc(enlarged_len);
+            if (enlarged == null)
             {
                 Error("outofmem");
                 return null;
@@ -109,8 +104,8 @@ namespace StbSharp
             using (orig)
             {
                 var origPtr = (byte*)orig.Pointer;
-                for (int i = 0; (i) < (img_len); ++i)
-                    enlarged[i] = ((ushort)((origPtr[i] << 8) + origPtr[i]));
+                for (int i = 0; i < img_len; ++i)
+                    enlarged[i] = (ushort)((origPtr[i] << 8) + origPtr[i]);
 
                 return new HGlobalMemoryResult(enlarged, enlarged_len);
             }
@@ -120,7 +115,7 @@ namespace StbSharp
         {
             int stride = w * comp * depth / 8;
             byte* rowBuffer = stackalloc byte[2048];
-            for (int row = 0; (row) < (h >> 1); row++)
+            for (int row = 0; row < (h >> 1); row++)
             {
                 byte* row1 = data + row * stride;
                 byte* row2 = data + (h - row - 1) * stride;
@@ -169,12 +164,12 @@ namespace StbSharp
         public static IMemoryResult ConvertFormat8(
             IMemoryResult data, int img_n, int req_comp, int width, int height)
         {
-            if ((req_comp) == (img_n))
+            if (req_comp == img_n)
                 return data;
 
             int goodLength = req_comp * width * height;
-            byte* good = (byte*)(MAllocMad3((int)(req_comp), (int)(width), (int)(height), 0));
-            if ((good) == null)
+            byte* good = (byte*)MAllocMad3((int)req_comp, (int)width, (int)height, 0);
+            if (good == null)
             {
                 data.Dispose();
                 Error("outofmem");
@@ -186,91 +181,91 @@ namespace StbSharp
                 int i;
                 var dataPtr = (byte*)data.Pointer;
 
-                for (int j = 0; (j) < ((int)(height)); ++j)
+                for (int j = 0; j < ((int)height); ++j)
                 {
                     byte* src = dataPtr + j * width * img_n;
                     byte* dest = good + j * width * req_comp;
 
                     switch (img_n * 8 + req_comp)
                     {
-                        case ((1) * 8 + 2):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 2)
+                        case 1 * 8 + 2:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 1, dest += 2)
                             {
-                                dest[0] = (byte)(src[0]);
+                                dest[0] = (byte)src[0];
                                 dest[1] = 255;
                             }
                             break;
 
-                        case ((1) * 8 + (3)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 3)
-                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
+                        case 1 * 8 + 3:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 1, dest += 3)
+                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)src[0]));
                             break;
 
-                        case ((1) * 8 + (4)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 4)
+                        case 1 * 8 + 4:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 1, dest += 4)
                             {
-                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
+                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)src[0]));
                                 dest[3] = 255;
                             }
                             break;
 
-                        case (2 * 8 + (1)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 1)
-                                dest[0] = (byte)(src[0]);
+                        case 2 * 8 + 1:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 2, dest += 1)
+                                dest[0] = (byte)src[0];
                             break;
 
-                        case (2 * 8 + (3)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 3)
-                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
+                        case 2 * 8 + 3:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 2, dest += 3)
+                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)src[0]));
                             break;
 
-                        case (2 * 8 + (4)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 4)
+                        case 2 * 8 + 4:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 2, dest += 4)
                             {
-                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)(src[0])));
-                                dest[3] = (byte)(src[1]);
+                                dest[0] = (byte)(dest[1] = (byte)(dest[2] = (byte)src[0]));
+                                dest[3] = (byte)src[1];
                             }
                             break;
 
-                        case ((3) * 8 + (4)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 4)
+                        case 3 * 8 + 4:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 3, dest += 4)
                             {
-                                dest[0] = (byte)(src[0]);
-                                dest[1] = (byte)(src[1]);
-                                dest[2] = (byte)(src[2]);
+                                dest[0] = (byte)src[0];
+                                dest[1] = (byte)src[1];
+                                dest[2] = (byte)src[2];
                                 dest[3] = 255;
                             }
                             break;
 
-                        case ((3) * 8 + (1)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 1)
-                                dest[0] = (byte)(ComputeY8((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                        case 3 * 8 + 1:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 3, dest += 1)
+                                dest[0] = (byte)ComputeY8((int)src[0], (int)src[1], (int)src[2]);
                             break;
 
-                        case ((3) * 8 + 2):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 2)
+                        case 3 * 8 + 2:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 3, dest += 2)
                             {
-                                dest[0] = (byte)(ComputeY8((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                                dest[0] = (byte)ComputeY8((int)src[0], (int)src[1], (int)src[2]);
                                 dest[1] = 255;
                             }
                             break;
 
-                        case ((4) * 8 + (1)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 1)
-                                dest[0] = (byte)(ComputeY8((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                        case 4 * 8 + 1:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 4, dest += 1)
+                                dest[0] = (byte)ComputeY8((int)src[0], (int)src[1], (int)src[2]);
                             break;
 
-                        case ((4) * 8 + 2):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 2)
-                                dest[0] = (byte)(ComputeY8((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                            dest[1] = (byte)(src[3]);
+                        case 4 * 8 + 2:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 4, dest += 2)
+                                dest[0] = (byte)ComputeY8((int)src[0], (int)src[1], (int)src[2]);
+                            dest[1] = (byte)src[3];
                             break;
 
-                        case ((4) * 8 + (3)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 3)
-                                dest[0] = (byte)(src[0]);
-                            dest[1] = (byte)(src[1]);
-                            dest[2] = (byte)(src[2]);
+                        case 4 * 8 + 3:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 4, dest += 3)
+                                dest[0] = (byte)src[0];
+                            dest[1] = (byte)src[1];
+                            dest[2] = (byte)src[2];
                             break;
 
                         default:
@@ -290,12 +285,12 @@ namespace StbSharp
         public static IMemoryResult ConvertFormat16(
             IMemoryResult data, int img_n, int req_comp, int width, int height)
         {
-            if ((req_comp) == (img_n))
+            if (req_comp == img_n)
                 return data;
 
             int goodLength = req_comp * width * height * 2;
-            ushort* good = (ushort*)(CRuntime.MAlloc(goodLength));
-            if ((good) == null)
+            ushort* good = (ushort*)CRuntime.MAlloc(goodLength);
+            if (good == null)
             {
                 data.Dispose();
                 Error("outofmem");
@@ -307,92 +302,92 @@ namespace StbSharp
                 int i;
                 var dataPtr = (ushort*)data.Pointer;
 
-                for (int j = 0; (j) < ((int)(height)); ++j)
+                for (int j = 0; j < ((int)height); ++j)
                 {
                     ushort* src = dataPtr + j * width * img_n;
                     ushort* dest = good + j * width * req_comp;
 
-                    switch (((img_n) * 8 + (req_comp)))
+                    switch (img_n * 8 + req_comp)
                     {
-                        case ((1) * 8 + 2):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 2)
+                        case 1 * 8 + 2:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 1, dest += 2)
                             {
-                                dest[0] = (ushort)(src[0]);
-                                dest[1] = (ushort)(0xffff);
+                                dest[0] = (ushort)src[0];
+                                dest[1] = (ushort)0xffff;
                             }
                             break;
 
-                        case ((1) * 8 + (3)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 3)
-                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
+                        case 1 * 8 + 3:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 1, dest += 3)
+                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)src[0]));
                             break;
 
-                        case ((1) * 8 + (4)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 1, dest += 4)
+                        case 1 * 8 + 4:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 1, dest += 4)
                             {
-                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
-                                dest[3] = (ushort)(0xffff);
+                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)src[0]));
+                                dest[3] = (ushort)0xffff;
                             }
                             break;
 
-                        case (2 * 8 + (1)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 1)
-                                dest[0] = (ushort)(src[0]);
+                        case 2 * 8 + 1:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 2, dest += 1)
+                                dest[0] = (ushort)src[0];
                             break;
 
-                        case (2 * 8 + (3)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 3)
-                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
+                        case 2 * 8 + 3:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 2, dest += 3)
+                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)src[0]));
                             break;
 
-                        case (2 * 8 + (4)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 2, dest += 4)
+                        case 2 * 8 + 4:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 2, dest += 4)
                             {
-                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)(src[0])));
-                                dest[3] = (ushort)(src[1]);
+                                dest[0] = (ushort)(dest[1] = (ushort)(dest[2] = (ushort)src[0]));
+                                dest[3] = (ushort)src[1];
                             }
                             break;
 
-                        case ((3) * 8 + (4)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 4)
+                        case 3 * 8 + 4:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 3, dest += 4)
                             {
-                                dest[0] = (ushort)(src[0]);
-                                dest[1] = (ushort)(src[1]);
-                                dest[2] = (ushort)(src[2]);
-                                dest[3] = (ushort)(0xffff);
+                                dest[0] = (ushort)src[0];
+                                dest[1] = (ushort)src[1];
+                                dest[2] = (ushort)src[2];
+                                dest[3] = (ushort)0xffff;
                             }
                             break;
 
-                        case ((3) * 8 + (1)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 1)
-                                dest[0] = (ushort)(ComputeY16((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                        case 3 * 8 + 1:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 3, dest += 1)
+                                dest[0] = (ushort)ComputeY16((int)src[0], (int)src[1], (int)src[2]);
                             break;
 
-                        case ((3) * 8 + 2):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 3, dest += 2)
-                                dest[0] = (ushort)(ComputeY16((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                            dest[1] = (ushort)(0xffff);
+                        case 3 * 8 + 2:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 3, dest += 2)
+                                dest[0] = (ushort)ComputeY16((int)src[0], (int)src[1], (int)src[2]);
+                            dest[1] = (ushort)0xffff;
                             break;
 
-                        case ((4) * 8 + (1)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 1)
-                                dest[0] = (ushort)(ComputeY16((int)(src[0]), (int)(src[1]), (int)(src[2])));
+                        case 4 * 8 + 1:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 4, dest += 1)
+                                dest[0] = (ushort)ComputeY16((int)src[0], (int)src[1], (int)src[2]);
                             break;
 
-                        case ((4) * 8 + 2):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 2)
+                        case 4 * 8 + 2:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 4, dest += 2)
                             {
-                                dest[0] = (ushort)(ComputeY16((int)(src[0]), (int)(src[1]), (int)(src[2])));
-                                dest[1] = (ushort)(src[3]);
+                                dest[0] = (ushort)ComputeY16((int)src[0], (int)src[1], (int)src[2]);
+                                dest[1] = (ushort)src[3];
                             }
                             break;
 
-                        case ((4) * 8 + (3)):
-                            for (i = (int)(width - 1); (i) >= (0); --i, src += 4, dest += 3)
+                        case 4 * 8 + 3:
+                            for (i = (int)(width - 1); i >= 0; --i, src += 4, dest += 3)
                             {
-                                dest[0] = (ushort)(src[0]);
-                                dest[1] = (ushort)(src[1]);
-                                dest[2] = (ushort)(src[2]);
+                                dest[0] = (ushort)src[0];
+                                dest[1] = (ushort)src[1];
+                                dest[2] = (ushort)src[2];
                             }
                             break;
 
@@ -436,15 +431,15 @@ namespace StbSharp
         {
             if (Jpeg.Test(s))
                 return Jpeg.LoadImage(s, ref ri);
-            if ((Png.Test(s)))
-                return Png.LoadImage(s, ref ri);
-            if ((Bmp.Test(s)))
+            if (Png.Test(s))
+                return Png.Load(s, ref ri);
+            if (Bmp.Test(s))
                 return Bmp.Load(s, ref ri);
             if (Gif.Test(s))
                 return Gif.Load(s, ref ri);
-            if ((Psd.Test(s)))
+            if (Psd.Test(s))
                 return Psd.Load(s, ref ri);
-            if ((Tga.Test(s)))
+            if (Tga.Test(s))
                 return Tga.Load(s, ref ri);
 
             Error("unknown image type");
@@ -453,17 +448,17 @@ namespace StbSharp
 
         public static bool InfoMain(ReadContext s, out ReadState ri)
         {
-            if ((Jpeg.Info(s, out ri)))
+            if (Jpeg.Info(s, out ri))
                 return true;
-            if ((Png.Info(s, out ri)))
+            if (Png.Info(s, out ri))
                 return true;
-            if ((Gif.Info(s, out ri)))
+            if (Gif.Info(s, out ri))
                 return true;
-            if ((Bmp.Info(s, out ri)) )
+            if (Bmp.Info(s, out ri))
                 return true;
-            if ((Psd.Info(s, out ri)))
+            if (Psd.Info(s, out ri))
                 return true;
-            if ((Tga.Info(s, out ri)))
+            if (Tga.Info(s, out ri))
                 return true;
 
             Error("unknown image type");
