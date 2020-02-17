@@ -63,8 +63,20 @@ namespace StbSharp
                 }
 
                 if (info.colormap_type == 1)
-                    if ((info.image_type != 1) && (info.image_type != 9))
+                {
+                    if (info.image_type != 1 &&
+                        info.image_type != 9)
                         return false;
+                }
+                else
+                {
+                    if (info.image_type != 2 &&
+                        info.image_type != 3)
+                        return false;
+                }
+
+                if (scan == ScanMode.Type)
+                    return true;
 
                 info.palette_start = s.ReadInt16LE();
                 info.palette_len = s.ReadInt16LE();
@@ -80,16 +92,7 @@ namespace StbSharp
                 info.x_origin = s.ReadInt16LE();
                 info.y_origin = s.ReadInt16LE();
 
-                if (info.image_type != 2 &&
-                    info.image_type != 3 &&
-                    info.image_type != 10 &&
-                    info.image_type != 11)
-                    return false;
-
                 s.Skip(9);
-
-                if (scan == ScanMode.Type)
-                    return true;
 
                 ri.Width = s.ReadInt16LE();
                 if (ri.Width < 1)
