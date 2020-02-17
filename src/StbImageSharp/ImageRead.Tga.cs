@@ -32,7 +32,7 @@ namespace StbSharp
 
                     case 15:
                     case 16:
-                        if (((bits_per_pixel) == (16)) && is_grey)
+                        if ((bits_per_pixel == 16) && is_grey)
                             return 2;
 
                         bitsPerComp = 16;
@@ -40,7 +40,7 @@ namespace StbSharp
 
                     case 24:
                     case 32:
-                        return (int)(bits_per_pixel / 8);
+                        return bits_per_pixel / 8;
 
                     default:
                         return 0;
@@ -51,11 +51,11 @@ namespace StbSharp
             {
                 info.offset = s.ReadByte();
 
-                info.colormap_type = (int)(s.ReadByte());
-                if ((info.colormap_type) > (1))
+                info.colormap_type = s.ReadByte();
+                if (info.colormap_type > 1)
                     return false;
 
-                info.image_type = (int)(s.ReadByte());
+                info.image_type = s.ReadByte();
                 if (info.image_type >= 8)
                 {
                     info.image_type -= 8;
@@ -66,10 +66,10 @@ namespace StbSharp
                     if ((info.image_type != 1) && (info.image_type != 9))
                         return false;
 
-                info.palette_start = (int)(s.ReadInt16LE());
-                info.palette_len = (int)(s.ReadInt16LE());
+                info.palette_start = s.ReadInt16LE();
+                info.palette_len = s.ReadInt16LE();
 
-                info.palette_bits = (int)(s.ReadByte());
+                info.palette_bits = s.ReadByte();
                 if (info.palette_bits != 8 &&
                     info.palette_bits != 15 &&
                     info.palette_bits != 16 &&
@@ -77,8 +77,8 @@ namespace StbSharp
                     info.palette_bits != 32)
                     return false;
 
-                info.x_origin = (int)(s.ReadInt16LE());
-                info.y_origin = (int)(s.ReadInt16LE());
+                info.x_origin = s.ReadInt16LE();
+                info.y_origin = s.ReadInt16LE();
 
                 if (info.image_type != 2 &&
                     info.image_type != 3 &&
@@ -91,15 +91,15 @@ namespace StbSharp
                 if (scan == ScanMode.Type)
                     return true;
 
-                ri.Width = (int)(s.ReadInt16LE());
-                if ((ri.Width) < (1))
+                ri.Width = s.ReadInt16LE();
+                if (ri.Width < 1)
                     return false;
 
-                ri.Height = (int)(s.ReadInt16LE());
-                if ((ri.Height) < (1))
+                ri.Height = s.ReadInt16LE();
+                if (ri.Height < 1)
                     return false;
 
-                info.bits_per_pixel = (int)(s.ReadByte());
+                info.bits_per_pixel = s.ReadByte();
 
                 info.inverted = s.ReadByte();
                 info.inverted = 1 - ((info.inverted >> 5) & 1);
@@ -111,7 +111,7 @@ namespace StbSharp
                         info.bits_per_pixel != 16)
                         return false;
 
-                    ri.Components = (int)(GetComponentCount(info.palette_bits, false, out ri.Depth));
+                    ri.Components = GetComponentCount(info.palette_bits, false, out ri.Depth);
                 }
                 else
                 {
@@ -151,14 +151,14 @@ namespace StbSharp
 
             public static void ReadRgb16(ReadContext s, byte* _out_)
             {
-                ushort px = (ushort)(s.ReadInt16LE());
-                ushort fiveBitMask = (ushort)(31);
-                int r = (int)((px >> 10) & fiveBitMask);
-                int g = (int)((px >> 5) & fiveBitMask);
-                int b = (int)(px & fiveBitMask);
-                _out_[0] = ((byte)((r * 255) / 31));
-                _out_[1] = ((byte)((g * 255) / 31));
-                _out_[2] = ((byte)((b * 255) / 31));
+                ushort px = (ushort)s.ReadInt16LE();
+                ushort fiveBitMask = 31;
+                int r = (px >> 10) & fiveBitMask;
+                int g = (px >> 5) & fiveBitMask;
+                int b = px & fiveBitMask;
+                _out_[0] = (byte)(r * 255 / 31);
+                _out_[1] = (byte)(g * 255 / 31);
+                _out_[2] = (byte)(b * 255 / 31);
             }
 
             public static IMemoryResult Load(ReadContext s, ref ReadState ri)
@@ -167,13 +167,13 @@ namespace StbSharp
                 if (!ParseHeader(s, ref info, ref ri, ScanMode.Load))
                     return null;
 
-                if (AreValidMad3Sizes((int)(ri.Width), (int)(ri.Height), (int)(ri.OutComponents), 0) == 0)
+                if (AreValidMad3Sizes(ri.Width, ri.Height, ri.OutComponents, 0) == 0)
                 {
                     Error("too large");
                     return null;
                 }
 
-                byte* _out_ = (byte*)(MAllocMad3((int)(ri.Width), (int)(ri.Height), (int)(ri.OutComponents), 0));
+                byte* _out_ = (byte*)MAllocMad3(ri.Width, ri.Height, ri.OutComponents, 0);
                 if (_out_ == null)
                 {
                     Error("outofmem");
@@ -183,15 +183,15 @@ namespace StbSharp
                 byte* raw_data = stackalloc byte[4];
                 raw_data[0] = 0;
 
-                s.Skip((int)(info.offset));
+                s.Skip(info.offset);
 
                 int i;
                 int j;
                 if (info.colormap_type == 0 && !info.is_RLE && ri.OutDepth == 8)
                 {
-                    for (i = 0; (i) < (ri.Height); ++i)
+                    for (i = 0; i < ri.Height; ++i)
                     {
-                        int row = (int)((info.inverted) != 0 ? ri.Height - i - 1 : i);
+                        int row = info.inverted != 0 ? ri.Height - i - 1 : i;
                         byte* tga_row = _out_ + row * ri.Width * ri.OutComponents;
                         s.ReadBytes(new Span<byte>(tga_row, ri.Width * ri.OutComponents));
                     }
@@ -199,10 +199,10 @@ namespace StbSharp
                 else
                 {
                     byte* tga_palette = null;
-                    if ((info.colormap_type) != 0)
+                    if (info.colormap_type != 0)
                     {
-                        s.Skip((info.palette_start));
-                        tga_palette = (byte*)(MAllocMad2((info.palette_len), (ri.OutComponents), 0));
+                        s.Skip(info.palette_start);
+                        tga_palette = (byte*)MAllocMad2(info.palette_len, ri.OutComponents, 0);
                         if (tga_palette == null)
                         {
                             CRuntime.Free(_out_);
@@ -213,7 +213,7 @@ namespace StbSharp
                         if (ri.Depth == 16)
                         {
                             byte* pal_entry = tga_palette;
-                            for (i = 0; (i) < (info.palette_len); ++i)
+                            for (i = 0; i < info.palette_len; ++i)
                             {
                                 ReadRgb16(s, pal_entry);
                                 pal_entry += ri.OutComponents;
@@ -232,15 +232,15 @@ namespace StbSharp
                     int RLE_repeating = 0;
                     int read_next_pixel = 1;
 
-                    for (i = 0; (i) < (ri.Width * ri.Height); ++i)
+                    for (i = 0; i < (ri.Width * ri.Height); ++i)
                     {
                         if (info.is_RLE)
                         {
-                            if ((RLE_count) == 0)
+                            if (RLE_count == 0)
                             {
-                                int RLE_cmd = (int)(s.ReadByte());
-                                RLE_count = (int)(1 + (RLE_cmd & 127));
-                                RLE_repeating = (int)(RLE_cmd >> 7);
+                                int RLE_cmd = s.ReadByte();
+                                RLE_count = 1 + (RLE_cmd & 127);
+                                RLE_repeating = RLE_cmd >> 7;
                                 read_next_pixel = 1;
                             }
                             else if (RLE_repeating == 0)
@@ -249,44 +249,44 @@ namespace StbSharp
                         else
                             read_next_pixel = 1;
 
-                        if ((read_next_pixel) != 0)
+                        if (read_next_pixel != 0)
                         {
-                            if ((info.colormap_type) != 0)
+                            if (info.colormap_type != 0)
                             {
-                                int pal_idx = (int)(((info.bits_per_pixel) == (8)) ? s.ReadByte() : s.ReadInt16LE());
-                                if ((pal_idx) >= (info.palette_len))
+                                int pal_idx = (info.bits_per_pixel == 8) ? s.ReadByte() : s.ReadInt16LE();
+                                if (pal_idx >= info.palette_len)
                                     pal_idx = 0;
 
-                                pal_idx *= (int)(ri.OutComponents);
-                                for (j = 0; (j) < (ri.OutComponents); ++j)
-                                    raw_data[j] = (byte)(tga_palette[pal_idx + j]);
+                                pal_idx *= ri.OutComponents;
+                                for (j = 0; j < ri.OutComponents; ++j)
+                                    raw_data[j] = tga_palette[pal_idx + j];
                             }
                             else if (ri.OutDepth == 16)
                                 ReadRgb16(s, raw_data);
                             else
-                                for (j = 0; (j) < (ri.OutComponents); ++j)
-                                    raw_data[j] = (byte)(s.ReadByte());
+                                for (j = 0; j < ri.OutComponents; ++j)
+                                    raw_data[j] = s.ReadByte();
 
                             read_next_pixel = 0;
                         }
 
-                        for (j = 0; (j) < (ri.OutComponents); ++j)
-                            _out_[i * ri.OutComponents + j] = (byte)(raw_data[j]);
+                        for (j = 0; j < ri.OutComponents; ++j)
+                            _out_[i * ri.OutComponents + j] = raw_data[j];
 
                         RLE_count--;
                     }
 
-                    if ((info.inverted) != 0)
+                    if (info.inverted != 0)
                     {
-                        for (j = 0; (j * 2) < (ri.Height); ++j)
+                        for (j = 0; (j * 2) < ri.Height; ++j)
                         {
-                            int index1 = (int)(j * ri.Width * ri.OutComponents);
-                            int index2 = (int)((ri.Height - 1 - j) * ri.Width * ri.OutComponents);
-                            for (i = (int)(ri.Width * ri.OutComponents); (i) > (0); --i)
+                            int index1 = j * ri.Width * ri.OutComponents;
+                            int index2 = (ri.Height - 1 - j) * ri.Width * ri.OutComponents;
+                            for (i = ri.Width * ri.OutComponents; i > 0; --i)
                             {
-                                byte tmp = (byte)(_out_[index1]);
-                                _out_[index1] = (byte)(_out_[index2]);
-                                _out_[index2] = (byte)(tmp);
+                                byte tmp = _out_[index1];
+                                _out_[index1] = _out_[index2];
+                                _out_[index2] = tmp;
                                 ++index1;
                                 ++index2;
                             }
@@ -297,14 +297,14 @@ namespace StbSharp
                         CRuntime.Free(tga_palette);
                 }
 
-                if (((ri.OutComponents) >= (3)) && ri.OutDepth == 8)
+                if (ri.OutComponents >= 3 && ri.OutDepth == 8)
                 {
                     byte* tga_pixel = _out_;
-                    for (i = 0; (i) < (ri.Width * ri.Height); ++i)
+                    for (i = 0; i < (ri.Width * ri.Height); ++i)
                     {
-                        byte tmp = (byte)(tga_pixel[0]);
-                        tga_pixel[0] = (byte)(tga_pixel[2]);
-                        tga_pixel[2] = (byte)(tmp);
+                        byte tmp = tga_pixel[0];
+                        tga_pixel[0] = tga_pixel[2];
+                        tga_pixel[2] = tmp;
                         tga_pixel += ri.OutComponents;
                     }
                 }

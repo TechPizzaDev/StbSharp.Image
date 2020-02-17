@@ -114,7 +114,7 @@ namespace StbSharp
                     return false;
                 }
 
-                version = (byte)s.ReadByte();
+                version = s.ReadByte();
                 if ((version != '7') && (version != '9'))
                 {
                     Error("not GIF");
@@ -129,17 +129,17 @@ namespace StbSharp
                 if (scan == ScanMode.Type)
                     return true;
 
-                ri.Width = (int)s.ReadInt16LE();
-                ri.Height = (int)s.ReadInt16LE();
+                ri.Width = s.ReadInt16LE();
+                ri.Height = s.ReadInt16LE();
                 ri.Components = 4;
 
-                g.flags = (int)s.ReadByte();
-                g.bgindex = (int)s.ReadByte();
-                g.ratio = (int)s.ReadByte();
+                g.flags = s.ReadByte();
+                g.bgindex = s.ReadByte();
+                g.ratio = s.ReadByte();
                 g.transparent = -1;
 
                 if ((g.flags & 0x80) != 0)
-                    ParseColortable(s, ref ri, g.pal, (int)(2 << (g.flags & 7)), -1);
+                    ParseColortable(s, ref ri, g.pal, 2 << (g.flags & 7), -1);
 
                 return true;
             }
@@ -156,21 +156,21 @@ namespace StbSharp
                 byte* c = &g.color_table[g.codes[code].suffix * 4];
                 if (c[3] >= 128)
                 {
-                    p[0] = (byte)c[2];
-                    p[1] = (byte)c[1];
-                    p[2] = (byte)c[0];
-                    p[3] = (byte)c[3];
+                    p[0] = c[2];
+                    p[1] = c[1];
+                    p[2] = c[0];
+                    p[3] = c[3];
                 }
 
-                g.cur_x += (int)4;
+                g.cur_x += 4;
                 if (g.cur_x >= g.max_x)
                 {
-                    g.cur_x = (int)g.start_x;
-                    g.cur_y += (int)g.step;
+                    g.cur_x = g.start_x;
+                    g.cur_y += g.step;
                     while ((g.cur_y >= g.max_y) && (g.parse > 0))
                     {
-                        g.step = (int)((1 << g.parse) * g.line_size);
-                        g.cur_y = (int)(g.start_y + (g.step >> 1));
+                        g.step = (1 << g.parse) * g.line_size;
+                        g.cur_y = g.start_y + (g.step >> 1);
                         --g.parse;
                     }
                 }
@@ -179,25 +179,25 @@ namespace StbSharp
             public static IMemoryResult ProcessRaster(
                 ReadContext s, ref Context g, ref ReadState ri)
             {
-                byte lzw_cs = (byte)s.ReadByte();
+                byte lzw_cs = s.ReadByte();
                 if (lzw_cs > 12)
                     return null;
 
-                int clear = (int)(1 << lzw_cs);
-                uint first = (uint)1;
-                int codesize = (int)(lzw_cs + 1);
-                int codemask = (int)((1 << codesize) - 1);
+                int clear = 1 << lzw_cs;
+                uint first = 1;
+                int codesize = lzw_cs + 1;
+                int codemask = (1 << codesize) - 1;
                 int bits = 0;
                 int valid_bits = 0;
                 for (int init_code = 0; init_code < clear; init_code++)
                 {
-                    g.codes[init_code].prefix = (short)-1;
+                    g.codes[init_code].prefix = -1;
                     g.codes[init_code].first = (byte)init_code;
                     g.codes[init_code].suffix = (byte)init_code;
                 }
 
                 GifLzw* p;
-                int avail = (int)(clear + 2);
+                int avail = clear + 2;
                 int oldcode = -1;
                 int len = 0;
                 for (; ; )
@@ -206,33 +206,33 @@ namespace StbSharp
                     {
                         if (len == 0)
                         {
-                            len = (int)s.ReadByte();
+                            len = s.ReadByte();
                             if (len == 0)
                                 return new HGlobalMemoryResult(g._out_, ri.Width * ri.Height * ri.OutComponents);
                         }
 
                         len--;
-                        bits |= (int)((int)s.ReadByte() << valid_bits);
-                        valid_bits += (int)8;
+                        bits |= s.ReadByte() << valid_bits;
+                        valid_bits += 8;
                     }
                     else
                     {
-                        int code = (int)(bits & codemask);
+                        int code = bits & codemask;
                         bits >>= codesize;
-                        valid_bits -= (int)codesize;
+                        valid_bits -= codesize;
                         if (code == clear)
                         {
-                            codesize = (int)(lzw_cs + 1);
-                            codemask = (int)((1 << codesize) - 1);
-                            avail = (int)(clear + 2);
+                            codesize = lzw_cs + 1;
+                            codemask = (1 << codesize) - 1;
+                            avail = clear + 2;
                             oldcode = -1;
-                            first = (uint)0;
+                            first = 0;
                         }
                         else if (code == (clear + 1))
                         {
-                            s.Skip((int)len);
-                            while ((len = (int)s.ReadByte()) > 0)
-                                s.Skip((int)len);
+                            s.Skip(len);
+                            while ((len = s.ReadByte()) > 0)
+                                s.Skip(len);
 
                             return new HGlobalMemoryResult(g._out_, ri.Width * ri.Height * ri.OutComponents);
                         }
@@ -242,13 +242,13 @@ namespace StbSharp
                                 Error("no clear code");
                             if (oldcode >= 0)
                             {
-                                p = (GifLzw*)g.codes + avail++;
+                                p = g.codes + avail++;
                                 if (avail > 4096)
                                     Error("too many codes");
 
                                 p->prefix = (short)oldcode;
-                                p->first = (byte)g.codes[oldcode].first;
-                                p->suffix = (byte)((code == avail) ? p->first : g.codes[code].first);
+                                p->first = g.codes[oldcode].first;
+                                p->suffix = (code == avail) ? p->first : g.codes[code].first;
                             }
                             else if (code == avail)
                             {
@@ -260,10 +260,10 @@ namespace StbSharp
                             if (((avail & codemask) == 0) && (avail <= 0x0FFF))
                             {
                                 codesize++;
-                                codemask = (int)((1 << codesize) - 1);
+                                codemask = (1 << codesize) - 1;
                             }
 
-                            oldcode = (int)code;
+                            oldcode = code;
                         }
                         else
                         {
@@ -277,15 +277,15 @@ namespace StbSharp
             public static void FillBackground(
                 ref Context g, ref ReadState ri, int x0, int y0, int x1, int y1)
             {
-                byte* c = (byte*)g.pal + g.bgindex;
-                for (int y = (int)y0; y < y1; y += (int)(ri.OutComponents * ri.Width))
+                byte* c = g.pal + g.bgindex;
+                for (int y = y0; y < y1; y += ri.OutComponents * ri.Width)
                 {
-                    for (int x = (int)x0; x < x1; x += ri.OutComponents)
+                    for (int x = x0; x < x1; x += ri.OutComponents)
                     {
                         byte* p = &g._out_[y + x];
-                        p[0] = (byte)c[2];
-                        p[1] = (byte)c[1];
-                        p[2] = (byte)c[0];
+                        p[0] = c[2];
+                        p[1] = c[1];
+                        p[2] = c[0];
                         p[3] = 0;
                     }
                 }
@@ -324,7 +324,7 @@ namespace StbSharp
                         return null;
                     }
 
-                    pcount = (int)(ri.Width * ri.Height);
+                    pcount = ri.Width * ri.Height;
                     g._out_ = (byte*)CRuntime.MAlloc(ri.OutComponents * pcount);
                     g.background = (byte*)CRuntime.MAlloc(ri.OutComponents * pcount);
                     g.history = (byte*)CRuntime.MAlloc(pcount);
@@ -341,10 +341,10 @@ namespace StbSharp
                 }
                 else
                 {
-                    dispose = (int)((g.eflags & 0x1C) >> 2);
-                    pcount = (int)(ri.Width * ri.Height);
+                    dispose = (g.eflags & 0x1C) >> 2;
+                    pcount = ri.Width * ri.Height;
                     if ((dispose == 3) && (two_back == null))
-                        dispose = (int)2;
+                        dispose = 2;
 
                     if (dispose == 3)
                     {
@@ -370,40 +370,40 @@ namespace StbSharp
                 CRuntime.MemSet(g.history, 0, pcount);
                 for (; ; )
                 {
-                    int tag = (int)s.ReadByte();
+                    int tag = s.ReadByte();
                     switch (tag)
                     {
                         case 0x2C:
                         {
-                            int x = (int)s.ReadInt16LE();
-                            int y = (int)s.ReadInt16LE();
-                            int w = (int)s.ReadInt16LE();
-                            int h = (int)s.ReadInt16LE();
+                            int x = s.ReadInt16LE();
+                            int y = s.ReadInt16LE();
+                            int w = s.ReadInt16LE();
+                            int h = s.ReadInt16LE();
                             if (((x + w) > ri.Width) || ((y + h) > ri.Height))
                             {
                                 Error("bad image descriptor");
                                 return null;
                             }
 
-                            g.line_size = (int)(ri.Width * ri.OutComponents);
-                            g.start_x = (int)(x * ri.OutComponents);
-                            g.start_y = (int)(y * g.line_size);
-                            g.max_x = (int)(g.start_x + w * ri.OutComponents);
-                            g.max_y = (int)(g.start_y + h * g.line_size);
-                            g.cur_x = (int)g.start_x;
-                            g.cur_y = (int)g.start_y;
+                            g.line_size = ri.Width * ri.OutComponents;
+                            g.start_x = x * ri.OutComponents;
+                            g.start_y = y * g.line_size;
+                            g.max_x = g.start_x + w * ri.OutComponents;
+                            g.max_y = g.start_y + h * g.line_size;
+                            g.cur_x = g.start_x;
+                            g.cur_y = g.start_y;
                             if (w == 0)
-                                g.cur_y = (int)g.max_y;
-                            g.lflags = (int)s.ReadByte();
+                                g.cur_y = g.max_y;
+                            g.lflags = s.ReadByte();
 
                             if ((g.lflags & 0x40) != 0)
                             {
-                                g.step = (int)(8 * g.line_size);
-                                g.parse = (int)3;
+                                g.step = 8 * g.line_size;
+                                g.parse = 3;
                             }
                             else
                             {
-                                g.step = (int)g.line_size;
+                                g.step = g.line_size;
                                 g.parse = 0;
                             }
                             if ((g.lflags & 0x80) != 0)
@@ -412,14 +412,14 @@ namespace StbSharp
                                     s,
                                     ref ri,
                                     g.lpal,
-                                    (int)(2 << (g.lflags & 7)),
-                                    (int)((g.eflags & 0x01) != 0 ? g.transparent : -1));
+                                    2 << (g.lflags & 7),
+                                    (g.eflags & 0x01) != 0 ? g.transparent : -1);
 
-                                g.color_table = (byte*)g.lpal;
+                                g.color_table = g.lpal;
                             }
                             else if ((g.flags & 0x80) != 0)
                             {
-                                g.color_table = (byte*)g.pal;
+                                g.color_table = g.pal;
                             }
                             else
                             {
@@ -431,7 +431,7 @@ namespace StbSharp
                             if (o == null)
                                 return null;
 
-                            pcount = (int)(ri.Width * ri.Height);
+                            pcount = ri.Width * ri.Height;
                             if ((first_frame != 0) && (g.bgindex > 0))
                             {
                                 for (pi = 0; pi < pcount; ++pi)
@@ -450,20 +450,20 @@ namespace StbSharp
                         case 0x21:
                         {
                             int block_len = 0;
-                            int ext = (int)s.ReadByte();
+                            int ext = s.ReadByte();
                             if (ext == 0xF9)
                             {
-                                block_len = (int)s.ReadByte();
+                                block_len = s.ReadByte();
                                 if (block_len == 4)
                                 {
-                                    g.eflags = (int)s.ReadByte();
-                                    g.delay = (int)(10 * s.ReadInt16LE());
+                                    g.eflags = s.ReadByte();
+                                    g.delay = 10 * s.ReadInt16LE();
                                     if (g.transparent >= 0)
                                         g.pal[g.transparent * ri.OutComponents + 3] = 255;
 
                                     if ((g.eflags & 0x01) != 0)
                                     {
-                                        g.transparent = (int)s.ReadByte();
+                                        g.transparent = s.ReadByte();
                                         if (g.transparent >= 0)
                                             g.pal[g.transparent * ri.OutComponents + 3] = 0;
                                     }
@@ -475,12 +475,12 @@ namespace StbSharp
                                 }
                                 else
                                 {
-                                    s.Skip((int)block_len);
+                                    s.Skip(block_len);
                                     break;
                                 }
                             }
-                            while ((block_len = (int)s.ReadByte()) != 0)
-                                s.Skip((int)block_len);
+                            while ((block_len = s.ReadByte()) != 0)
+                                s.Skip(block_len);
                             break;
                         }
 
@@ -520,7 +520,7 @@ namespace StbSharp
                         delays.Add(g.delay);
                         layers = delays.Count;
 
-                        stride = (int)(ri.Width * ri.Height * 4);
+                        stride = ri.Width * ri.Height * 4;
 
                         _out_ = _out_ != null
                             ? (byte*)CRuntime.ReAlloc(_out_, layers * stride)

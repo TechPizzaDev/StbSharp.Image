@@ -74,24 +74,24 @@ namespace StbSharp
                         return true;
                 }
 
-                return ((Data) >= (DataEnd) ? true : false);
+                return Data >= DataEnd ? true : false;
             }
 
             public void Skip(int n)
             {
-                if ((n) < (0))
+                if (n < 0)
                 {
                     Data = DataEnd;
                     return;
                 }
 
-                if ((ReadCallback) != null)
+                if (ReadCallback != null)
                 {
                     int blen = (int)(DataEnd - Data);
-                    if ((blen) < (n))
+                    if (blen < n)
                     {
                         Data = DataEnd;
-                        SkipCallback(this, (int)(n - blen));
+                        SkipCallback(this, n - blen);
                         return;
                     }
                 }
@@ -125,10 +125,10 @@ namespace StbSharp
             }
             public bool ReadBytes(Span<byte> destination)
             {
-                if ((ReadCallback) != null)
+                if (ReadCallback != null)
                 {
                     int bufLen = (int)(DataEnd - Data);
-                    if ((bufLen) < (destination.Length))
+                    if (bufLen < destination.Length)
                     {
                         new Span<byte>(Data, bufLen).CopyTo(destination);
 
@@ -150,13 +150,13 @@ namespace StbSharp
 
             public byte ReadByte()
             {
-                if ((Data) < (DataEnd))
-                    return (byte)(Data++);
+                if (Data < DataEnd)
+                    return (byte)Data++;
 
                 if (ReadFromCallbacks)
                 {
                     RefillBuffer();
-                    return (byte)(*Data++);
+                    return *Data++;
                 }
 
                 return 0;
@@ -164,25 +164,25 @@ namespace StbSharp
 
             public int ReadInt16BE()
             {
-                int z = (int)(ReadByte());
-                return (int)((z << 8) + ReadByte());
+                int z = ReadByte();
+                return (z << 8) + ReadByte();
             }
 
             public uint ReadInt32BE()
             {
-                uint z = (uint)(ReadInt16BE());
+                uint z = (uint)ReadInt16BE();
                 return (uint)((z << 16) + ReadInt16BE());
             }
 
             public int ReadInt16LE()
             {
-                int z = (int)(ReadByte());
-                return (int)(z + (ReadByte() << 8));
+                int z = ReadByte();
+                return z + (ReadByte() << 8);
             }
 
             public uint ReadInt32LE()
             {
-                uint z = (uint)(ReadInt16LE());
+                uint z = (uint)ReadInt16LE();
                 return (uint)(z + (ReadInt16LE() << 16));
             }
 

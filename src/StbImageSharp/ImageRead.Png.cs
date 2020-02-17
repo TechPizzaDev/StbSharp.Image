@@ -88,11 +88,11 @@ namespace StbSharp
                 ref PngContext a, byte* raw, uint raw_len, int out_n,
                 int width, int height, int comp, int depth, int color)
             {
-                int bytes = (int)(depth == 16 ? 2 : 1);
-                int out_bytes = (int)(out_n * bytes);
-                int x = (int)width;
+                int bytes = depth == 16 ? 2 : 1;
+                int out_bytes = out_n * bytes;
+                int x = width;
 
-                a._out_ = (byte*)MAllocMad3((int)width, (int)height, (int)out_bytes, 0);
+                a._out_ = (byte*)MAllocMad3(width, height, out_bytes, 0);
                 if (a._out_ == null)
                 {
                     Error("outofmem");
@@ -108,12 +108,12 @@ namespace StbSharp
                 }
 
                 uint stride = (uint)(width * out_n * bytes);
-                int filter_bytes = (int)(comp * bytes);
+                int filter_bytes = comp * bytes;
                 uint i;
                 uint j;
                 int k;
 
-                for (j = (uint)0; j < height; ++j)
+                for (j = 0; j < height; ++j)
                 {
                     byte* cur = a._out_ + stride * j;
                     byte* prior;
@@ -143,7 +143,7 @@ namespace StbSharp
                         case FilterType.AverageFirst:
                         case FilterType.PaethFirst:
                             for (; k < filter_bytes; ++k)
-                                cur[k] = (byte)raw[k];
+                                cur[k] = raw[k];
                             break;
 
                         case FilterType.Up:
@@ -158,7 +158,7 @@ namespace StbSharp
 
                         case FilterType.Paeth:
                             for (; k < filter_bytes; ++k)
-                                cur[k] = (byte)((raw[k] + CRuntime.Paeth32(0, (int)prior[k], 0)) & 255);
+                                cur[k] = (byte)((raw[k] + CRuntime.Paeth32(0, prior[k], 0)) & 255);
                             break;
                     }
 
@@ -191,7 +191,7 @@ namespace StbSharp
 
                     if ((depth < 8) || (comp == out_n))
                     {
-                        int nk = (int)((x - 1) * filter_bytes);
+                        int nk = (x - 1) * filter_bytes;
                         k = 0;
                         switch (filter)
                         {
@@ -242,7 +242,7 @@ namespace StbSharp
                                     raw += filter_bytes, cur += out_bytes, prior += out_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
-                                        cur[k] = (byte)raw[k];
+                                        cur[k] = raw[k];
                                 }
                                 break;
 
@@ -279,8 +279,8 @@ namespace StbSharp
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
                                         cur[k] = (byte)(raw[k] + CRuntime.Paeth32(
-                                            (int)cur[k - out_bytes], (int)prior[k],
-                                            (int)prior[k - out_bytes]) & 255);
+                                            cur[k - out_bytes], prior[k],
+                                            prior[k - out_bytes]) & 255);
                                 }
                                 break;
 
@@ -299,7 +299,7 @@ namespace StbSharp
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
                                         cur[k] = (byte)((raw[k] + CRuntime.Paeth32(
-                                            (int)cur[k - out_bytes], 0, 0)) & 255);
+                                            cur[k - out_bytes], 0, 0)) & 255);
                                 }
                                 break;
                         }
@@ -307,7 +307,7 @@ namespace StbSharp
                         if (depth == 16)
                         {
                             cur = a._out_ + stride * j;
-                            for (i = (uint)0; i < width; ++i, cur += out_bytes)
+                            for (i = 0; i < width; ++i, cur += out_bytes)
                                 cur[filter_bytes + 1] = 255;
                         }
                     }
@@ -315,14 +315,14 @@ namespace StbSharp
 
                 if (depth < 8)
                 {
-                    for (j = (uint)0; j < height; ++j)
+                    for (j = 0; j < height; ++j)
                     {
                         byte* cur = a._out_ + stride * j;
                         byte* _in_ = a._out_ + stride * j + width * out_n - img_width_bytes;
                         byte scale = (byte)((color == 0) ? DepthScaleTable[depth] : 1);
                         if (depth == 4)
                         {
-                            for (k = (int)(width * comp); k >= 2; k -= (int)2, ++_in_)
+                            for (k = width * comp; k >= 2; k -= 2, ++_in_)
                             {
                                 *cur++ = (byte)(scale * (*_in_ >> 4));
                                 *cur++ = (byte)(scale * ((*_in_) & 0x0f));
@@ -332,7 +332,7 @@ namespace StbSharp
                         }
                         else if (depth == 2)
                         {
-                            for (k = (int)(width * comp); k >= 4; k -= (int)4, ++_in_)
+                            for (k = width * comp; k >= 4; k -= 4, ++_in_)
                             {
                                 *cur++ = (byte)(scale * (*_in_ >> 6));
                                 *cur++ = (byte)(scale * ((*_in_ >> 4) & 0x03));
@@ -349,7 +349,7 @@ namespace StbSharp
                         }
                         else if (depth == 1)
                         {
-                            for (k = (int)(width * comp); k >= 8; k -= (int)8, ++_in_)
+                            for (k = width * comp; k >= 8; k -= 8, ++_in_)
                             {
                                 *cur++ = (byte)(scale * (*_in_ >> 7));
                                 *cur++ = (byte)(scale * ((*_in_ >> 6) & 0x01));
@@ -382,20 +382,20 @@ namespace StbSharp
                             cur = a._out_ + stride * j;
                             if (comp == 1)
                             {
-                                for (q = (int)(width - 1); q >= 0; --q)
+                                for (q = width - 1; q >= 0; --q)
                                 {
                                     cur[q * 2 + 1] = 255;
-                                    cur[q * 2 + 0] = (byte)cur[q];
+                                    cur[q * 2 + 0] = cur[q];
                                 }
                             }
                             else
                             {
-                                for (q = (int)(width - 1); q >= 0; --q)
+                                for (q = width - 1; q >= 0; --q)
                                 {
                                     cur[q * 4 + 3] = 255;
-                                    cur[q * 4 + 2] = (byte)cur[q * 3 + 2];
-                                    cur[q * 4 + 1] = (byte)cur[q * 3 + 1];
-                                    cur[q * 4 + 0] = (byte)cur[q * 3 + 0];
+                                    cur[q * 4 + 2] = cur[q * 3 + 2];
+                                    cur[q * 4 + 1] = cur[q * 3 + 1];
+                                    cur[q * 4 + 0] = cur[q * 3 + 0];
                                 }
                             }
                         }
@@ -405,7 +405,7 @@ namespace StbSharp
                 {
                     byte* cur = a._out_;
                     ushort* cur16 = (ushort*)cur;
-                    for (i = (uint)0; i < (width * height * out_n); ++i, cur16++, cur += 2)
+                    for (i = 0; i < (width * height * out_n); ++i, cur16++, cur += 2)
                         *cur16 = (ushort)((cur[0] << 8) | cur[1]);
                 }
 
@@ -416,21 +416,21 @@ namespace StbSharp
                 ref PngContext a, byte* image_data, uint image_data_len, int out_n,
                 int width, int height, int comp, int depth, int color, int interlaced)
             {
-                int bytes = (int)(depth == 16 ? 2 : 1);
-                int out_bytes = (int)(out_n * bytes);
+                int bytes = depth == 16 ? 2 : 1;
+                int out_bytes = out_n * bytes;
 
                 if (interlaced == 0)
                     return CreateImageCore(
-                        ref a, image_data, (uint)image_data_len, (int)out_n,
-                        width, height, comp, (int)depth, (int)color);
+                        ref a, image_data, image_data_len, out_n,
+                        width, height, comp, depth, color);
 
-                byte* final = (byte*)MAllocMad3((int)width, (int)height, (int)out_bytes, 0);
+                byte* final = (byte*)MAllocMad3(width, height, out_bytes, 0);
 
                 int* xorig = stackalloc int[7];
                 xorig[0] = 0;
-                xorig[1] = (int)4;
+                xorig[1] = 4;
                 xorig[2] = 0;
-                xorig[3] = (int)2;
+                xorig[3] = 2;
                 xorig[4] = 0;
                 xorig[5] = 1;
                 xorig[6] = 0;
@@ -438,42 +438,42 @@ namespace StbSharp
                 int* yorig = stackalloc int[7];
                 yorig[0] = 0;
                 yorig[1] = 0;
-                yorig[2] = (int)4;
+                yorig[2] = 4;
                 yorig[3] = 0;
-                yorig[4] = (int)2;
+                yorig[4] = 2;
                 yorig[5] = 0;
                 yorig[6] = 1;
 
                 int* xspc = stackalloc int[7];
-                xspc[0] = (int)8;
-                xspc[1] = (int)8;
-                xspc[2] = (int)4;
-                xspc[3] = (int)4;
-                xspc[4] = (int)2;
-                xspc[5] = (int)2;
+                xspc[0] = 8;
+                xspc[1] = 8;
+                xspc[2] = 4;
+                xspc[3] = 4;
+                xspc[4] = 2;
+                xspc[5] = 2;
                 xspc[6] = 1;
 
                 int* yspc = stackalloc int[7];
-                yspc[0] = (int)8;
-                yspc[1] = (int)8;
-                yspc[2] = (int)8;
-                yspc[3] = (int)4;
-                yspc[4] = (int)4;
-                yspc[5] = (int)2;
-                yspc[6] = (int)2;
+                yspc[0] = 8;
+                yspc[1] = 8;
+                yspc[2] = 8;
+                yspc[3] = 4;
+                yspc[4] = 4;
+                yspc[5] = 2;
+                yspc[6] = 2;
 
                 for (int p = 0; p < 7; ++p)
                 {
                     int i;
                     int j;
-                    int x = (int)((width - xorig[p] + xspc[p] - 1) / xspc[p]);
-                    int y = (int)((height - yorig[p] + yspc[p] - 1) / yspc[p]);
+                    int x = (width - xorig[p] + xspc[p] - 1) / xspc[p];
+                    int y = (height - yorig[p] + yspc[p] - 1) / yspc[p];
                     if ((x != 0) && (y != 0))
                     {
                         uint img_len = (uint)(((((comp * x * depth) + 7) >> 3) + 1) * y);
                         if (!CreateImageCore(
-                            ref a, image_data, (uint)image_data_len, (int)out_n,
-                            x, y, comp, (int)depth, (int)color))
+                            ref a, image_data, image_data_len, out_n,
+                            x, y, comp, depth, color))
                         {
                             CRuntime.Free(final);
                             return false;
@@ -483,8 +483,8 @@ namespace StbSharp
                         {
                             for (i = 0; i < x; ++i)
                             {
-                                int out_y = (int)(j * yspc[p] + yorig[p]);
-                                int out_x = (int)(i * xspc[p] + xorig[p]);
+                                int out_y = j * yspc[p] + yorig[p];
+                                int out_x = i * xspc[p] + xorig[p];
                                 CRuntime.MemCopy(
                                     final + out_y * width * out_bytes + out_x * out_bytes,
                                     a._out_ + (j * x + i) * out_bytes,
@@ -494,7 +494,7 @@ namespace StbSharp
 
                         CRuntime.Free(a._out_);
                         image_data += img_len;
-                        image_data_len -= (uint)img_len;
+                        image_data_len -= img_len;
                     }
                 }
 
@@ -509,7 +509,7 @@ namespace StbSharp
                 byte* p = z._out_;
                 if (out_n == 2)
                 {
-                    for (uint i = (uint)0; i < pixel_count; ++i)
+                    for (uint i = 0; i < pixel_count; ++i)
                     {
                         p[1] = (byte)(p[0] == tc[0] ? 0 : 255);
                         p += 2;
@@ -517,7 +517,7 @@ namespace StbSharp
                 }
                 else
                 {
-                    for (uint i = (uint)0; i < pixel_count; ++i)
+                    for (uint i = 0; i < pixel_count; ++i)
                     {
                         if ((p[0] == tc[0]) && (p[1] == tc[1]) && (p[2] == tc[2]))
                             p[3] = 0;
@@ -535,7 +535,7 @@ namespace StbSharp
                 ushort* p = (ushort*)z._out_;
                 if (out_n == 2)
                 {
-                    for (uint i = (uint)0; i < pixel_count; ++i)
+                    for (uint i = 0; i < pixel_count; ++i)
                     {
                         p[1] = (ushort)(p[0] == tc[0] ? 0 : 65535);
                         p += 2;
@@ -543,10 +543,10 @@ namespace StbSharp
                 }
                 else
                 {
-                    for (uint i = (uint)0; i < pixel_count; ++i)
+                    for (uint i = 0; i < pixel_count; ++i)
                     {
                         if ((p[0] == tc[0]) && (p[1] == tc[1]) && (p[2] == tc[2]))
-                            p[3] = (ushort)0;
+                            p[3] = 0;
                         p += 4;
                     }
                 }
@@ -558,7 +558,7 @@ namespace StbSharp
                 ref PngContext a, int width, int height, byte* palette, int len, int pal_img_n)
             {
                 uint pixel_count = (uint)(width * height);
-                byte* p = (byte*)MAllocMad2((int)pixel_count, (int)pal_img_n, 0);
+                byte* p = (byte*)MAllocMad2((int)pixel_count, pal_img_n, 0);
                 if (p == null)
                 {
                     Error("outofmem");
@@ -571,10 +571,10 @@ namespace StbSharp
                 {
                     for (uint i = 0; i < pixel_count; ++i)
                     {
-                        int n = (int)(orig[i] * 4);
-                        p[0] = (byte)palette[n];
-                        p[1] = (byte)palette[n + 1];
-                        p[2] = (byte)palette[n + 2];
+                        int n = orig[i] * 4;
+                        p[0] = palette[n];
+                        p[1] = palette[n + 1];
+                        p[2] = palette[n + 2];
                         p += 3;
                     }
                 }
@@ -582,11 +582,11 @@ namespace StbSharp
                 {
                     for (uint i = 0; i < pixel_count; ++i)
                     {
-                        int n = (int)(orig[i] * 4);
-                        p[0] = (byte)palette[n];
-                        p[1] = (byte)palette[n + 1];
-                        p[2] = (byte)palette[n + 2];
-                        p[3] = (byte)palette[n + 3];
+                        int n = orig[i] * 4;
+                        p[0] = palette[n];
+                        p[1] = palette[n + 1];
+                        p[2] = palette[n + 2];
+                        p[3] = palette[n + 3];
                         p += 4;
                     }
                 }
@@ -604,11 +604,11 @@ namespace StbSharp
                 byte* p = z._out_;
                 if (ri.OutComponents == 3)
                 {
-                    for (i = (uint)0; i < pixel_count; ++i)
+                    for (i = 0; i < pixel_count; ++i)
                     {
-                        byte t = (byte)p[0];
-                        p[0] = (byte)p[2];
-                        p[2] = (byte)t;
+                        byte t = p[0];
+                        p[0] = p[2];
+                        p[2] = t;
                         p += 3;
                     }
                 }
@@ -616,10 +616,10 @@ namespace StbSharp
                 {
                     if (s.unpremultiply_on_load)
                     {
-                        for (i = (uint)0; i < pixel_count; ++i)
+                        for (i = 0; i < pixel_count; ++i)
                         {
-                            byte a = (byte)p[3];
-                            byte t = (byte)p[0];
+                            byte a = p[3];
+                            byte t = p[0];
                             if (a != 0)
                             {
                                 byte half = (byte)(a / 2);
@@ -629,19 +629,19 @@ namespace StbSharp
                             }
                             else
                             {
-                                p[0] = (byte)p[2];
-                                p[2] = (byte)t;
+                                p[0] = p[2];
+                                p[2] = t;
                             }
                             p += 4;
                         }
                     }
                     else
                     {
-                        for (i = (uint)0; i < pixel_count; ++i)
+                        for (i = 0; i < pixel_count; ++i)
                         {
-                            byte t = (byte)p[0];
-                            p[0] = (byte)p[2];
-                            p[2] = (byte)t;
+                            byte t = p[0];
+                            p[0] = p[2];
+                            p[2] = t;
                             p += 4;
                         }
                     }
@@ -670,8 +670,8 @@ namespace StbSharp
                 bool has_transparency = false;
                 byte* tc = stackalloc byte[3];
                 ushort* tc16 = stackalloc ushort[3];
-                uint ioff = (uint)0;
-                uint idata_limit = (uint)0;
+                uint ioff = 0;
+                uint idata_limit = 0;
                 uint i;
                 int pal_len = 0;
                 int first = 1;
@@ -727,7 +727,7 @@ namespace StbSharp
                                 return false;
                             }
 
-                            ri.Depth = (int)s.ReadByte();
+                            ri.Depth = s.ReadByte();
                             if (ri.Depth != 1 &&
                                 ri.Depth != 2 &&
                                 ri.Depth != 4 &&
@@ -743,7 +743,7 @@ namespace StbSharp
                             else
                                 ri.OutDepth = ri.Depth;
 
-                            color = (int)s.ReadByte();
+                            color = s.ReadByte();
                             if (color > 6)
                             {
                                 Error("bad ctype");
@@ -756,28 +756,28 @@ namespace StbSharp
                             }
 
                             if (color == 3)
-                                pal_img_n = (byte)3;
+                                pal_img_n = 3;
                             else if ((color & 1) != 0)
                             {
                                 Error("bad ctype");
                                 return false;
                             }
 
-                            comp = (int)s.ReadByte();
+                            comp = s.ReadByte();
                             if (comp != 0)
                             {
                                 Error("bad comp method");
                                 return false;
                             }
 
-                            filter = (int)s.ReadByte();
+                            filter = s.ReadByte();
                             if (filter != 0)
                             {
                                 Error("bad filter method");
                                 return false;
                             }
 
-                            interlace = (int)s.ReadByte();
+                            interlace = s.ReadByte();
                             if (interlace > 1)
                             {
                                 Error("bad interlace method");
@@ -786,7 +786,7 @@ namespace StbSharp
 
                             if (pal_img_n == 0)
                             {
-                                ri.Components = (int)(((color & 2) != 0 ? 3 : 1) + ((color & 4) != 0 ? 1 : 0));
+                                ri.Components = ((color & 2) != 0 ? 3 : 1) + ((color & 4) != 0 ? 1 : 0);
                                 if (((1 << 30) / ri.Width / ri.Components) < ri.Height)
                                 {
                                     Error("too large");
@@ -827,11 +827,11 @@ namespace StbSharp
                                 return false;
                             }
 
-                            for (i = (uint)0; i < pal_len; ++i)
+                            for (i = 0; i < pal_len; ++i)
                             {
-                                palette[i * 4 + 0] = (byte)s.ReadByte();
-                                palette[i * 4 + 1] = (byte)s.ReadByte();
-                                palette[i * 4 + 2] = (byte)s.ReadByte();
+                                palette[i * 4 + 0] = s.ReadByte();
+                                palette[i * 4 + 1] = s.ReadByte();
+                                palette[i * 4 + 2] = s.ReadByte();
                                 palette[i * 4 + 3] = 255;
                             }
                             break;
@@ -854,7 +854,7 @@ namespace StbSharp
                             {
                                 if (scan == ScanMode.Header)
                                 {
-                                    ri.Components = (int)4;
+                                    ri.Components = 4;
                                     return true;
                                 }
 
@@ -868,9 +868,9 @@ namespace StbSharp
                                     Error("bad tRNS len");
                                     return false;
                                 }
-                                pal_img_n = (byte)4;
-                                for (i = (uint)0; i < c.Length; ++i)
-                                    palette[i * 4 + 3] = (byte)s.ReadByte();
+                                pal_img_n = 4;
+                                for (i = 0; i < c.Length; ++i)
+                                    palette[i * 4 + 3] = s.ReadByte();
                             }
                             else
                             {
@@ -914,7 +914,7 @@ namespace StbSharp
                             }
                             if (scan == ScanMode.Header)
                             {
-                                ri.Components = (int)pal_img_n;
+                                ri.Components = pal_img_n;
                                 return true;
                             }
 
@@ -923,11 +923,11 @@ namespace StbSharp
 
                             if ((ioff + c.Length) > idata_limit)
                             {
-                                uint idata_limit_old = (uint)idata_limit;
+                                uint idata_limit_old = idata_limit;
                                 if (idata_limit == 0)
-                                    idata_limit = (uint)(c.Length > 4096 ? c.Length : 4096);
+                                    idata_limit = c.Length > 4096 ? c.Length : 4096;
                                 while ((ioff + c.Length) > idata_limit)
-                                    idata_limit *= (uint)2;
+                                    idata_limit *= 2;
 
                                 byte* p = (byte*)CRuntime.ReAlloc(z.idata, idata_limit);
                                 if (p == null)
@@ -944,7 +944,7 @@ namespace StbSharp
                                 return false;
                             }
 
-                            ioff += (uint)c.Length;
+                            ioff += c.Length;
                             break;
                         }
 
@@ -988,9 +988,9 @@ namespace StbSharp
                                     ri.RequestedComponents != 3 &&
                                     pal_img_n == 0 ||
                                     has_transparency)
-                                    ri.OutComponents = (int)(ri.Components + 1);
+                                    ri.OutComponents = ri.Components + 1;
                                 else
-                                    ri.OutComponents = (int)ri.Components;
+                                    ri.OutComponents = ri.Components;
 
                                 if (!CreateImage(
                                     ref z, (byte*)decompressed.Pointer, (uint)decompressed.Length, ri.OutComponents,
@@ -1000,9 +1000,9 @@ namespace StbSharp
                                 if (has_transparency)
                                 {
                                     if (ri.Depth == 16)
-                                        if (!ComputeTransparency16(ref z, ri.Width, ri.Height, tc16, (int)ri.OutComponents))
+                                        if (!ComputeTransparency16(ref z, ri.Width, ri.Height, tc16, ri.OutComponents))
                                             return false;
-                                        else if (!ComputeTransparency8(ref z, ri.Width, ri.Height, tc, (int)ri.OutComponents))
+                                        else if (!ComputeTransparency8(ref z, ri.Width, ri.Height, tc, ri.OutComponents))
                                             return false;
                                 }
 
@@ -1011,8 +1011,8 @@ namespace StbSharp
 
                                 if (pal_img_n != 0)
                                 {
-                                    ri.Components = (int)pal_img_n;
-                                    ri.OutComponents = (int)pal_img_n;
+                                    ri.Components = pal_img_n;
+                                    ri.OutComponents = pal_img_n;
 
                                     if (ri.RequestedComponents >= 3)
                                         ri.OutComponents = ri.RequestedComponents.Value;

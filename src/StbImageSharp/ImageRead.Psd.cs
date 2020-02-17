@@ -34,37 +34,37 @@
             {
                 int count = 0;
                 int nleft;
-                while ((nleft = (int)(pixelCount - count)) > (0))
+                while ((nleft = pixelCount - count) > 0)
                 {
-                    int len = (int)(s.ReadByte());
-                    if ((len) == (128))
+                    int len = s.ReadByte();
+                    if (len == 128)
                     {
                     }
-                    else if ((len) < (128))
+                    else if (len < 128)
                     {
                         len++;
-                        if ((len) > (nleft))
+                        if (len > nleft)
                             return false;
 
-                        count += (int)(len);
-                        while ((len) != 0)
+                        count += len;
+                        while (len != 0)
                         {
-                            *p = (byte)(s.ReadByte());
+                            *p = s.ReadByte();
                             p += 4;
                             len--;
                         }
                     }
-                    else if ((len) > (128))
+                    else if (len > 128)
                     {
-                        len = (int)(257 - len);
-                        if ((len) > (nleft))
+                        len = 257 - len;
+                        if (len > nleft)
                             return false;
 
-                        int val = (byte)(s.ReadByte());
-                        count += (int)(len);
-                        while ((len) != 0)
+                        int val = s.ReadByte();
+                        count += len;
+                        while (len != 0)
                         {
-                            *p = (byte)(val);
+                            *p = (byte)val;
                             p += 4;
                             len--;
                         }
@@ -86,30 +86,30 @@
                     return null;
                 }
 
-                byte* _out_ = (byte*)(MAllocMad3(4 * ri.OutDepth / 8, ri.Width, ri.Height, 0));
+                byte* _out_ = (byte*)MAllocMad3(4 * ri.OutDepth / 8, ri.Width, ri.Height, 0);
                 if (_out_ == null)
                 {
                     Error("outofmem");
                     return null;
                 }
 
-                int pixelCount = (int)(ri.Width * ri.Height);
+                int pixelCount = ri.Width * ri.Height;
                 if (info.compression != 0)
                 {
-                    s.Skip((int)(ri.Height * info.channelCount * 2));
+                    s.Skip(ri.Height * info.channelCount * 2);
 
-                    for (int channel = 0; (channel) < (4); channel++)
+                    for (int channel = 0; channel < 4; channel++)
                     {
                         byte* p;
                         p = _out_ + channel;
-                        if ((channel) >= (info.channelCount))
+                        if (channel >= info.channelCount)
                         {
-                            for (int i = 0; (i) < (pixelCount); i++, p += 4)
-                                *p = (byte)((channel) == (3) ? 255 : 0);
+                            for (int i = 0; i < pixelCount; i++, p += 4)
+                                *p = (byte)(channel == 3 ? 255 : 0);
                         }
                         else
                         {
-                            if (!DecodeRLE(s, p, (int)(pixelCount)))
+                            if (!DecodeRLE(s, p, pixelCount))
                             {
                                 CRuntime.Free(_out_);
                                 Error("corrupt");
@@ -122,80 +122,80 @@
                 {
                     for (int channel = 0; channel < 4; channel++)
                     {
-                        if ((channel) >= (info.channelCount))
+                        if (channel >= info.channelCount)
                         {
                             if (ri.Depth == 16 && ri.RequestedDepth == ri.Depth)
                             {
-                                ushort* q = ((ushort*)(_out_)) + channel;
-                                ushort val = (ushort)((channel) == (3) ? 65535 : 0);
-                                for (int i = 0; (i) < (pixelCount); i++, q += 4)
-                                    *q = (ushort)(val);
+                                ushort* q = ((ushort*)_out_) + channel;
+                                ushort val = (ushort)(channel == 3 ? 65535 : 0);
+                                for (int i = 0; i < pixelCount; i++, q += 4)
+                                    *q = val;
                             }
                             else
                             {
                                 byte* p = _out_ + channel;
-                                byte val = (byte)((channel) == (3) ? 255 : 0);
-                                for (int i = 0; (i) < (pixelCount); i++, p += 4)
-                                    *p = (byte)(val);
+                                byte val = (byte)(channel == 3 ? 255 : 0);
+                                for (int i = 0; i < pixelCount; i++, p += 4)
+                                    *p = val;
                             }
                         }
                         else
                         {
-                            if ((ri.OutDepth) == (16))
+                            if (ri.OutDepth == 16)
                             {
-                                ushort* q = ((ushort*)(_out_)) + channel;
-                                for (int i = 0; (i) < (pixelCount); i++, q += 4)
-                                    *q = ((ushort)(s.ReadInt16BE()));
+                                ushort* q = ((ushort*)_out_) + channel;
+                                for (int i = 0; i < pixelCount; i++, q += 4)
+                                    *q = (ushort)s.ReadInt16BE();
                             }
                             else
                             {
                                 byte* p = _out_ + channel;
-                                if ((ri.OutDepth) == (16))
+                                if (ri.OutDepth == 16)
                                 {
-                                    for (int i = 0; (i) < (pixelCount); i++, p += 4)
-                                        *p = ((byte)(s.ReadInt16BE() >> 8));
+                                    for (int i = 0; i < pixelCount; i++, p += 4)
+                                        *p = (byte)(s.ReadInt16BE() >> 8);
                                 }
                                 else
                                 {
-                                    for (int i = 0; (i) < (pixelCount); i++, p += 4)
-                                        *p = (byte)(s.ReadByte());
+                                    for (int i = 0; i < pixelCount; i++, p += 4)
+                                        *p = s.ReadByte();
                                 }
                             }
                         }
                     }
                 }
 
-                if ((info.channelCount) >= (4))
+                if (info.channelCount >= 4)
                 {
-                    if ((ri.OutDepth) == (16))
+                    if (ri.OutDepth == 16)
                     {
-                        for (int i = 0; (i) < pixelCount; ++i)
+                        for (int i = 0; i < pixelCount; ++i)
                         {
-                            ushort* pixel = (ushort*)(_out_) + 4 * i;
+                            ushort* pixel = (ushort*)_out_ + 4 * i;
                             if ((pixel[3] != 0) && (pixel[3] != 65535))
                             {
-                                float a = (float)(pixel[3] / 65535.0f);
-                                float ra = (float)(1f / a);
-                                float inv_a = (float)(65535.0f * (1 - ra));
-                                pixel[0] = ((ushort)(pixel[0] * ra + inv_a));
-                                pixel[1] = ((ushort)(pixel[1] * ra + inv_a));
-                                pixel[2] = ((ushort)(pixel[2] * ra + inv_a));
+                                float a = pixel[3] / 65535.0f;
+                                float ra = 1f / a;
+                                float inv_a = 65535.0f * (1 - ra);
+                                pixel[0] = (ushort)(pixel[0] * ra + inv_a);
+                                pixel[1] = (ushort)(pixel[1] * ra + inv_a);
+                                pixel[2] = (ushort)(pixel[2] * ra + inv_a);
                             }
                         }
                     }
                     else
                     {
-                        for (int i = 0; (i) < pixelCount; ++i)
+                        for (int i = 0; i < pixelCount; ++i)
                         {
                             byte* pixel = _out_ + 4 * i;
                             if ((pixel[3] != 0) && (pixel[3] != 255))
                             {
-                                float a = (float)(pixel[3] / 255f);
-                                float ra = (float)(1f / a);
-                                float inv_a = (float)(255f * (1 - ra));
-                                pixel[0] = ((byte)(pixel[0] * ra + inv_a));
-                                pixel[1] = ((byte)(pixel[1] * ra + inv_a));
-                                pixel[2] = ((byte)(pixel[2] * ra + inv_a));
+                                float a = pixel[3] / 255f;
+                                float ra = 1f / a;
+                                float inv_a = 255f * (1 - ra);
+                                pixel[0] = (byte)(pixel[0] * ra + inv_a);
+                                pixel[1] = (byte)(pixel[1] * ra + inv_a);
+                                pixel[2] = (byte)(pixel[2] * ra + inv_a);
                             }
                         }
                     }
@@ -219,18 +219,18 @@
                 if (scan == ScanMode.Type)
                     return true;
 
-                s.Skip((int)(6));
+                s.Skip(6);
 
-                info.channelCount = (int)(s.ReadInt16BE());
-                if (((info.channelCount) < (0)) || ((info.channelCount) > (16)))
+                info.channelCount = s.ReadInt16BE();
+                if ((info.channelCount < 0) || (info.channelCount > 16))
                 {
                     Error("wrong channel count");
                     return false;
                 }
 
-                ri.Height = (int)(s.ReadInt32BE());
-                ri.Width = (int)(s.ReadInt32BE());
-                ri.Depth = (int)(s.ReadInt16BE());
+                ri.Height = (int)s.ReadInt32BE();
+                ri.Width = (int)s.ReadInt32BE();
+                ri.Depth = s.ReadInt16BE();
                 if (ri.Depth != 8 && ri.Depth != 16)
                 {
                     Error("unsupported bit depth");
@@ -242,12 +242,12 @@
                     return false;
                 }
 
-                s.Skip((int)(s.ReadInt32BE()));
-                s.Skip((int)(s.ReadInt32BE()));
-                s.Skip((int)(s.ReadInt32BE()));
+                s.Skip((int)s.ReadInt32BE());
+                s.Skip((int)s.ReadInt32BE());
+                s.Skip((int)s.ReadInt32BE());
 
-                info.compression = (int)(s.ReadInt16BE());
-                if ((info.compression) > (1))
+                info.compression = s.ReadInt16BE();
+                if (info.compression > 1)
                 {
                     Error("bad compression");
                     return false;
