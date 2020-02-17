@@ -10,7 +10,7 @@ namespace StbSharp
         public delegate int ReadCallback(ReadContext context, Span<byte> data);
         public delegate int SkipCallback(ReadContext context, int n);
 
-        public delegate void BufferReadyCallback(int width, int height, void* buffer);
+        public delegate void BufferReadyCallback(in ReadState readState, IMemoryHolder buffer);
         public delegate void ReadProgressCallback(double progress, Rect? rect);
 
         public enum ScanMode
@@ -20,7 +20,6 @@ namespace StbSharp
             Header = 2
         }
 
-        [StructLayout(LayoutKind.Sequential)]
         public struct ReadState
         {
             public readonly int? RequestedComponents;

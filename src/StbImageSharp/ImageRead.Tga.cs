@@ -164,7 +164,7 @@ namespace StbSharp
                 _out_[2] = (byte)(b * 255 / 31);
             }
 
-            public static IMemoryResult Load(ReadContext s, ref ReadState ri)
+            public static IMemoryHolder Load(ReadContext s, ref ReadState ri)
             {
                 var info = new TgaInfo();
                 if (!ParseHeader(s, ref info, ref ri, ScanMode.Load))
@@ -312,7 +312,7 @@ namespace StbSharp
                     }
                 }
 
-                IMemoryResult result = new HGlobalMemoryResult(_out_, ri.OutComponents * ri.Width * ri.Height);
+                IMemoryHolder result = new HGlobalMemoryResult(_out_, ri.OutComponents * ri.Width * ri.Height);
                 result = ConvertFormat(result, ref ri);
                 return result;
             }

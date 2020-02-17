@@ -176,7 +176,7 @@ namespace StbSharp
                 }
             }
 
-            public static IMemoryResult ProcessRaster(
+            public static IMemoryHolder ProcessRaster(
                 ReadContext s, ref Context g, ref ReadState ri)
             {
                 byte lzw_cs = s.ReadByte();
@@ -303,7 +303,7 @@ namespace StbSharp
                 }
             }
 
-            public static IMemoryResult LoadNext(
+            public static IMemoryHolder LoadNext(
                 ReadContext s, Context g, ref ReadState ri, byte* two_back)
             {
                 int dispose = 0;
@@ -494,7 +494,7 @@ namespace StbSharp
                 }
             }
 
-            public static IMemoryResult LoadMain(
+            public static IMemoryHolder LoadMain(
                 ReadContext s, out List<int> delays, out int layers, ref ReadState ri)
             {
                 layers = 0;
@@ -505,7 +505,7 @@ namespace StbSharp
                     if (!Test(s, g))
                         return null;
 
-                    IMemoryResult u;
+                    IMemoryHolder u;
                     byte* _out_ = null;
                     byte* two_back = null;
                     int stride = 0;
@@ -536,17 +536,17 @@ namespace StbSharp
                     CRuntime.Free(g.history);
                     CRuntime.Free(g.background);
 
-                    IMemoryResult result = new HGlobalMemoryResult(_out_, layers * stride);
+                    IMemoryHolder result = new HGlobalMemoryResult(_out_, layers * stride);
                     result = ConvertFormat(result, ref ri);
                     return result;
                 }
             }
 
-            public static IMemoryResult Load(ReadContext s, ref ReadState ri)
+            public static IMemoryHolder Load(ReadContext s, ref ReadState ri)
             {
                 using (var g = new Context(true))
                 {
-                    IMemoryResult u = LoadNext(s, g, ref ri, null);
+                    IMemoryHolder u = LoadNext(s, g, ref ri, null);
                     if (u != null)
                     {
                         u = ConvertFormat(u, ref ri);

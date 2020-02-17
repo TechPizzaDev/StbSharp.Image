@@ -74,7 +74,7 @@
                 return true;
             }
 
-            public static IMemoryResult Load(ReadContext s, ref ReadState ri)
+            public static IMemoryHolder Load(ReadContext s, ref ReadState ri)
             {
                 var info = new PsdInfo();
                 if (!ParseHeader(s, ref info, ref ri, ScanMode.Load))
@@ -201,7 +201,7 @@
                     }
                 }
 
-                IMemoryResult result = new HGlobalMemoryResult(_out_, ri.Width * ri.Height * ri.OutComponents);
+                IMemoryHolder result = new HGlobalMemoryResult(_out_, ri.Width * ri.Height * ri.OutComponents);
                 result = ConvertFormat(result, ref ri);
 
                 return result;

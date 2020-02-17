@@ -273,7 +273,7 @@ namespace StbSharp
                 return true;
             }
 
-            public static IMemoryResult Load(ReadContext s, ref ReadState ri)
+            public static IMemoryHolder Load(ReadContext s, ref ReadState ri)
             {
                 var info = new BmpInfo();
                 info.all_a = 255;
@@ -517,7 +517,7 @@ namespace StbSharp
                         }
                     }
 
-                    IMemoryResult result = new HGlobalMemoryResult(_out_, outStride * ri.Height);
+                    IMemoryHolder result = new HGlobalMemoryResult(_out_, outStride * ri.Height);
                     result = ConvertFormat(result, ref ri);
                     return result;
                 }

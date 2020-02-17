@@ -968,7 +968,7 @@ namespace StbSharp
                             int raw_len = (int)(bpl * ri.Height * ri.Components + ri.Height);
                             bool skipHeader = !is_iphone; // iphone png's don't have a deflate header
 
-                            IMemoryResult decompressed;
+                            IMemoryHolder decompressed;
                             try
                             {
                                 var data = new ReadOnlySpan<byte>(z.idata, (int)ioff);
@@ -1051,7 +1051,7 @@ namespace StbSharp
                 }
             }
 
-            public static IMemoryResult Load(ref PngContext p, ref ReadState ri)
+            public static IMemoryHolder Load(ref PngContext p, ref ReadState ri)
             {
                 if ((ri.RequestedComponents < 0) || (ri.RequestedComponents > 4))
                 {
@@ -1059,7 +1059,7 @@ namespace StbSharp
                     return null;
                 }
 
-                IMemoryResult result = null;
+                IMemoryHolder result = null;
                 if (LoadCore(ref p, ref ri, ScanMode.Load))
                 {
                     result = new HGlobalMemoryResult(p._out_, ri.OutComponents * ri.Width * ri.Height * ri.OutDepth / 8);
@@ -1074,7 +1074,7 @@ namespace StbSharp
                 return result;
             }
 
-            public static IMemoryResult Load(ReadContext s, ref ReadState ri)
+            public static IMemoryHolder Load(ReadContext s, ref ReadState ri)
             {
                 var p = new PngContext(s);
                 return Load(ref p, ref ri);

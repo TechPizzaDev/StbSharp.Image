@@ -12,7 +12,7 @@ namespace StbSharp
             /// <summary>
             /// Delegate for a zlib deflate (RFC 1951) decompression implementation.
             /// </summary>
-            public delegate IMemoryResult ZlibDeflateDecompressDelegate(
+            public delegate IMemoryHolder ZlibDeflateDecompressDelegate(
                 ReadOnlySpan<byte> data, int expectedSize, bool parseHeader);
 
             /// <summary>
@@ -26,7 +26,7 @@ namespace StbSharp
             /// optionally skipping the zlib (RFC 1951) header.
             /// <para>Can be replaced by assigning <see cref="CustomDeflateDecompress"/>.</para>
             /// </summary>
-            public static IMemoryResult DeflateDecompress(
+            public static IMemoryHolder DeflateDecompress(
                 ReadOnlySpan<byte> compressed, int uncompressedSize, bool skipHeader)
             {
                 int srcOffset = skipHeader ? 2 : 0;

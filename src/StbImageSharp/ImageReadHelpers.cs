@@ -59,7 +59,7 @@ namespace StbSharp
             return CRuntime.MAlloc(length);
         }
 
-        public static IMemoryResult Convert16To8(IMemoryResult orig, int w, int h, int components)
+        public static IMemoryHolder Convert16To8(IMemoryHolder orig, int w, int h, int components)
         {
             int img_len = (int)(w * h * components);
             if (orig.Length != img_len * 2)
@@ -84,7 +84,7 @@ namespace StbSharp
             return new HGlobalMemoryResult(reduced, img_len);
         }
 
-        public static IMemoryResult Convert8To16(IMemoryResult orig, int w, int h, int components)
+        public static IMemoryHolder Convert8To16(IMemoryHolder orig, int w, int h, int components)
         {
             int img_len = (int)(w * h * components);
             if (orig.Length != img_len)
@@ -134,12 +134,12 @@ namespace StbSharp
             }
         }
 
-        public static void VerticalFlip(IMemoryResult data, int w, int h, int comp, int depth)
+        public static void VerticalFlip(IMemoryHolder data, int w, int h, int comp, int depth)
         {
             VerticalFlip((byte*)data.Pointer, w, h, comp, depth);
         }
 
-        public static IMemoryResult LoadAndPostprocess(
+        public static IMemoryHolder LoadAndPostprocess(
             ReadContext s, int? requestedComponents, int? requestedDepth, out ReadState ri)
         {
             ri = new ReadState(requestedComponents, requestedDepth);
@@ -161,8 +161,8 @@ namespace StbSharp
             return (byte)(((r * 77) + (g * 150) + (29 * b)) >> 8);
         }
 
-        public static IMemoryResult ConvertFormat8(
-            IMemoryResult data, int img_n, int req_comp, int width, int height)
+        public static IMemoryHolder ConvertFormat8(
+            IMemoryHolder data, int img_n, int req_comp, int width, int height)
         {
             if (req_comp == img_n)
                 return data;
@@ -282,8 +282,8 @@ namespace StbSharp
             return (ushort)(((r * 77) + (g * 150) + (29 * b)) >> 8);
         }
 
-        public static IMemoryResult ConvertFormat16(
-            IMemoryResult data, int img_n, int req_comp, int width, int height)
+        public static IMemoryHolder ConvertFormat16(
+            IMemoryHolder data, int img_n, int req_comp, int width, int height)
         {
             if (req_comp == img_n)
                 return data;
@@ -400,7 +400,7 @@ namespace StbSharp
             }
         }
 
-        public static IMemoryResult ConvertFormat(IMemoryResult data, ref ReadState ri)
+        public static IMemoryHolder ConvertFormat(IMemoryHolder data, ref ReadState ri)
         {
             int requestedDepth = ri.RequestedDepth.GetValueOrDefault();
             if (ri.RequestedDepth.HasValue && ri.OutDepth != requestedDepth)
@@ -427,7 +427,7 @@ namespace StbSharp
             return data;
         }
 
-        public static IMemoryResult LoadMain(ReadContext s, ref ReadState ri)
+        public static IMemoryHolder LoadMain(ReadContext s, ref ReadState ri)
         {
             if (Jpeg.Test(s))
                 return Jpeg.LoadImage(s, ref ri);

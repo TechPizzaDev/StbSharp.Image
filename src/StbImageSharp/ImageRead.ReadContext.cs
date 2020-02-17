@@ -73,7 +73,6 @@ namespace StbSharp
                     if (ReadFromCallbacks)
                         return true;
                 }
-
                 return Data >= DataEnd ? true : false;
             }
 

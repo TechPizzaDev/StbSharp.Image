@@ -1620,7 +1620,7 @@ namespace StbSharp
                 return (byte)((t + (t >> 8)) >> 8);
             }
 
-            public static IMemoryResult LoadImage(Context z)
+            public static IMemoryHolder LoadImage(Context z)
             {
                 if (z.ri.RequestedComponents < 0 || z.ri.RequestedComponents > 4)
                 {
@@ -1830,7 +1830,7 @@ namespace StbSharp
                 return new HGlobalMemoryResult(output, z.ri.OutComponents * z.ri.Width * z.ri.Height);
             }
 
-            public static IMemoryResult LoadImage(ReadContext s, ref ReadState ri)
+            public static IMemoryHolder LoadImage(ReadContext s, ref ReadState ri)
             {
                 var j = new Context(s, ri);
                 var result = LoadImage(j);
