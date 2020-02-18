@@ -85,7 +85,7 @@ namespace StbSharp
             }
 
             public static bool CreateImageCore(
-                ref PngContext a, byte* raw, uint raw_len, int out_n,
+                ref PngContext a, ReadOnlySpan<byte> raw, int out_n,
                 int width, int height, int comp, int depth, int color)
             {
                 int bytes = depth == 16 ? 2 : 1;
@@ -101,7 +101,7 @@ namespace StbSharp
 
                 uint img_width_bytes = (uint)(((comp * width * depth) + 7) >> 3);
                 uint img_len = (uint)((img_width_bytes + 1) * height);
-                if (raw_len < img_len)
+                if (raw.Length < img_len)
                 {
                     Error("not enough pixels");
                     return false;
@@ -113,11 +113,12 @@ namespace StbSharp
                 uint j;
                 int k;
 
+                int rawOffset = 0;
                 for (j = 0; j < height; ++j)
                 {
-                    byte* cur = a._out_ + stride * j;
+                    byte* current = a._out_ + stride * j;
                     byte* prior;
-                    var filter = (FilterType)(*raw++);
+                    var filter = (FilterType)raw[rawOffset++];
                     if ((int)filter > 4)
                     {
                         Error("invalid filter");
@@ -126,12 +127,12 @@ namespace StbSharp
 
                     if (depth < 8)
                     {
-                        cur += width * out_n - img_width_bytes;
+                        current += width * out_n - img_width_bytes;
                         filter_bytes = 1;
                         x = (int)img_width_bytes;
                     }
 
-                    prior = cur - stride;
+                    prior = current - stride;
                     if (j == 0)
                         filter = FirstRowFilters[(int)filter];
 
@@ -143,49 +144,49 @@ namespace StbSharp
                         case FilterType.AverageFirst:
                         case FilterType.PaethFirst:
                             for (; k < filter_bytes; ++k)
-                                cur[k] = raw[k];
+                                current[k] = raw[k + rawOffset];
                             break;
 
                         case FilterType.Up:
                             for (; k < filter_bytes; ++k)
-                                cur[k] = (byte)((raw[k] + prior[k]) & 255);
+                                current[k] = (byte)((raw[k + rawOffset] + prior[k]) & 255);
                             break;
 
                         case FilterType.Average:
                             for (; k < filter_bytes; ++k)
-                                cur[k] = (byte)((raw[k] + (prior[k] >> 1)) & 255);
+                                current[k] = (byte)((raw[k + rawOffset] + (prior[k] >> 1)) & 255);
                             break;
 
                         case FilterType.Paeth:
                             for (; k < filter_bytes; ++k)
-                                cur[k] = (byte)((raw[k] + CRuntime.Paeth32(0, prior[k], 0)) & 255);
+                                current[k] = (byte)((raw[k + rawOffset] + CRuntime.Paeth32(0, prior[k], 0)) & 255);
                             break;
                     }
 
                     if (depth == 8)
                     {
                         if (comp != out_n)
-                            cur[comp] = 255;
-                        raw += comp;
-                        cur += out_n;
+                            current[comp] = 255;
+                        rawOffset += comp;
+                        current += out_n;
                         prior += out_n;
                     }
                     else if (depth == 16)
                     {
                         if (comp != out_n)
                         {
-                            cur[filter_bytes] = 255;
-                            cur[filter_bytes + 1] = 255;
+                            current[filter_bytes] = 255;
+                            current[filter_bytes + 1] = 255;
                         }
 
-                        raw += filter_bytes;
-                        cur += out_bytes;
+                        rawOffset += filter_bytes;
+                        current += out_bytes;
                         prior += out_bytes;
                     }
                     else
                     {
-                        raw += 1;
-                        cur += 1;
+                        rawOffset += 1;
+                        current += 1;
                         prior += 1;
                     }
 
@@ -196,41 +197,41 @@ namespace StbSharp
                         switch (filter)
                         {
                             case FilterType.None:
-                                CRuntime.MemCopy(cur, raw, nk);
+                                raw.Slice(rawOffset, nk).CopyTo(new Span<byte>(current, nk));
                                 break;
 
                             case FilterType.Sub:
                                 for (; k < nk; ++k)
-                                    cur[k] = (byte)((raw[k] + cur[k - filter_bytes]) & 255);
+                                    current[k] = (byte)((raw[k + rawOffset] + current[k - filter_bytes]) & 255);
                                 break;
 
                             case FilterType.Up:
                                 for (; k < nk; ++k)
-                                    cur[k] = (byte)((raw[k] + prior[k]) & 255);
+                                    current[k] = (byte)((raw[k+ rawOffset] + prior[k]) & 255);
                                 break;
 
                             case FilterType.Average:
                                 for (; k < nk; ++k)
-                                    cur[k] = (byte)((raw[k] + ((prior[k] + cur[k - filter_bytes]) >> 1)) & 255);
+                                    current[k] = (byte)((raw[k + rawOffset] + ((prior[k] + current[k - filter_bytes]) >> 1)) & 255);
                                 break;
 
                             case FilterType.Paeth:
                                 for (; k < nk; ++k)
-                                    cur[k] = (byte)(raw[k] + CRuntime.Paeth32(
-                                        cur[k - filter_bytes], prior[k], prior[k - filter_bytes]) & 255);
+                                    current[k] = (byte)(raw[k + rawOffset] + CRuntime.Paeth32(
+                                        current[k - filter_bytes], prior[k], prior[k - filter_bytes]) & 255);
                                 break;
 
                             case FilterType.AverageFirst:
                                 for (; k < nk; ++k)
-                                    cur[k] = (byte)((raw[k] + (cur[k - filter_bytes] >> 1)) & 255);
+                                    current[k] = (byte)((raw[k + rawOffset] + (current[k - filter_bytes] >> 1)) & 255);
                                 break;
 
                             case FilterType.PaethFirst:
                                 for (; k < nk; ++k)
-                                    cur[k] = (byte)(raw[k] + CRuntime.Paeth32(cur[k - filter_bytes], 0, 0) & 255);
+                                    current[k] = (byte)(raw[k + rawOffset] + CRuntime.Paeth32(current[k - filter_bytes], 0, 0) & 255);
                                 break;
                         }
-                        raw += nk;
+                        rawOffset += nk;
                     }
                     else
                     {
@@ -238,77 +239,77 @@ namespace StbSharp
                         switch (filter)
                         {
                             case FilterType.None:
-                                for (; i >= 1; --i, cur[filter_bytes] = 255,
-                                    raw += filter_bytes, cur += out_bytes, prior += out_bytes)
+                                for (; i >= 1; --i, current[filter_bytes] = 255,
+                                    rawOffset += filter_bytes, current += out_bytes, prior += out_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
-                                        cur[k] = raw[k];
+                                        current[k] = raw[k + rawOffset];
                                 }
                                 break;
 
                             case FilterType.Sub:
-                                for (; i >= 1; --i, cur[filter_bytes] = 255,
-                                    raw += filter_bytes, cur += out_bytes, prior += out_bytes)
+                                for (; i >= 1; --i, current[filter_bytes] = 255,
+                                    rawOffset += filter_bytes, current += out_bytes, prior += out_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
-                                        cur[k] = (byte)((raw[k] + cur[k - out_bytes]) & 255);
+                                        current[k] = (byte)((raw[k + rawOffset] + current[k - out_bytes]) & 255);
                                 }
                                 break;
 
                             case FilterType.Up:
-                                for (; i >= 1; --i, cur[filter_bytes] = 255,
-                                    raw += filter_bytes, cur += out_bytes, prior += out_bytes)
+                                for (; i >= 1; --i, current[filter_bytes] = 255,
+                                    rawOffset += filter_bytes, current += out_bytes, prior += out_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
-                                        cur[k] = (byte)((raw[k] + prior[k]) & 255);
+                                        current[k] = (byte)((raw[k + rawOffset] + prior[k]) & 255);
                                 }
                                 break;
 
                             case FilterType.Average:
-                                for (; i >= 1; --i, cur[filter_bytes] = 255,
-                                    raw += filter_bytes, cur += out_bytes, prior += out_bytes)
+                                for (; i >= 1; --i, current[filter_bytes] = 255,
+                                    rawOffset += filter_bytes, current += out_bytes, prior += out_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
-                                        cur[k] = (byte)((raw[k] + ((prior[k] + cur[k - out_bytes]) >> 1)) & 255);
+                                        current[k] = (byte)((raw[k + rawOffset] + ((prior[k] + current[k - out_bytes]) >> 1)) & 255);
                                 }
                                 break;
 
                             case FilterType.Paeth:
-                                for (; i >= 1; --i, cur[filter_bytes] = 255,
-                                    raw += filter_bytes, cur += out_bytes, prior += out_bytes)
+                                for (; i >= 1; --i, current[filter_bytes] = 255,
+                                    rawOffset += filter_bytes, current += out_bytes, prior += out_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
-                                        cur[k] = (byte)(raw[k] + CRuntime.Paeth32(
-                                            cur[k - out_bytes], prior[k],
+                                        current[k] = (byte)(raw[k + rawOffset] + CRuntime.Paeth32(
+                                            current[k - out_bytes], prior[k],
                                             prior[k - out_bytes]) & 255);
                                 }
                                 break;
 
                             case FilterType.AverageFirst:
-                                for (; i >= 1; --i, cur[filter_bytes] = 255,
-                                    raw += filter_bytes, cur += out_bytes, prior += out_bytes)
+                                for (; i >= 1; --i, current[filter_bytes] = 255,
+                                    rawOffset += filter_bytes, current += out_bytes, prior += out_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
-                                        cur[k] = (byte)((raw[k] + (cur[k - out_bytes] >> 1)) & 255);
+                                        current[k] = (byte)((raw[k + rawOffset] + (current[k - out_bytes] >> 1)) & 255);
                                 }
                                 break;
 
                             case FilterType.PaethFirst:
-                                for (; i >= 1; --i, cur[filter_bytes] = 255,
-                                    raw += filter_bytes, cur += out_bytes, prior += out_bytes)
+                                for (; i >= 1; --i, current[filter_bytes] = 255,
+                                    rawOffset += filter_bytes, current += out_bytes, prior += out_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
-                                        cur[k] = (byte)((raw[k] + CRuntime.Paeth32(
-                                            cur[k - out_bytes], 0, 0)) & 255);
+                                        current[k] = (byte)((raw[k + rawOffset] + CRuntime.Paeth32(
+                                            current[k - out_bytes], 0, 0)) & 255);
                                 }
                                 break;
                         }
 
                         if (depth == 16)
                         {
-                            cur = a._out_ + stride * j;
-                            for (i = 0; i < width; ++i, cur += out_bytes)
-                                cur[filter_bytes + 1] = 255;
+                            current = a._out_ + stride * j;
+                            for (i = 0; i < width; ++i, current += out_bytes)
+                                current[filter_bytes + 1] = 255;
                         }
                     }
                 }
@@ -413,7 +414,7 @@ namespace StbSharp
             }
 
             public static bool CreateImage(
-                ref PngContext a, byte* image_data, uint image_data_len, int out_n,
+                ref PngContext a, ReadOnlySpan<byte> image_data, int out_n,
                 int width, int height, int comp, int depth, int color, int interlaced)
             {
                 int bytes = depth == 16 ? 2 : 1;
@@ -421,7 +422,7 @@ namespace StbSharp
 
                 if (interlaced == 0)
                     return CreateImageCore(
-                        ref a, image_data, image_data_len, out_n,
+                        ref a, image_data, out_n,
                         width, height, comp, depth, color);
 
                 byte* final = (byte*)MAllocMad3(width, height, out_bytes, 0);
@@ -470,9 +471,9 @@ namespace StbSharp
                     int y = (height - yorig[p] + yspc[p] - 1) / yspc[p];
                     if ((x != 0) && (y != 0))
                     {
-                        uint img_len = (uint)(((((comp * x * depth) + 7) >> 3) + 1) * y);
+                        int img_len = ((((comp * x * depth) + 7) >> 3) + 1) * y;
                         if (!CreateImageCore(
-                            ref a, image_data, image_data_len, out_n,
+                            ref a, image_data, out_n,
                             x, y, comp, depth, color))
                         {
                             CRuntime.Free(final);
@@ -493,8 +494,7 @@ namespace StbSharp
                         }
 
                         CRuntime.Free(a._out_);
-                        image_data += img_len;
-                        image_data_len -= img_len;
+                        image_data = image_data.Slice(img_len);
                     }
                 }
 
@@ -993,7 +993,7 @@ namespace StbSharp
                                     ri.OutComponents = ri.Components;
 
                                 if (!CreateImage(
-                                    ref z, (byte*)decompressed.Pointer, (uint)decompressed.Length, ri.OutComponents,
+                                    ref z, decompressed.Span, ri.OutComponents,
                                     ri.Width, ri.Height, ri.Components, ri.Depth, color, interlace))
                                     return false;
 
@@ -1062,7 +1062,7 @@ namespace StbSharp
                 IMemoryHolder result = null;
                 if (LoadCore(ref p, ref ri, ScanMode.Load))
                 {
-                    result = new HGlobalMemoryResult(p._out_, ri.OutComponents * ri.Width * ri.Height * ri.OutDepth / 8);
+                    result = new HGlobalMemoryHolder(p._out_, ri.OutComponents * ri.Width * ri.Height * ri.OutDepth / 8);
                     p._out_ = null;
                     result = ConvertFormat(result, ref ri);
                 }

@@ -1827,7 +1827,7 @@ namespace StbSharp
 
                 Cleanup(z);
 
-                return new HGlobalMemoryResult(output, z.ri.OutComponents * z.ri.Width * z.ri.Height);
+                return new HGlobalMemoryHolder(output, z.ri.OutComponents * z.ri.Width * z.ri.Height);
             }
 
             public static IMemoryHolder LoadImage(ReadContext s, ref ReadState ri)

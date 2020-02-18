@@ -201,7 +201,7 @@
                     }
                 }
 
-                IMemoryHolder result = new HGlobalMemoryResult(_out_, ri.Width * ri.Height * ri.OutComponents);
+                IMemoryHolder result = new HGlobalMemoryHolder(_out_, ri.Width * ri.Height * ri.OutComponents);
                 result = ConvertFormat(result, ref ri);
 
                 return result;

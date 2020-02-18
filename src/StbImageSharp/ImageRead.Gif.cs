@@ -208,7 +208,7 @@ namespace StbSharp
                         {
                             len = s.ReadByte();
                             if (len == 0)
-                                return new HGlobalMemoryResult(g._out_, ri.Width * ri.Height * ri.OutComponents);
+                                return new HGlobalMemoryHolder(g._out_, ri.Width * ri.Height * ri.OutComponents);
                         }
 
                         len--;
@@ -234,7 +234,7 @@ namespace StbSharp
                             while ((len = s.ReadByte()) > 0)
                                 s.Skip(len);
 
-                            return new HGlobalMemoryResult(g._out_, ri.Width * ri.Height * ri.OutComponents);
+                            return new HGlobalMemoryHolder(g._out_, ri.Width * ri.Height * ri.OutComponents);
                         }
                         else if (code <= avail)
                         {
@@ -525,8 +525,10 @@ namespace StbSharp
                         _out_ = _out_ != null
                             ? (byte*)CRuntime.ReAlloc(_out_, layers * stride)
                             : (byte*)CRuntime.MAlloc(layers * stride);
-                        CRuntime.MemCopy(_out_ + ((layers - 1) * stride), (byte*)u.Pointer, stride);
 
+                        var dstSpan = new Span<byte>(_out_ + ((layers - 1) * stride), stride);
+                        u.Span.CopyTo(dstSpan);
+                        
                         if (layers >= 2)
                             two_back = _out_ - 2 * stride;
                     }
@@ -536,7 +538,7 @@ namespace StbSharp
                     CRuntime.Free(g.history);
                     CRuntime.Free(g.background);
 
-                    IMemoryHolder result = new HGlobalMemoryResult(_out_, layers * stride);
+                    IMemoryHolder result = new HGlobalMemoryHolder(_out_, layers * stride);
                     result = ConvertFormat(result, ref ri);
                     return result;
                 }

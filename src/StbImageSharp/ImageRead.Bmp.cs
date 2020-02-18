@@ -517,7 +517,7 @@ namespace StbSharp
                         }
                     }
 
-                    IMemoryHolder result = new HGlobalMemoryResult(_out_, outStride * ri.Height);
+                    IMemoryHolder result = new HGlobalMemoryHolder(_out_, outStride * ri.Height);
                     result = ConvertFormat(result, ref ri);
                     return result;
                 }

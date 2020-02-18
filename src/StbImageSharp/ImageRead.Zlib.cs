@@ -43,7 +43,7 @@ namespace StbSharp
                         resultLength = (int)dst.Length;
                     }
                 }
-                return new HGlobalMemoryResult(resultPtr, resultLength);
+                return new HGlobalMemoryHolder(resultPtr, resultLength);
             }
         }
     }
