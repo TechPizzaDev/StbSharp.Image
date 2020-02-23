@@ -1062,7 +1062,9 @@ namespace StbSharp
                 IMemoryHolder result = null;
                 if (LoadCore(ref p, ref ri, ScanMode.Load))
                 {
-                    result = new HGlobalMemoryHolder(p._out_, ri.OutComponents * ri.Width * ri.Height * ri.OutDepth / 8);
+                    result = new HGlobalMemoryHolder(
+                        p._out_, (ri.OutComponents * ri.Width * ri.Height * ri.OutDepth + 7) / 8);
+
                     p._out_ = null;
                     result = ConvertFormat(result, ref ri);
                 }

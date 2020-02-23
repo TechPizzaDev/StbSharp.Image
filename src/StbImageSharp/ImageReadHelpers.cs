@@ -109,7 +109,7 @@ namespace StbSharp
 
         public static void VerticalFlip(Span<byte> data, int w, int h, int comp, int depth)
         {
-            int stride = w * comp * depth / 8;
+            int stride = (w * comp * depth + 7) / 8;
             Span<byte> rowBuffer = stackalloc byte[2048];
 
             for (int row = 0; row < (h >> 1); row++)

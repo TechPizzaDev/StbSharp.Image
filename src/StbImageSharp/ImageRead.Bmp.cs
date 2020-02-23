@@ -85,8 +85,8 @@ namespace StbSharp
                 a = (a & 0x55555555) + ((a >> 1) & 0x55555555);
                 a = (a & 0x33333333) + ((a >> 2) & 0x33333333);
                 a = (a + (a >> 4)) & 0x0f0f0f0f;
-                a = a + (a >> 8);
-                a = a + (a >> 16);
+                a += (a >> 8);
+                a += (a >> 16);
                 return (int)(a & 0xff);
             }
 
@@ -262,13 +262,7 @@ namespace StbSharp
                 else
                     ri.Components = info.ma != 0 ? 4 : 3;
 
-                if (ri.RequestedComponents.HasValue && ri.RequestedComponents >= 3)
-                    ri.OutComponents = ri.RequestedComponents.Value;
-                else
-                    ri.OutComponents = ri.Components;
-
                 ri.Depth = info.bpp / ri.Components;
-                ri.OutDepth = ri.RequestedDepth ?? ri.Depth;
 
                 return true;
             }
@@ -280,6 +274,13 @@ namespace StbSharp
 
                 if (!ParseHeader(s, ref info, ref ri, ScanMode.Load))
                     return null;
+
+                if (ri.RequestedComponents.HasValue && ri.RequestedComponents >= 3)
+                    ri.OutComponents = ri.RequestedComponents.Value;
+                else
+                    ri.OutComponents = ri.Components;
+                
+                ri.OutDepth = ri.RequestedDepth ?? ri.Depth;
 
                 int psize = 0;
                 if (info.headerSize == 12)
@@ -517,7 +518,7 @@ namespace StbSharp
                         }
                     }
 
-                    IMemoryHolder result = new HGlobalMemoryHolder(_out_, outStride * ri.Height);
+                    IMemoryHolder result = new HGlobalMemoryHolder(_out_, ri.Height * outStride);
                     result = ConvertFormat(result, ref ri);
                     return result;
                 }

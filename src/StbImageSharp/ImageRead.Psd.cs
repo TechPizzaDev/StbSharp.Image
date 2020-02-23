@@ -30,7 +30,7 @@
                 return success;
             }
 
-            public static bool DecodeRLE(ReadContext s, byte* p, int pixelCount)
+            public static bool DecodeRLE(ReadContext s, byte* destination, int pixelCount)
             {
                 int count = 0;
                 int nleft;
@@ -49,8 +49,8 @@
                         count += len;
                         while (len != 0)
                         {
-                            *p = s.ReadByte();
-                            p += 4;
+                            *destination = s.ReadByte();
+                            destination += 4;
                             len--;
                         }
                     }
@@ -64,8 +64,8 @@
                         count += len;
                         while (len != 0)
                         {
-                            *p = (byte)val;
-                            p += 4;
+                            *destination = (byte)val;
+                            destination += 4;
                             len--;
                         }
                     }
@@ -86,7 +86,7 @@
                     return null;
                 }
 
-                byte* _out_ = (byte*)MAllocMad3(4 * ri.OutDepth / 8, ri.Width, ri.Height, 0);
+                byte* _out_ = (byte*)MAllocMad3((4 * ri.OutDepth + 7) / 8, ri.Width, ri.Height, 0);
                 if (_out_ == null)
                 {
                     Error("outofmem");
@@ -100,16 +100,16 @@
 
                     for (int channel = 0; channel < 4; channel++)
                     {
-                        byte* p;
-                        p = _out_ + channel;
+                        byte* dst;
+                        dst = _out_ + channel;
                         if (channel >= info.channelCount)
                         {
-                            for (int i = 0; i < pixelCount; i++, p += 4)
-                                *p = (byte)(channel == 3 ? 255 : 0);
+                            for (int i = 0; i < pixelCount; i++, dst += 4)
+                                *dst = (byte)(channel == 3 ? 255 : 0);
                         }
                         else
                         {
-                            if (!DecodeRLE(s, p, pixelCount))
+                            if (!DecodeRLE(s, dst, pixelCount))
                             {
                                 CRuntime.Free(_out_);
                                 Error("corrupt");
@@ -201,7 +201,9 @@
                     }
                 }
 
-                IMemoryHolder result = new HGlobalMemoryHolder(_out_, ri.Width * ri.Height * ri.OutComponents);
+                IMemoryHolder result = new HGlobalMemoryHolder(
+                    _out_, (ri.Width * ri.Height * ri.OutComponents * ri.OutDepth + 7) / 8);
+                
                 result = ConvertFormat(result, ref ri);
 
                 return result;

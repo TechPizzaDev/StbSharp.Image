@@ -132,6 +132,7 @@ namespace StbSharp
                 ri.Width = s.ReadInt16LE();
                 ri.Height = s.ReadInt16LE();
                 ri.Components = 4;
+                ri.Depth = 8;
 
                 g.flags = s.ReadByte();
                 g.bgindex = s.ReadByte();
@@ -187,7 +188,6 @@ namespace StbSharp
                 uint first = 1;
                 int codesize = lzw_cs + 1;
                 int codemask = (1 << codesize) - 1;
-                int bits = 0;
                 int valid_bits = 0;
                 for (int init_code = 0; init_code < clear; init_code++)
                 {
@@ -200,6 +200,7 @@ namespace StbSharp
                 int avail = clear + 2;
                 int oldcode = -1;
                 int len = 0;
+                int bits = 0;
                 for (; ; )
                 {
                     if (valid_bits < codesize)
@@ -317,6 +318,7 @@ namespace StbSharp
                         return null;
 
                     ri.OutComponents = ri.Components;
+                    ri.OutDepth = ri.Depth;
 
                     if (AreValidMad3Sizes(ri.OutComponents, ri.Width, ri.Height, 0) == 0)
                     {

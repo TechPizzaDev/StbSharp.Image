@@ -29,6 +29,11 @@ namespace StbSharp
 
             #endregion
 
+            public struct Idct
+            {
+                public int t0, t1, t2, t3, p1, p2, p3, p4, p5, x0, x1, x2, x3;
+            }
+
             public delegate void IdctBlockKernel(byte* output, int out_stride, short* data);
 
             public delegate void YCbCrToRgbKernel(
@@ -590,155 +595,104 @@ namespace StbSharp
                 return (byte)x;
             }
 
+            public static void Idct1D(
+                int s0, int s1, int s2, int s3, int s4, int s5, int s6, int s7, out Idct idct)
+            {
+                idct.p2 = s2;
+                idct.p3 = s6;
+                idct.p1 = (idct.p2 + idct.p3) * (int)(0.5411961f * 4096 + 0.5);
+                idct.t2 = idct.p1 + idct.p3 * (int)((-1.847759065f) * 4096 + 0.5);
+                idct.t3 = idct.p1 + idct.p2 * (int)(0.765366865f * 4096 + 0.5);
+                idct.p2 = s0;
+                idct.p3 = s4;
+                idct.t0 = (idct.p2 + idct.p3) * 4096;
+                idct.t1 = (idct.p2 - idct.p3) * 4096;
+                idct.x0 = idct.t0 + idct.t3;
+                idct.x3 = idct.t0 - idct.t3;
+                idct.x1 = idct.t1 + idct.t2;
+                idct.x2 = idct.t1 - idct.t2;
+                idct.t0 = s7;
+                idct.t1 = s5;
+                idct.t2 = s3;
+                idct.t3 = s1;
+                idct.p3 = idct.t0 + idct.t2;
+                idct.p4 = idct.t1 + idct.t3;
+                idct.p1 = idct.t0 + idct.t3;
+                idct.p2 = idct.t1 + idct.t2;
+                idct.p5 = (idct.p3 + idct.p4) * (int)(1.175875602f * 4096 + 0.5);
+                idct.t0 *= (int)(0.298631336f * 4096 + 0.5);
+                idct.t1 *= (int)(2.053119869f * 4096 + 0.5);
+                idct.t2 *= (int)(3.072711026f * 4096 + 0.5);
+                idct.t3 *= (int)(1.501321110f * 4096 + 0.5);
+                idct.p1 = idct.p5 + idct.p1 * (int)((-0.899976223f) * 4096 + 0.5);
+                idct.p2 = idct.p5 + idct.p2 * (int)((-2.562915447f) * 4096 + 0.5);
+                idct.p3 *= (int)((-1.961570560f) * 4096 + 0.5);
+                idct.p4 *= (int)((-0.390180644f) * 4096 + 0.5);
+                idct.t3 += idct.p1 + idct.p4;
+                idct.t2 += idct.p2 + idct.p3;
+                idct.t1 += idct.p2 + idct.p4;
+                idct.t0 += idct.p1 + idct.p3;
+            }
+
             public static void IdctBlock(byte* _out_, int out_stride, short* data)
             {
-                int i;
                 int* val = stackalloc int[64];
                 int* v = val;
-                byte* o;
                 short* d = data;
+
+                byte* o;
+                int i;
+                Idct idct;
                 for (i = 0; i < 8; ++i, ++d, ++v)
                 {
-                    if ((d[8] == 0) && (d[16] == 0) && (d[24] == 0) && (d[32] == 0) &&
-                          (d[40] == 0) &&
-                         (d[48] == 0) && (d[56] == 0))
+                    if ((d[8] == 0) &&
+                        (d[16] == 0) &&
+                        (d[24] == 0) &&
+                        (d[32] == 0) &&
+                        (d[40] == 0) &&
+                        (d[48] == 0) &&
+                        (d[56] == 0))
                     {
                         int dcterm = d[0] << 2;
-                        v[0] =
-
-                            v[8] =
-                                v[16] = v[24] =
-                                    v[32] = v[40] = v[48] = v[56] = dcterm;
+                        v[0] = v[8] = v[16] = v[24] = v[32] = v[40] = v[48] = v[56] = dcterm;
                     }
                     else
                     {
-                        int t0;
-                        int t1;
-                        int t2;
-                        int t3;
-                        int p1;
-                        int p2;
-                        int p3;
-                        int p4;
-                        int p5;
-                        int x0;
-                        int x1;
-                        int x2;
-                        int x3;
+                        Idct1D(d[0], d[8], d[16], d[24], d[32], d[40], d[48], d[56], out idct);
 
-                        p2 = d[16];
-                        p3 = d[48];
-                        p1 = (p2 + p3) * ((int)(0.5411961f * 4096 + 0.5));
-                        t2 = p1 + p3 * ((int)((-1.847759065f) * 4096 + 0.5));
-                        t3 = p1 + p2 * ((int)(0.765366865f * 4096 + 0.5));
-                        p2 = d[0];
-                        p3 = d[32];
-                        t0 = (p2 + p3) << 12;
-                        t1 = (p2 - p3) << 12;
-                        x0 = t0 + t3;
-                        x3 = t0 - t3;
-                        x1 = t1 + t2;
-                        x2 = t1 - t2;
-                        t0 = d[56];
-                        t1 = d[40];
-                        t2 = d[24];
-                        t3 = d[8];
-                        p3 = t0 + t2;
-                        p4 = t1 + t3;
-                        p1 = t0 + t3;
-                        p2 = t1 + t2;
-                        p5 = (p3 + p4) * ((int)(1.175875602f * 4096 + 0.5));
-                        t0 = t0 * ((int)(0.298631336f * 4096 + 0.5));
-                        t1 = t1 * ((int)(2.053119869f * 4096 + 0.5));
-                        t2 = t2 * ((int)(3.072711026f * 4096 + 0.5));
-                        t3 = t3 * ((int)(1.501321110f * 4096 + 0.5));
-                        p1 = p5 + p1 * ((int)((-0.899976223f) * 4096 + 0.5));
-                        p2 = p5 + p2 * ((int)((-2.562915447f) * 4096 + 0.5));
-                        p3 = p3 * ((int)((-1.961570560f) * 4096 + 0.5));
-                        p4 = p4 * ((int)((-0.390180644f) * 4096 + 0.5));
-                        t3 += p1 + p4;
-                        t2 += p2 + p3;
-                        t1 += p2 + p4;
-                        t0 += p1 + p3;
-                        x0 += 512;
-                        x1 += 512;
-                        x2 += 512;
-                        x3 += 512;
+                        idct.x0 += 512;
+                        idct.x1 += 512;
+                        idct.x2 += 512;
+                        idct.x3 += 512;
 
-                        v[0] = (x0 + t3) >> 10;
-                        v[8] = (x1 + t2) >> 10;
-                        v[16] = (x2 + t1) >> 10;
-                        v[24] = (x3 + t0) >> 10;
-                        v[32] = (x3 - t0) >> 10;
-                        v[40] = (x2 - t1) >> 10;
-                        v[48] = (x1 - t2) >> 10;
-                        v[56] = (x0 - t3) >> 10;
+                        v[0] =  (idct.x0 + idct.t3) >> 10;
+                        v[8] =  (idct.x1 + idct.t2) >> 10;
+                        v[16] = (idct.x2 + idct.t1) >> 10;
+                        v[24] = (idct.x3 + idct.t0) >> 10;
+                        v[32] = (idct.x3 - idct.t0) >> 10;
+                        v[40] = (idct.x2 - idct.t1) >> 10;
+                        v[48] = (idct.x1 - idct.t2) >> 10;
+                        v[56] = (idct.x0 - idct.t3) >> 10;
                     }
                 }
 
                 for (i = 0, v = val, o = _out_; i < 8; ++i, v += 8, o += out_stride)
                 {
-                    int t0;
-                    int t1;
-                    int t2;
-                    int t3;
-                    int p1;
-                    int p2;
-                    int p3;
-                    int p4;
-                    int p5;
-                    int x0;
-                    int x1;
-                    int x2;
-                    int x3;
+                    Idct1D(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], out idct);
 
-                    p2 = v[2];
-                    p3 = v[6];
-                    p1 = (p2 + p3) * ((int)(0.5411961f * 4096 + 0.5));
-                    t2 = p1 + p3 * ((int)((-1.847759065f) * 4096 + 0.5));
-                    t3 = p1 + p2 * ((int)(0.765366865f * 4096 + 0.5));
-                    p2 = v[0];
-                    p3 = v[4];
-                    t0 = (p2 + p3) << 12;
-                    t1 = (p2 - p3) << 12;
-                    x0 = t0 + t3;
-                    x3 = t0 - t3;
-                    x1 = t1 + t2;
-                    x2 = t1 - t2;
-                    t0 = v[7];
-                    t1 = v[5];
-                    t2 = v[3];
-                    t3 = v[1];
-                    p3 = t0 + t2;
-                    p4 = t1 + t3;
-                    p1 = t0 + t3;
-                    p2 = t1 + t2;
-                    p5 = (p3 + p4) * ((int)(1.175875602f * 4096 + 0.5));
-                    t0 = t0 * ((int)(0.298631336f * 4096 + 0.5));
-                    t1 = t1 * ((int)(2.053119869f * 4096 + 0.5));
-                    t2 = t2 * ((int)(3.072711026f * 4096 + 0.5));
-                    t3 = t3 * ((int)(1.501321110f * 4096 + 0.5));
-                    p1 = p5 + p1 * ((int)((-0.899976223f) * 4096 + 0.5));
-                    p2 = p5 + p2 * ((int)((-2.562915447f) * 4096 + 0.5));
-                    p3 = p3 * ((int)((-1.961570560f) * 4096 + 0.5));
-                    p4 = p4 * ((int)((-0.390180644f) * 4096 + 0.5));
-                    t3 += p1 + p4;
-                    t2 += p2 + p3;
-                    t1 += p2 + p4;
-                    t0 += p1 + p3;
-                    x0 += 65536 + (128 << 17);
-                    x1 += 65536 + (128 << 17);
-                    x2 += 65536 + (128 << 17);
-                    x3 += 65536 + (128 << 17);
+                    idct.x0 += 65536 + (128 << 17);
+                    idct.x1 += 65536 + (128 << 17);
+                    idct.x2 += 65536 + (128 << 17);
+                    idct.x3 += 65536 + (128 << 17);
 
-                    o[0] = Clamp((x0 + t3) >> 17);
-                    o[1] = Clamp((x1 + t2) >> 17);
-                    o[2] = Clamp((x2 + t1) >> 17);
-                    o[3] = Clamp((x3 + t0) >> 17);
-                    o[4] = Clamp((x3 - t0) >> 17);
-                    o[5] = Clamp((x2 - t1) >> 17);
-                    o[6] = Clamp((x1 - t2) >> 17);
-                    o[7] = Clamp((x0 - t3) >> 17);
+                    o[0] = Clamp((idct.x0 + idct.t3) >> 17);
+                    o[1] = Clamp((idct.x1 + idct.t2) >> 17);
+                    o[2] = Clamp((idct.x2 + idct.t1) >> 17);
+                    o[3] = Clamp((idct.x3 + idct.t0) >> 17);
+                    o[4] = Clamp((idct.x3 - idct.t0) >> 17);
+                    o[5] = Clamp((idct.x2 - idct.t1) >> 17);
+                    o[6] = Clamp((idct.x1 - idct.t2) >> 17);
+                    o[7] = Clamp((idct.x0 - idct.t3) >> 17);
                 }
             }
 
@@ -1488,7 +1442,8 @@ namespace StbSharp
                 if (j.progressive)
                     Finish(j);
 
-                j.ri.OutComponents = j.ri.RequestedComponents ?? (j.ri.Components >= 3 ? 3 : 1);
+                j.ri.Depth = 8;
+
                 j.is_rgb = j.ri.Components == 3 && (j.rgb == 3 || (j.app14_color_transform == 0 && j.jfif == 0));
                 j.decode_n = (j.ri.Components == 3 && j.ri.OutComponents < 3 && !j.is_rgb) ? 1 : j.ri.Components;
 
@@ -1633,6 +1588,9 @@ namespace StbSharp
                     Cleanup(z);
                     return null;
                 }
+
+                z.ri.OutComponents = z.ri.RequestedComponents ?? (z.ri.Components >= 3 ? 3 : 1);
+                z.ri.OutDepth = z.ri.Depth;
 
                 int k;
                 uint i;
@@ -1827,7 +1785,8 @@ namespace StbSharp
 
                 Cleanup(z);
 
-                return new HGlobalMemoryHolder(output, z.ri.OutComponents * z.ri.Width * z.ri.Height);
+                return new HGlobalMemoryHolder(
+                    output, (z.ri.OutComponents * z.ri.Width * z.ri.Height * z.ri.OutDepth + 7) / 8);
             }
 
             public static IMemoryHolder LoadImage(ReadContext s, ref ReadState ri)
