@@ -43,9 +43,10 @@ namespace StbSharp
 
             public static int HighBit(uint z)
             {
-                int n = 0;
                 if (z == 0)
                     return -1;
+
+                int n = 0;
 
                 if (z >= 0x10000)
                 {
@@ -74,7 +75,7 @@ namespace StbSharp
                 if (z >= 0x00002)
                 {
                     n += 1;
-                    z >>= 1;
+                    //z >>= 1; redundant assignment
                 }
 
                 return n;
@@ -92,14 +93,13 @@ namespace StbSharp
 
             public static int ShiftSigned(int v, int shift, int bits)
             {
-                int result;
-                int z = 0;
                 if (shift < 0)
                     v <<= -shift;
                 else
                     v >>= shift;
-                result = v;
-                z = bits;
+
+                int result = v;
+                int z = bits;
                 while (z < 8)
                 {
                     result += v >> z;
