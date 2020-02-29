@@ -6,14 +6,17 @@ namespace StbSharp
 {
     public static unsafe partial class ImageRead
     {
+        public delegate int ReadCallbackDelegate(ReadContext context, Span<byte> data);
+        public delegate int SkipCallbackDelegate(ReadContext context, int n);
+
         public class ReadContext : IDisposable
         {
             public readonly Stream Stream;
             public readonly byte[] ReadBuffer;
             public readonly CancellationToken CancellationToken;
 
-            public readonly ReadCallback ReadCallback;
-            public readonly SkipCallback SkipCallback;
+            public readonly ReadCallbackDelegate ReadCallback;
+            public readonly SkipCallbackDelegate SkipCallback;
             public bool ReadFromCallbacks;
 
             public int DataLength { get; }
@@ -27,6 +30,8 @@ namespace StbSharp
             public bool vertically_flip_on_load = false;
             public bool unpremultiply_on_load = true;
             public bool de_iphone_flag = true;
+
+            public ErrorCode ErrorCode { get; private set; }
 
             #region Constructors
 
@@ -44,7 +49,7 @@ namespace StbSharp
 
             public ReadContext(
                 Stream stream, byte[] readBuffer, CancellationToken cancellationToken,
-                ReadCallback readCallback, SkipCallback skipCallback)
+                ReadCallbackDelegate readCallback, SkipCallbackDelegate skipCallback)
             {
                 ReadFromCallbacks = true;
                 Stream = stream;
@@ -62,6 +67,11 @@ namespace StbSharp
             }
 
             #endregion
+
+            public void Error(ErrorCode code)
+            {
+                ErrorCode = code;
+            }
 
             public bool IsAtEndOfStream()
             {

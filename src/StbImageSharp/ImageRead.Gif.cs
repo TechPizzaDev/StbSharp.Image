@@ -110,19 +110,19 @@ namespace StbSharp
                     (s.ReadByte() != 'F') ||
                     (s.ReadByte() != '8'))
                 {
-                    Error("not GIF");
+                    s.Error(ErrorCode.NotGIF);
                     return false;
                 }
 
                 version = s.ReadByte();
                 if ((version != '7') && (version != '9'))
                 {
-                    Error("not GIF");
+                    s.Error(ErrorCode.NotGIF);
                     return false;
                 }
                 if (s.ReadByte() != 'a')
                 {
-                    Error("not GIF");
+                    s.Error(ErrorCode.NotGIF);
                     return false;
                 }
 
@@ -240,12 +240,18 @@ namespace StbSharp
                         else if (code <= avail)
                         {
                             if (first != 0)
-                                Error("no clear code");
+                            {
+                                s.Error(ErrorCode.NoClearCode);
+                                return null;
+                            }
+
                             if (oldcode >= 0)
                             {
                                 p = g.codes + avail++;
                                 if (avail > 4096)
-                                    Error("too many codes");
+                                {
+                                    s.Error(ErrorCode.TooManyCodes);
+                                }
 
                                 p->prefix = (short)oldcode;
                                 p->first = g.codes[oldcode].first;
@@ -253,7 +259,7 @@ namespace StbSharp
                             }
                             else if (code == avail)
                             {
-                                Error("illegal code in raster");
+                                s.Error(ErrorCode.IllegalCodeInRaster);
                                 return null;
                             }
 
@@ -268,7 +274,7 @@ namespace StbSharp
                         }
                         else
                         {
-                            Error("illegal code in raster");
+                            s.Error(ErrorCode.IllegalCodeInRaster);
                             return null;
                         }
                     }
@@ -322,7 +328,7 @@ namespace StbSharp
 
                     if (AreValidMad3Sizes(ri.OutComponents, ri.Width, ri.Height, 0) == 0)
                     {
-                        Error("too large");
+                        s.Error(ErrorCode.TooLarge);
                         return null;
                     }
 
@@ -332,7 +338,7 @@ namespace StbSharp
                     g.history = (byte*)CRuntime.MAlloc(pcount);
                     if ((g._out_ == null) || (g.background == null) || (g.history == null))
                     {
-                        Error("outofmem");
+                        s.Error(ErrorCode.OutOfMemory);
                         return null;
                     }
 
@@ -383,7 +389,7 @@ namespace StbSharp
                             int h = s.ReadInt16LE();
                             if (((x + w) > ri.Width) || ((y + h) > ri.Height))
                             {
-                                Error("bad image descriptor");
+                                s.Error(ErrorCode.BadImageDescriptor);
                                 return null;
                             }
 
@@ -425,7 +431,7 @@ namespace StbSharp
                             }
                             else
                             {
-                                Error("missing color table");
+                                s.Error(ErrorCode.MissingColorTable);
                                 return null;
                             }
 
@@ -490,7 +496,7 @@ namespace StbSharp
                             return null;
 
                         default:
-                            Error("unknown code");
+                            s.Error(ErrorCode.UnknownCode);
                             return null;
                     }
                 }
@@ -513,36 +519,44 @@ namespace StbSharp
                     int stride = 0;
                     delays = new List<int>();
 
-                    do
+                    try
                     {
-                        u = LoadNext(s, g, ref ri, two_back);
-                        if (u == null)
-                            break;
+                        do
+                        {
+                            u = LoadNext(s, g, ref ri, two_back);
+                            if (u == null)
+                                break;
 
-                        delays.Add(g.delay);
-                        layers = delays.Count;
+                            delays.Add(g.delay);
+                            layers = delays.Count;
 
-                        stride = ri.Width * ri.Height * 4;
+                            stride = ri.Width * ri.Height * 4;
 
-                        _out_ = _out_ != null
-                            ? (byte*)CRuntime.ReAlloc(_out_, layers * stride)
-                            : (byte*)CRuntime.MAlloc(layers * stride);
+                            _out_ = _out_ != null
+                                ? (byte*)CRuntime.ReAlloc(_out_, layers * stride)
+                                : (byte*)CRuntime.MAlloc(layers * stride);
 
-                        var dstSpan = new Span<byte>(_out_ + ((layers - 1) * stride), stride);
-                        u.Span.CopyTo(dstSpan);
-                        
-                        if (layers >= 2)
-                            two_back = _out_ - 2 * stride;
+                            var dstSpan = new Span<byte>(_out_ + ((layers - 1) * stride), stride);
+                            u.Span.CopyTo(dstSpan);
+
+                            if (layers >= 2)
+                                two_back = _out_ - 2 * stride;
+                        }
+                        while (u != null);
                     }
-                    while (u != null);
-
-                    CRuntime.Free(g._out_);
-                    CRuntime.Free(g.history);
-                    CRuntime.Free(g.background);
+                    finally
+                    {
+                        CRuntime.Free(g._out_);
+                        CRuntime.Free(g.history);
+                        CRuntime.Free(g.background);
+                    }
 
                     IMemoryHolder result = new HGlobalMemoryHolder(_out_, layers * stride);
-                    result = ConvertFormat(result, ref ri);
-                    return result;
+
+                    var errorCode = ConvertFormat(result, ref ri, out var convertedResult);
+                    if (errorCode != ErrorCode.Ok)
+                        return null;
+                    return convertedResult;
                 }
             }
 
@@ -553,7 +567,9 @@ namespace StbSharp
                     IMemoryHolder u = LoadNext(s, g, ref ri, null);
                     if (u != null)
                     {
-                        u = ConvertFormat(u, ref ri);
+                        var errorCode = ConvertFormat(u, ref ri, out u);
+                        if (errorCode != ErrorCode.Ok)
+                            s.Error(errorCode);
                     }
                     else
                     {

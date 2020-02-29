@@ -123,7 +123,7 @@ namespace StbSharp
 
                 if (ri.Components == 0)
                 {
-                    Error("bad format");
+                    s.Error(ErrorCode.BadFormat);
                     return false;
                 }
 
@@ -172,14 +172,14 @@ namespace StbSharp
 
                 if (AreValidMad3Sizes(ri.Width, ri.Height, ri.OutComponents, 0) == 0)
                 {
-                    Error("too large");
+                    s.Error(ErrorCode.TooLarge);
                     return null;
                 }
 
                 byte* _out_ = (byte*)MAllocMad3(ri.Width, ri.Height, ri.OutComponents, 0);
                 if (_out_ == null)
                 {
-                    Error("outofmem");
+                    s.Error(ErrorCode.OutOfMemory);
                     return null;
                 }
 
@@ -212,7 +212,7 @@ namespace StbSharp
                         if (tga_palette == null)
                         {
                             CRuntime.Free(_out_);
-                            Error("outofmem");
+                            s.Error(ErrorCode.OutOfMemory);
                             return null;
                         }
 
@@ -229,7 +229,7 @@ namespace StbSharp
                         {
                             CRuntime.Free(_out_);
                             CRuntime.Free(tga_palette);
-                            Error("bad palette");
+                            s.Error(ErrorCode.BadPalette);
                             return null;
                         }
                     }
@@ -319,9 +319,11 @@ namespace StbSharp
 
                 IMemoryHolder result = new HGlobalMemoryHolder(
                     _out_, (ri.OutComponents * pixelCount * ri.OutDepth + 7) / 8);
-                
-                result = ConvertFormat(result, ref ri);
-                return result;
+
+                var errorCode = ConvertFormat(result, ref ri, out var convertedResult);
+                if (errorCode != ErrorCode.Ok)
+                    return null;
+                return convertedResult;
             }
         }
     }

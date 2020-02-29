@@ -62,49 +62,43 @@ namespace StbSharp
             return CRuntime.MAlloc(length);
         }
 
-        public static IMemoryHolder Convert16To8(ReadOnlySpan<ushort> data, int w, int h, int components)
+        public static ErrorCode Convert16To8(ReadOnlySpan<ushort> data, int w, int h, int components, out IMemoryHolder result)
         {
+            result = null;
+
             int img_len = w * h * components;
             if (data.Length != img_len * 2)
-            {
-                Error("invalid image length");
-                return null;
-            }
+                return ErrorCode.InvalidImageLength;
 
             byte* reduced = (byte*)CRuntime.MAlloc(img_len);
             if (reduced == null)
-            {
-                Error("outofmem");
-                return null;
-            }
+                return ErrorCode.OutOfMemory;
 
             for (int i = 0; i < img_len; ++i)
                 reduced[i] = (byte)((data[i] >> 8) & 0xFF);
 
-            return new HGlobalMemoryHolder(reduced, img_len);
+            result = new HGlobalMemoryHolder(reduced, img_len);
+            return ErrorCode.Ok;
         }
 
-        public static IMemoryHolder Convert8To16(ReadOnlySpan<byte> data, int w, int h, int components)
+        public static ErrorCode Convert8To16(ReadOnlySpan<byte> data, int w, int h, int components, out IMemoryHolder result)
         {
+            result = null;
+
             int img_len = w * h * components;
             if (data.Length != img_len)
-            {
-                Error("invalid image length");
-                return null;
-            }
+                return ErrorCode.InvalidImageLength;
 
             int enlarged_len = img_len * 2;
             ushort* enlarged = (ushort*)CRuntime.MAlloc(enlarged_len);
             if (enlarged == null)
-            {
-                Error("outofmem");
-                return null;
-            }
+                return ErrorCode.OutOfMemory;
 
             for (int i = 0; i < img_len; ++i)
                 enlarged[i] = (ushort)((data[i] << 8) + data[i]);
 
-            return new HGlobalMemoryHolder(enlarged, enlarged_len);
+            result = new HGlobalMemoryHolder(enlarged, enlarged_len);
+            return ErrorCode.Ok;
         }
 
         public static void VerticalFlip(Span<byte> data, int w, int h, int comp, int depth)
@@ -136,21 +130,19 @@ namespace StbSharp
             VerticalFlip(data.Span, w, h, comp, depth);
         }
 
-        public static IMemoryHolder LoadAndPostprocess(
-            ReadContext s, int? requestedComponents, int? requestedDepth, out ReadState ri)
+        public static ErrorCode LoadAndPostprocess(
+            ReadContext s, int? requestedComponents, int? requestedDepth, out ReadState ri, out IMemoryHolder result)
         {
             ri = new ReadState(requestedComponents, requestedDepth);
 
-            var result = LoadMain(s, ref ri);
-            if (result == null)
-                return null;
-
-            result = ConvertFormat(result, ref ri);
+            result = LoadMain(s, ref ri);
+            if (s.ErrorCode != ErrorCode.Ok)
+                return s.ErrorCode;
 
             if (s.vertically_flip_on_load)
                 VerticalFlip(result, ri.Width, ri.Height, ri.OutComponents, ri.OutDepth);
 
-            return result;
+            return ErrorCode.Ok;
         }
 
         public static byte ComputeY8(int r, int g, int b)
@@ -158,124 +150,130 @@ namespace StbSharp
             return (byte)(((r * 77) + (g * 150) + (29 * b)) >> 8);
         }
 
-        public static IMemoryHolder ConvertFormat8(
-            IMemoryHolder data, int img_n, int req_comp, int width, int height)
+        public static ErrorCode ConvertFormat8(
+            IMemoryHolder data, int img_n, int req_comp, int width, int height, out IMemoryHolder result)
         {
             if (req_comp == img_n)
-                return data;
+            {
+                result = data;
+                return ErrorCode.Ok;
+            }
 
             int goodLength = req_comp * width * height;
             byte* good = (byte*)MAllocMad3(req_comp, width, height, 0);
             if (good == null)
             {
                 data.Dispose();
-                Error("outofmem");
-                return null;
+                result = null;
+                return ErrorCode.OutOfMemory;
             }
 
             using (data)
             {
-                var dataSpan = data.Span;
-
-                int i;
-                for (int j = 0; j < height; ++j)
+                fixed (byte* data_ptr = &MemoryMarshal.GetReference(data.Span))
                 {
-                    Span<byte> src = dataSpan.Slice(j * width * img_n);
-                    byte* dst = good + j * width * req_comp;
-
-                    int srcOffset = 0;
-                    switch (img_n * 8 + req_comp)
+                    int i;
+                    for (int j = 0; j < height; ++j)
                     {
-                        case 1 * 8 + 2:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 1, dst += 2)
-                            {
-                                dst[0] = src[srcOffset];
-                                dst[1] = 255;
-                            }
-                            break;
+                        byte* src = data_ptr + (j * width * img_n);
+                        byte* dst = good + j * width * req_comp;
 
-                        case 1 * 8 + 3:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 1, dst += 3)
-                                dst[0] = dst[1] = dst[2] = src[srcOffset];
-                            break;
+                        int srcOffset = 0;
+                        switch (img_n * 8 + req_comp)
+                        {
+                            case 1 * 8 + 2:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 1, dst += 2)
+                                {
+                                    dst[0] = src[srcOffset];
+                                    dst[1] = 255;
+                                }
+                                break;
 
-                        case 1 * 8 + 4:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 1, dst += 4)
-                            {
-                                dst[0] = dst[1] = dst[2] = src[srcOffset];
-                                dst[3] = 255;
-                            }
-                            break;
+                            case 1 * 8 + 3:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 1, dst += 3)
+                                    dst[0] = dst[1] = dst[2] = src[srcOffset];
+                                break;
 
-                        case 2 * 8 + 1:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 2, dst += 1)
-                                dst[0] = src[srcOffset];
-                            break;
+                            case 1 * 8 + 4:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 1, dst += 4)
+                                {
+                                    dst[0] = dst[1] = dst[2] = src[srcOffset];
+                                    dst[3] = 255;
+                                }
+                                break;
 
-                        case 2 * 8 + 3:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 2, dst += 3)
-                                dst[0] = dst[1] = dst[2] = src[srcOffset];
-                            break;
+                            case 2 * 8 + 1:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 2, dst += 1)
+                                    dst[0] = src[srcOffset];
+                                break;
 
-                        case 2 * 8 + 4:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 2, dst += 4)
-                            {
-                                dst[0] = dst[1] = dst[2] = src[srcOffset];
-                                dst[3] = src[srcOffset + 1];
-                            }
-                            break;
+                            case 2 * 8 + 3:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 2, dst += 3)
+                                    dst[0] = dst[1] = dst[2] = src[srcOffset];
+                                break;
 
-                        case 3 * 8 + 4:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 3, dst += 4)
-                            {
-                                dst[0] = src[srcOffset + 0];
-                                dst[1] = src[srcOffset + 1];
-                                dst[2] = src[srcOffset + 2];
-                                dst[3] = 255;
-                            }
-                            break;
+                            case 2 * 8 + 4:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 2, dst += 4)
+                                {
+                                    dst[0] = dst[1] = dst[2] = src[srcOffset];
+                                    dst[3] = src[srcOffset + 1];
+                                }
+                                break;
 
-                        case 3 * 8 + 1:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 3, dst += 1)
-                                dst[0] = ComputeY8(src[srcOffset], src[srcOffset + 1], src[srcOffset + 2]);
-                            break;
+                            case 3 * 8 + 4:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 3, dst += 4)
+                                {
+                                    dst[0] = src[srcOffset + 0];
+                                    dst[1] = src[srcOffset + 1];
+                                    dst[2] = src[srcOffset + 2];
+                                    dst[3] = 255;
+                                }
+                                break;
 
-                        case 3 * 8 + 2:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 3, dst += 2)
-                            {
-                                dst[0] = ComputeY8(src[srcOffset], src[srcOffset + 1], src[srcOffset + 2]);
-                                dst[1] = 255;
-                            }
-                            break;
+                            case 3 * 8 + 1:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 3, dst += 1)
+                                    dst[0] = ComputeY8(src[srcOffset], src[srcOffset + 1], src[srcOffset + 2]);
+                                break;
 
-                        case 4 * 8 + 1:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 4, dst += 1)
-                                dst[0] = ComputeY8(src[srcOffset], src[srcOffset + 1], src[srcOffset + 2]);
-                            break;
+                            case 3 * 8 + 2:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 3, dst += 2)
+                                {
+                                    dst[0] = ComputeY8(src[srcOffset], src[srcOffset + 1], src[srcOffset + 2]);
+                                    dst[1] = 255;
+                                }
+                                break;
 
-                        case 4 * 8 + 2:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 4, dst += 2)
-                            {
-                                dst[0] = ComputeY8(src[srcOffset], src[srcOffset + 1], src[srcOffset + 2]);
-                                dst[1] = src[srcOffset + 3];
-                            }
-                            break;
+                            case 4 * 8 + 1:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 4, dst += 1)
+                                    dst[0] = ComputeY8(src[srcOffset], src[srcOffset + 1], src[srcOffset + 2]);
+                                break;
 
-                        case 4 * 8 + 3:
-                            for (i = width - 1; i >= 0; --i, srcOffset += 4, dst += 3)
-                            {
-                                dst[0] = src[srcOffset];
-                                dst[1] = src[srcOffset + 1];
-                                dst[2] = src[srcOffset + 2];
-                            }
-                            break;
+                            case 4 * 8 + 2:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 4, dst += 2)
+                                {
+                                    dst[0] = ComputeY8(src[srcOffset], src[srcOffset + 1], src[srcOffset + 2]);
+                                    dst[1] = src[srcOffset + 3];
+                                }
+                                break;
 
-                        default:
-                            Error("0");
-                            return null;
+                            case 4 * 8 + 3:
+                                for (i = width - 1; i >= 0; --i, srcOffset += 4, dst += 3)
+                                {
+                                    dst[0] = src[srcOffset];
+                                    dst[1] = src[srcOffset + 1];
+                                    dst[2] = src[srcOffset + 2];
+                                }
+                                break;
+
+                            default:
+                                result = null;
+                                return ErrorCode.InvalidArguments;
+                        }
                     }
+
+                    result = new HGlobalMemoryHolder(good, goodLength);
+                    return ErrorCode.Ok;
                 }
-                return new HGlobalMemoryHolder(good, goodLength);
             }
         }
 
@@ -284,19 +282,22 @@ namespace StbSharp
             return (ushort)(((r * 77) + (g * 150) + (29 * b)) >> 8);
         }
 
-        public static IMemoryHolder ConvertFormat16(
-            IMemoryHolder data, int img_n, int req_comp, int width, int height)
+        public static ErrorCode ConvertFormat16(
+            IMemoryHolder data, int img_n, int req_comp, int width, int height, out IMemoryHolder result)
         {
             if (req_comp == img_n)
-                return data;
+            {
+                result = data;
+                return ErrorCode.Ok;
+            }
 
             int goodLength = req_comp * width * height * 2;
             ushort* good = (ushort*)CRuntime.MAlloc(goodLength);
             if (good == null)
             {
                 data.Dispose();
-                Error("outofmem");
-                return null;
+                result = null;
+                return ErrorCode.OutOfMemory;
             }
 
             using (data)
@@ -397,39 +398,46 @@ namespace StbSharp
                             break;
 
                         default:
-                            Error("0");
-                            return null;
+                            result = null;
+                            return ErrorCode.InvalidArguments;
                     }
                 }
-                return new HGlobalMemoryHolder(good, goodLength);
+
+                result = new HGlobalMemoryHolder(good, goodLength);
+                return ErrorCode.Ok;
             }
         }
 
-        public static IMemoryHolder ConvertFormat(IMemoryHolder data, ref ReadState ri)
+        public static ErrorCode ConvertFormat(IMemoryHolder data, ref ReadState ri, out IMemoryHolder result)
         {
+            result = data;
+            var errorCode = ErrorCode.Ok;
+
             int requestedDepth = ri.RequestedDepth.GetValueOrDefault();
             if (ri.RequestedDepth.HasValue && ri.OutDepth != requestedDepth)
             {
                 if (requestedDepth == 8)
-                    data = Convert16To8(MemoryMarshal.Cast<byte, ushort>(data.Span), ri.Width, ri.Height, ri.OutComponents);
+                    errorCode = Convert16To8(MemoryMarshal.Cast<byte, ushort>(data.Span), ri.Width, ri.Height, ri.OutComponents, out result);
                 else if (requestedDepth == 16)
-                    data = Convert8To16(data.Span, ri.Width, ri.Height, ri.OutComponents);
+                    errorCode = Convert8To16(data.Span, ri.Width, ri.Height, ri.OutComponents, out result);
 
-                ri.OutDepth = requestedDepth;
+                if (errorCode == ErrorCode.Ok)
+                    ri.OutDepth = requestedDepth;
             }
 
             int requestedComponents = ri.RequestedComponents.GetValueOrDefault();
             if (ri.RequestedComponents.HasValue && ri.OutComponents != requestedComponents)
             {
                 if (ri.OutDepth == 8)
-                    data = ConvertFormat8(data, ri.OutComponents, requestedComponents, ri.Width, ri.Height);
+                    errorCode = ConvertFormat8(data, ri.OutComponents, requestedComponents, ri.Width, ri.Height, out result);
                 else
-                    data = ConvertFormat16(data, ri.OutComponents, requestedComponents, ri.Width, ri.Height);
+                    errorCode = ConvertFormat16(data, ri.OutComponents, requestedComponents, ri.Width, ri.Height, out result);
 
-                ri.OutComponents = requestedComponents;
+                if (errorCode == ErrorCode.Ok)
+                    ri.OutComponents = requestedComponents;
             }
 
-            return data;
+            return errorCode;
         }
 
         public static IMemoryHolder LoadMain(ReadContext s, ref ReadState ri)
@@ -447,7 +455,7 @@ namespace StbSharp
             if (Tga.Test(s))
                 return Tga.Load(s, ref ri);
 
-            Error("unknown image type");
+            s.Error(ErrorCode.UnknownImageType);
             return null;
         }
 
@@ -466,7 +474,7 @@ namespace StbSharp
             if (Tga.Info(s, out ri))
                 return true;
 
-            Error("unknown image type");
+            s.Error(ErrorCode.UnknownImageType);
             return false;
         }
 

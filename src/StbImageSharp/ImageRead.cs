@@ -1,14 +1,10 @@
-﻿using System;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace StbSharp
 {
     public static unsafe partial class ImageRead
     {
         public static string LastError;
-
-        public delegate int ReadCallback(ReadContext context, Span<byte> data);
-        public delegate int SkipCallback(ReadContext context, int n);
 
         public delegate void BufferReadyCallback(in ReadState readState, IMemoryHolder buffer);
         public delegate void ReadProgressCallback(double progress, Rect? rect);
@@ -66,10 +62,86 @@ namespace StbSharp
             }
         }
 
-        private static int Error(string str)
+        public enum ErrorCode
         {
-            LastError = str;
-            return 0;
+            Ok,
+            
+            NotBMP,
+            NotGIF,
+            NotPNG,
+
+            UnknownHeader,
+            BadBMP,
+            MonochromeNotSupported,
+            RLENotSupported,
+            TooLarge,
+            OutOfMemory,
+            InvalidPalette,
+            BadBitsPerPixel,
+            BadMasks,
+            NoClearCode,
+            TooManyCodes,
+            IllegalCodeInRaster,
+            BadImageDescriptor,
+            MissingColorTable,
+            UnknownCode,
+            BadCodeLengths,
+            BadHuffmanCode,
+            CantMergeDcAndAc, 
+            ExpectedMarker,
+            BadDRILength,
+            BadDQTType,
+            BadDQTTable,
+            BadDHTHeader,
+            BadCOMLength,
+            BadAPPLength,
+            UnknownMarker,
+            BadSOSComponentCount,
+            BadSOSLength,
+            BadDCHuffman,
+            BadACHuffman,
+            BadSOS,
+            BadSOFLength,
+            Only8Bit,
+            ZeroHeight, 
+            ZeroWidth,
+            BadComponentCount,
+            BadH,
+            BadV,
+            BadTQ,
+            NoSOI,
+            NoSOF,
+            BadDNLLength,
+            BadDNLHeight,
+            NotEnoughPixels,
+            InvalidFilter,
+            MultipleIHDR,
+            BadIHDRLength, 
+            EmptyImage,
+            UnsupportedBitDepth,
+            BadCtype,
+            BadCompressionMethod,
+            BadFilterMethod,
+            BadInterlaceMethod,
+            IHDRNotFirst,
+            tRNSAfterIDAT,
+            tRNSBeforePLTE,
+            BadtRNSLength,
+            tRNSWithAlpha,
+            NoPLTE,
+            OutOfData,
+            NoIDAT,
+            UnknownChunk,
+            BadCompRequest,
+            Corrupt,
+            WrongChannelCount,
+            WrongColorFormat,
+            BadCompression,
+            BadFormat,
+            BadPalette,
+            InvalidImageLength, 
+            InvalidArguments,
+            UnknownImageType
         }
     }
 }

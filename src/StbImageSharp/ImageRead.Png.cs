@@ -67,6 +67,14 @@ namespace StbSharp
                 {
                     this.s = s;
                 }
+
+                public void Dispose()
+                {
+                    CRuntime.Free(_out_);
+                    CRuntime.Free(idata);
+                    _out_ = null;
+                    idata = null;
+                }
             }
 
             public static PngChunkHeader GetChunkHeader(ReadContext s)
@@ -95,7 +103,7 @@ namespace StbSharp
                 a._out_ = (byte*)MAllocMad3(width, height, out_bytes, 0);
                 if (a._out_ == null)
                 {
-                    Error("outofmem");
+                    a.s.Error(ErrorCode.OutOfMemory); ;
                     return false;
                 }
 
@@ -103,7 +111,7 @@ namespace StbSharp
                 uint img_len = (uint)((img_width_bytes + 1) * height);
                 if (raw.Length < img_len)
                 {
-                    Error("not enough pixels");
+                    a.s.Error(ErrorCode.NotEnoughPixels);
                     return false;
                 }
 
@@ -121,7 +129,7 @@ namespace StbSharp
                     var filter = (FilterType)raw[rawOffset++];
                     if ((int)filter > 4)
                     {
-                        Error("invalid filter");
+                        a.s.Error(ErrorCode.InvalidFilter);
                         return false;
                     }
 
@@ -207,7 +215,7 @@ namespace StbSharp
 
                             case FilterType.Up:
                                 for (; k < nk; ++k)
-                                    current[k] = (byte)((raw[k+ rawOffset] + prior[k]) & 255);
+                                    current[k] = (byte)((raw[k + rawOffset] + prior[k]) & 255);
                                 break;
 
                             case FilterType.Average:
@@ -561,7 +569,7 @@ namespace StbSharp
                 byte* p = (byte*)MAllocMad2((int)pixel_count, pal_img_n, 0);
                 if (p == null)
                 {
-                    Error("outofmem");
+                    a.s.Error(ErrorCode.OutOfMemory);
                     return false;
                 }
 
@@ -658,7 +666,7 @@ namespace StbSharp
                 if (!CheckSignature(s))
                 {
                     if (scan != ScanMode.Type)
-                        Error("bad png sig");
+                        s.Error(ErrorCode.NotPNG);
                     return false;
                 }
 
@@ -692,38 +700,38 @@ namespace StbSharp
 
                         case PngChunkHeader.IHDR:
                         {
-                            int comp;
+                            int compression;
                             int filter;
                             if (first == 0)
                             {
-                                Error("multiple IHDR");
+                                s.Error(ErrorCode.MultipleIHDR);
                                 return false;
                             }
                             first = 0;
 
                             if (c.Length != 13)
                             {
-                                Error("bad IHDR length");
+                                s.Error(ErrorCode.BadIHDRLength);
                                 return false;
                             }
 
                             ri.Width = (int)s.ReadInt32BE();
                             if (ri.Width > (1 << 24))
                             {
-                                Error("too large");
+                                s.Error(ErrorCode.TooLarge);
                                 return false;
                             }
 
                             ri.Height = (int)s.ReadInt32BE();
                             if (ri.Height > (1 << 24))
                             {
-                                Error("too large");
+                                s.Error(ErrorCode.TooLarge);
                                 return false;
                             }
 
                             if ((ri.Width == 0) || (ri.Height == 0))
                             {
-                                Error("0-pixel image");
+                                s.Error(ErrorCode.EmptyImage);
                                 return false;
                             }
 
@@ -734,7 +742,7 @@ namespace StbSharp
                                 ri.Depth != 8 &&
                                 ri.Depth != 16)
                             {
-                                Error("1/2/4/8/16-bit only");
+                                s.Error(ErrorCode.UnsupportedBitDepth);
                                 return false;
                             }
 
@@ -746,41 +754,43 @@ namespace StbSharp
                             color = s.ReadByte();
                             if (color > 6)
                             {
-                                Error("bad ctype");
+                                s.Error(ErrorCode.BadCtype);
                                 return false;
                             }
                             if ((color == 3) && (ri.Depth == 16))
                             {
-                                Error("bad ctype");
+                                s.Error(ErrorCode.BadCtype);
                                 return false;
                             }
 
                             if (color == 3)
+                            {
                                 pal_img_n = 3;
+                            }
                             else if ((color & 1) != 0)
                             {
-                                Error("bad ctype");
+                                s.Error(ErrorCode.BadCtype);
                                 return false;
                             }
 
-                            comp = s.ReadByte();
-                            if (comp != 0)
+                            compression = s.ReadByte();
+                            if (compression != 0)
                             {
-                                Error("bad comp method");
+                                s.Error(ErrorCode.BadCompressionMethod);
                                 return false;
                             }
 
                             filter = s.ReadByte();
                             if (filter != 0)
                             {
-                                Error("bad filter method");
+                                s.Error(ErrorCode.BadFilterMethod);
                                 return false;
                             }
 
                             interlace = s.ReadByte();
                             if (interlace > 1)
                             {
-                                Error("bad interlace method");
+                                s.Error(ErrorCode.BadInterlaceMethod);
                                 return false;
                             }
 
@@ -789,7 +799,7 @@ namespace StbSharp
                                 ri.Components = ((color & 2) != 0 ? 3 : 1) + ((color & 4) != 0 ? 1 : 0);
                                 if (((1 << 30) / ri.Width / ri.Components) < ri.Height)
                                 {
-                                    Error("too large");
+                                    s.Error(ErrorCode.TooLarge);
                                     return false;
                                 }
                                 if (scan == ScanMode.Header)
@@ -800,7 +810,7 @@ namespace StbSharp
                                 ri.Components = 1;
                                 if (((1 << 30) / ri.Width / 4) < ri.Height)
                                 {
-                                    Error("too large");
+                                    s.Error(ErrorCode.TooLarge);
                                     return false;
                                 }
                             }
@@ -811,19 +821,19 @@ namespace StbSharp
                         {
                             if (first != 0)
                             {
-                                Error("first not IHDR");
+                                s.Error(ErrorCode.IHDRNotFirst);
                                 return false;
                             }
                             if (c.Length > (256 * 3))
                             {
-                                Error("invalid PLTE");
+                                s.Error(ErrorCode.InvalidPalette);
                                 return false;
                             }
 
                             pal_len = (int)(c.Length / 3);
                             if (pal_len * 3 != c.Length)
                             {
-                                Error("invalid PLTE");
+                                s.Error(ErrorCode.InvalidPalette);
                                 return false;
                             }
 
@@ -841,12 +851,12 @@ namespace StbSharp
                         {
                             if (first != 0)
                             {
-                                Error("first not IHDR");
+                                s.Error(ErrorCode.IHDRNotFirst);
                                 return false;
                             }
                             if (z.idata != null)
                             {
-                                Error("tRNS after IDAT");
+                                s.Error(ErrorCode.tRNSAfterIDAT);
                                 return false;
                             }
 
@@ -860,12 +870,12 @@ namespace StbSharp
 
                                 if (pal_len == 0)
                                 {
-                                    Error("tRNS before PLTE");
+                                    s.Error(ErrorCode.tRNSBeforePLTE);
                                     return false;
                                 }
                                 if (c.Length > pal_len)
                                 {
-                                    Error("bad tRNS len");
+                                    s.Error(ErrorCode.BadtRNSLength);
                                     return false;
                                 }
                                 pal_img_n = 4;
@@ -876,12 +886,12 @@ namespace StbSharp
                             {
                                 if ((ri.Components & 1) == 0)
                                 {
-                                    Error("tRNS with alpha");
+                                    s.Error(ErrorCode.tRNSWithAlpha);
                                     return false;
                                 }
                                 if (c.Length != (uint)ri.Components * 2)
                                 {
-                                    Error("bad tRNS len");
+                                    s.Error(ErrorCode.BadtRNSLength);
                                     return false;
                                 }
                                 has_transparency = true;
@@ -904,12 +914,12 @@ namespace StbSharp
                         {
                             if (first != 0)
                             {
-                                Error("first not IHDR");
+                                s.Error(ErrorCode.IHDRNotFirst);
                                 return false;
                             }
                             if ((pal_img_n != 0) && (pal_len == 0))
                             {
-                                Error("no PLTE");
+                                s.Error(ErrorCode.NoPLTE);
                                 return false;
                             }
                             if (scan == ScanMode.Header)
@@ -932,7 +942,7 @@ namespace StbSharp
                                 byte* p = (byte*)CRuntime.ReAlloc(z.idata, idata_limit);
                                 if (p == null)
                                 {
-                                    Error("outofmem");
+                                    s.Error(ErrorCode.OutOfMemory);
                                     return false;
                                 }
                                 z.idata = p;
@@ -940,7 +950,7 @@ namespace StbSharp
 
                             if (!s.ReadBytes(new Span<byte>(z.idata + ioff, (int)c.Length)))
                             {
-                                Error("outofdata");
+                                s.Error(ErrorCode.OutOfData);
                                 return false;
                             }
 
@@ -952,15 +962,16 @@ namespace StbSharp
                         {
                             if (first != 0)
                             {
-                                Error("first not IHDR");
+                                s.Error(ErrorCode.IHDRNotFirst);
                                 return false;
                             }
+
                             if (scan != ScanMode.Load)
                                 return true;
 
                             if (z.idata == null)
                             {
-                                Error("no IDAT");
+                                s.Error(ErrorCode.NoIDAT);
                                 return false;
                             }
 
@@ -1032,14 +1043,13 @@ namespace StbSharp
                         default:
                             if (first != 0)
                             {
-                                Error("first not IHDR");
+                                s.Error(ErrorCode.IHDRNotFirst);
                                 return false;
                             }
 
                             if ((c.Type & (1 << 29)) == 0)
                             {
-                                string invalid_chunk = "XXXX PNG chunk not known";
-                                Error(invalid_chunk);
+                                s.Error(ErrorCode.UnknownChunk);
                                 return false;
                             }
 
@@ -1053,27 +1063,31 @@ namespace StbSharp
 
             public static IMemoryHolder Load(ref PngContext p, ref ReadState ri)
             {
-                if ((ri.RequestedComponents < 0) || (ri.RequestedComponents > 4))
+                try
                 {
-                    Error("bad comp request");
-                    return null;
-                }
+                    if ((ri.RequestedComponents < 0) || (ri.RequestedComponents > 4))
+                    {
+                        p.s.Error(ErrorCode.BadCompRequest);
+                        return null;
+                    }
 
-                IMemoryHolder result = null;
-                if (LoadCore(ref p, ref ri, ScanMode.Load))
-                {
-                    result = new HGlobalMemoryHolder(
-                        p._out_, (ri.OutComponents * ri.Width * ri.Height * ri.OutDepth + 7) / 8);
+                    if (!LoadCore(ref p, ref ri, ScanMode.Load))
+                        return null;
 
+                    int bits = ri.OutComponents * ri.Width * ri.Height * ri.OutDepth;
+                    var result = new HGlobalMemoryHolder(p._out_, (bits + 7) / 8);
                     p._out_ = null;
-                    result = ConvertFormat(result, ref ri);
-                }
 
-                CRuntime.Free(p._out_);
-                p._out_ = null;
-                CRuntime.Free(p.idata);
-                p.idata = null;
-                return result;
+                    var errorCode = ConvertFormat(result, ref ri, out var convertedResult);
+                    if (errorCode != ErrorCode.Ok)
+                        return null;
+                    return convertedResult;
+
+                }
+                finally
+                {
+                    p.Dispose();
+                }
             }
 
             public static IMemoryHolder Load(ReadContext s, ref ReadState ri)

@@ -82,14 +82,14 @@
 
                 if (AreValidMad3Sizes(4, ri.Width, ri.Height, 0) == 0)
                 {
-                    Error("too large");
+                    s.Error(ErrorCode.TooLarge);
                     return null;
                 }
 
                 byte* _out_ = (byte*)MAllocMad3((4 * ri.OutDepth + 7) / 8, ri.Width, ri.Height, 0);
                 if (_out_ == null)
                 {
-                    Error("outofmem");
+                    s.Error(ErrorCode.OutOfMemory);
                     return null;
                 }
 
@@ -112,7 +112,7 @@
                             if (!DecodeRLE(s, dst, pixelCount))
                             {
                                 CRuntime.Free(_out_);
-                                Error("corrupt");
+                                s.Error(ErrorCode.Corrupt);
                                 return null;
                             }
                         }
@@ -203,10 +203,11 @@
 
                 IMemoryHolder result = new HGlobalMemoryHolder(
                     _out_, (ri.Width * ri.Height * ri.OutComponents * ri.OutDepth + 7) / 8);
-                
-                result = ConvertFormat(result, ref ri);
 
-                return result;
+                var errorCode = ConvertFormat(result, ref ri, out var convertedResult);
+                if (errorCode != ErrorCode.Ok)
+                    return null;
+                return convertedResult;
             }
 
             public static bool ParseHeader(
@@ -226,7 +227,7 @@
                 info.channelCount = s.ReadInt16BE();
                 if ((info.channelCount < 0) || (info.channelCount > 16))
                 {
-                    Error("wrong channel count");
+                    s.Error(ErrorCode.WrongChannelCount);
                     return false;
                 }
 
@@ -235,12 +236,12 @@
                 ri.Depth = s.ReadInt16BE();
                 if (ri.Depth != 8 && ri.Depth != 16)
                 {
-                    Error("unsupported bit depth");
+                    s.Error(ErrorCode.UnsupportedBitDepth);
                     return false;
                 }
                 if (s.ReadInt16BE() != 3)
                 {
-                    Error("wrong color format");
+                    s.Error(ErrorCode.WrongColorFormat);
                     return false;
                 }
 
@@ -251,7 +252,7 @@
                 info.compression = s.ReadInt16BE();
                 if (info.compression > 1)
                 {
-                    Error("bad compression");
+                    s.Error(ErrorCode.BadCompression);
                     return false;
                 }
 

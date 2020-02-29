@@ -115,7 +115,7 @@ namespace StbSharp
                 if (s.ReadByte() != 'B' ||
                     s.ReadByte() != 'M')
                 {
-                    Error("not BMP");
+                    s.Error(ErrorCode.NotBMP);
                     return false;
                 }
 
@@ -133,7 +133,7 @@ namespace StbSharp
                     info.headerSize != 108 &&
                     info.headerSize != 124)
                 {
-                    Error("unknown BMP");
+                    s.Error(ErrorCode.UnknownHeader);
                     return false;
                 }
 
@@ -154,14 +154,14 @@ namespace StbSharp
 
                 if (s.ReadInt16LE() != 1)
                 {
-                    Error("bad BMP");
+                    s.Error(ErrorCode.BadBMP);
                     return false;
                 }
 
                 info.bpp = s.ReadInt16LE();
                 if (info.bpp == 1)
                 {
-                    Error("monochrome");
+                    s.Error(ErrorCode.MonochromeNotSupported);
                     return false;
                 }
 
@@ -170,7 +170,7 @@ namespace StbSharp
                     int compress = (int)s.ReadInt32LE();
                     if ((compress == 1) || (compress == 2))
                     {
-                        Error("BMP RLE");
+                        s.Error(ErrorCode.RLENotSupported);
                         return false;
                     }
 
@@ -217,13 +217,13 @@ namespace StbSharp
 
                                 if ((info.mr == info.mg) && (info.mg == info.mb))
                                 {
-                                    Error("bad BMP");
+                                    s.Error(ErrorCode.BadBMP);
                                     return false;
                                 }
                             }
                             else
                             {
-                                Error("bad BMP");
+                                s.Error(ErrorCode.BadBMP);
                                 return false;
                             }
                         }
@@ -233,7 +233,7 @@ namespace StbSharp
                         if (info.headerSize != 108 &&
                             info.headerSize != 124)
                         {
-                            Error("bad BMP");
+                            s.Error(ErrorCode.BadBMP);
                             return false;
                         }
 
@@ -296,14 +296,14 @@ namespace StbSharp
 
                 if (AreValidMad3Sizes(ri.OutComponents, ri.Width, ri.Height, 0) == 0)
                 {
-                    Error("too large");
+                    s.Error(ErrorCode.TooLarge);
                     return null;
                 }
 
                 byte* _out_ = (byte*)MAllocMad3(ri.OutComponents, ri.Width, ri.Height, 0);
                 if (_out_ == null)
                 {
-                    Error("outofmem");
+                    s.Error(ErrorCode.OutOfMemory);
                     return null;
                 }
 
@@ -337,7 +337,7 @@ namespace StbSharp
                         if ((psize == 0) || (psize > 256))
                         {
                             CRuntime.Free(_out_);
-                            Error("invalid");
+                            s.Error(ErrorCode.InvalidPalette);
                             return null;
                         }
 
@@ -361,7 +361,7 @@ namespace StbSharp
                         else
                         {
                             CRuntime.Free(_out_);
-                            Error("bad bpp");
+                            s.Error(ErrorCode.BadBitsPerPixel);
                             return null;
                         }
 
@@ -419,7 +419,7 @@ namespace StbSharp
                             if (info.mr == 0 || info.mg == 0 || info.mb == 0)
                             {
                                 CRuntime.Free(_out_);
-                                Error("bad masks");
+                                s.Error(ErrorCode.BadMasks);
                                 return null;
                             }
 
@@ -519,8 +519,11 @@ namespace StbSharp
                     }
 
                     IMemoryHolder result = new HGlobalMemoryHolder(_out_, ri.Height * outStride);
-                    result = ConvertFormat(result, ref ri);
-                    return result;
+
+                    var errorCode = ConvertFormat(result, ref ri, out var convertedResult);
+                    if (errorCode != ErrorCode.Ok)
+                        return null;
+                    return convertedResult;
                 }
                 finally
                 {

@@ -162,18 +162,18 @@ namespace StbSharp
                 public int ypos;
             }
 
-            public static int BuildHuffman(ref Huffman h, int* count)
+            public static ErrorCode BuildHuffman(ref Huffman h, int* count)
             {
                 int i;
                 int j;
                 int k = 0;
-                int code = 0;
                 for (i = 0; i < 16; ++i)
                 {
                     for (j = 0; j < count[i]; ++j)
                         h.size[k++] = (byte)(i + 1);
                 }
 
+                int code = 0;
                 h.size[k] = 0;
                 k = 0;
                 for (j = 1; j <= 16; ++j)
@@ -182,12 +182,10 @@ namespace StbSharp
                     if (h.size[k] == j)
                     {
                         while (h.size[k] == j)
-                        {
                             h.code[k++] = (ushort)code++;
-                        }
 
                         if ((code - 1) >= (1 << j))
-                            return Error("bad code lengths");
+                            return ErrorCode.BadCodeLengths;
                     }
 
                     h.maxcode[j] = (uint)(code << (16 - j));
@@ -195,10 +193,10 @@ namespace StbSharp
                 }
 
                 h.maxcode[j] = 0xffffffff;
+
                 for (i = 0; i < Huffman.FastLength; ++i)
-                {
                     h.fast[i] = 255;
-                }
+
                 for (i = 0; i < k; ++i)
                 {
                     int s = h.size[i];
@@ -207,13 +205,11 @@ namespace StbSharp
                         int c = h.code[i] << (9 - s);
                         int m = 1 << (9 - s);
                         for (j = 0; j < m; ++j)
-                        {
                             h.fast[c + j] = (byte)i;
-                        }
                     }
                 }
 
-                return 1;
+                return ErrorCode.Ok;
             }
 
             public static void BuildFastAc(short[] fast_ac, ref Huffman h)
@@ -341,25 +337,24 @@ namespace StbSharp
                 return (int)(k & 0x80000000);
             }
 
-            public static int DecodeBlock(
+            public static ErrorCode DecodeBlock(
                 Context j, short* data, ref Huffman hdc, ref Huffman hac,
                 short[] fac, int b, ushort[] dequant)
             {
-                int diff;
-                int dc;
-                int k;
-                int t;
                 if (j.code_bits < 16)
                     GrowBufferUnsafe(j);
-                t = HuffmanDecode(j, ref hdc);
+
+                int t = HuffmanDecode(j, ref hdc);
                 if (t < 0)
-                    return Error("bad huffman code");
+                    return ErrorCode.BadHuffmanCode;
+
                 CRuntime.MemSet(data, 0, 64 * sizeof(short));
-                diff = t != 0 ? ExtendReceive(j, t) : 0;
-                dc = j.components[b].dc_pred + diff;
+                int diff = t != 0 ? ExtendReceive(j, t) : 0;
+                int dc = j.components[b].dc_pred + diff;
                 j.components[b].dc_pred = dc;
                 data[0] = (short)(dc * dequant[0]);
-                k = 1;
+
+                int k = 1;
                 do
                 {
                     uint zig;
@@ -383,7 +378,8 @@ namespace StbSharp
                     {
                         int rs = HuffmanDecode(j, ref hac);
                         if (rs < 0)
-                            return Error("bad huffman code");
+                            return ErrorCode.BadHuffmanCode;
+
                         s = rs & 15;
                         r = rs >> 4;
                         if (s == 0)
@@ -401,19 +397,20 @@ namespace StbSharp
                     }
                 } while (k < 64);
 
-                return 1;
+                return ErrorCode.Ok;
             }
 
-            public static int DecodeBlockProgressiveDc(
+            public static ErrorCode DecodeBlockProgressiveDc(
                 Context j, short* data, ref Huffman hdc, int b)
             {
-                int diff;
-                int dc;
-                int t;
                 if (j.spec_end != 0)
-                    return Error("can't merge dc and ac");
+                    return ErrorCode.CantMergeDcAndAc;
                 if (j.code_bits < 16)
                     GrowBufferUnsafe(j);
+
+                int t;
+                int diff;
+                int dc;
                 if (j.succ_high == 0)
                 {
                     CRuntime.MemSet(data, 0, 64 * sizeof(short));
@@ -429,22 +426,23 @@ namespace StbSharp
                         data[0] += (short)(1 << j.succ_low);
                 }
 
-                return 1;
+                return ErrorCode.Ok;
             }
 
-            public static int DecodeBlockProggressiveAc(
+            public static ErrorCode DecodeBlockProggressiveAc(
                 Context j, short* data, ref Huffman hac, short[] fac)
             {
-                int k;
                 if (j.spec_start == 0)
-                    return Error("can't merge dc and ac");
+                    return ErrorCode.CantMergeDcAndAc;
+
+                int k;
                 if (j.succ_high == 0)
                 {
                     int shift = j.succ_low;
                     if (j.eob_run != 0)
                     {
                         --j.eob_run;
-                        return 1;
+                        return ErrorCode.Ok;
                     }
 
                     k = j.spec_start;
@@ -471,7 +469,7 @@ namespace StbSharp
                         {
                             int rs = HuffmanDecode(j, ref hac);
                             if (rs < 0)
-                                return Error("bad huffman code");
+                                return ErrorCode.BadHuffmanCode;
                             s = rs & 15;
                             r = rs >> 4;
                             if (s == 0)
@@ -521,13 +519,12 @@ namespace StbSharp
                         k = j.spec_start;
                         do
                         {
-                            int r;
-                            int s;
                             int rs = HuffmanDecode(j, ref hac);
                             if (rs < 0)
-                                return Error("bad huffman code");
-                            s = rs & 15;
-                            r = rs >> 4;
+                                return ErrorCode.BadHuffmanCode;
+
+                            int s = rs & 15;
+                            int r = rs >> 4;
                             if (s == 0)
                             {
                                 if (r < 15)
@@ -537,14 +534,12 @@ namespace StbSharp
                                         j.eob_run += ReadBits(j, r);
                                     r = 64;
                                 }
-                                else
-                                {
-                                }
                             }
                             else
                             {
                                 if (s != 1)
-                                    return Error("bad huffman code");
+                                    return ErrorCode.BadHuffmanCode;
+
                                 if (ReadBit(j) != 0)
                                     s = bit;
                                 else
@@ -580,7 +575,7 @@ namespace StbSharp
                     }
                 }
 
-                return 1;
+                return ErrorCode.Ok;
             }
 
             public static byte Clamp(int x)
@@ -665,8 +660,8 @@ namespace StbSharp
                         idct.x2 += 512;
                         idct.x3 += 512;
 
-                        v[0] =  (idct.x0 + idct.t3) >> 10;
-                        v[8] =  (idct.x1 + idct.t2) >> 10;
+                        v[0] = (idct.x0 + idct.t3) >> 10;
+                        v[8] = (idct.x1 + idct.t2) >> 10;
                         v[16] = (idct.x2 + idct.t1) >> 10;
                         v[24] = (idct.x3 + idct.t0) >> 10;
                         v[32] = (idct.x3 - idct.t0) >> 10;
@@ -931,15 +926,16 @@ namespace StbSharp
                 switch (m)
                 {
                     case 0xff:
-                        Error("expected marker");
+                        s.Error(ErrorCode.ExpectedMarker);
                         return false;
 
                     case 0xDD:
                         if (s.ReadInt16BE() != 4)
                         {
-                            Error("bad DRI len");
+                            s.Error(ErrorCode.BadDRILength);
                             return false;
                         }
+
                         z.restart_interval = s.ReadInt16BE();
                         return true;
 
@@ -949,24 +945,24 @@ namespace StbSharp
                         {
                             int q = s.ReadByte();
                             int p = q >> 4;
-                            int sixteen = (p != 0) ? 1 : 0;
-                            int t = q & 15;
-                            int i;
                             if ((p != 0) && (p != 1))
                             {
-                                Error("bad DQT type");
+                                s.Error(ErrorCode.BadDQTType);
                                 return false;
                             }
+
+                            int t = q & 15;
                             if (t > 3)
                             {
-                                Error("bad DQT table");
+                                s.Error(ErrorCode.BadDQTTable);
                                 return false;
                             }
-                            for (i = 0; i < 64; ++i)
-                            {
-                                z.dequant[t][DeZigZag[i]] =
-                                    (ushort)(sixteen != 0 ? s.ReadInt16BE() : s.ReadByte());
-                            }
+
+                            int sixteen = (p != 0) ? 1 : 0;
+
+                            for (int i = 0; i < 64; ++i)
+                                z.dequant[t][DeZigZag[i]] = (ushort)(sixteen != 0 ? s.ReadInt16BE() : s.ReadByte());
+
                             L -= sixteen != 0 ? 129 : 65;
                         }
                         return L == 0;
@@ -976,17 +972,17 @@ namespace StbSharp
                         while (L > 0)
                         {
                             int* sizes = stackalloc int[16];
-                            int i;
-                            int n = 0;
                             int q = s.ReadByte();
                             int tc = q >> 4;
                             int th = q & 15;
                             if ((tc > 1) || (th > 3))
                             {
-                                Error("bad DHT header");
+                                s.Error(ErrorCode.BadDHTHeader);
                                 return false;
                             }
-                            for (i = 0; i < 16; ++i)
+
+                            int n = 0;
+                            for (int i = 0; i < 16; ++i)
                             {
                                 sizes[i] = s.ReadByte();
                                 n += sizes[i];
@@ -1008,7 +1004,7 @@ namespace StbSharp
                                 huff = z.huff_ac;
                             }
 
-                            for (i = 0; i < n; ++i)
+                            for (int i = 0; i < n; ++i)
                                 huff[th].values[i] = s.ReadByte();
 
                             if (tc != 0)
@@ -1024,9 +1020,9 @@ namespace StbSharp
                     if (L < 2)
                     {
                         if (m == 0xFE)
-                            Error("bad COM len");
+                            s.Error(ErrorCode.BadCOMLength);
                         else
-                            Error("bad APP len");
+                            s.Error(ErrorCode.BadAPPLength);
                         return false;
                     }
 
@@ -1087,7 +1083,7 @@ namespace StbSharp
                     return true;
                 }
 
-                Error("unknown marker");
+                s.Error(ErrorCode.UnknownMarker);
                 return false;
             }
 
@@ -1098,12 +1094,12 @@ namespace StbSharp
                 z.scan_n = s.ReadByte();
                 if ((z.scan_n < 1) || (z.scan_n > 4) || (z.scan_n > z.ri.Components))
                 {
-                    Error("bad SOS component count");
+                    z.s.Error(ErrorCode.BadSOSComponentCount);
                     return false;
                 }
                 if (Ls != 6 + 2 * z.scan_n)
                 {
-                    Error("bad SOS len");
+                    z.s.Error(ErrorCode.BadSOSLength);
                     return false;
                 }
 
@@ -1123,14 +1119,14 @@ namespace StbSharp
                     z.components[which].hd = q >> 4;
                     if (z.components[which].hd > 3)
                     {
-                        Error("bad DC huff");
+                        z.s.Error(ErrorCode.BadDCHuffman);
                         return false;
                     }
 
                     z.components[which].ha = q & 15;
                     if (z.components[which].ha > 3)
                     {
-                        Error("bad AC huff");
+                        z.s.Error(ErrorCode.BadACHuffman);
                         return false;
                     }
                     z.order[i] = which;
@@ -1148,7 +1144,7 @@ namespace StbSharp
                         if ((z.spec_start > 63) || (z.spec_end > 63) || (z.spec_start > z.spec_end) ||
                             (z.succ_high > 13) || (z.succ_low > 13))
                         {
-                            Error("bad SOS");
+                            z.s.Error(ErrorCode.BadSOS);
                             return false;
                         }
                     }
@@ -1156,12 +1152,12 @@ namespace StbSharp
                     {
                         if (z.spec_start != 0)
                         {
-                            Error("bad SOS");
+                            z.s.Error(ErrorCode.BadSOS);
                             return false;
                         }
                         if ((z.succ_high != 0) || (z.succ_low != 0))
                         {
-                            Error("bad SOS");
+                            z.s.Error(ErrorCode.BadSOS);
                             return false;
                         }
                         z.spec_end = 63;
@@ -1209,25 +1205,25 @@ namespace StbSharp
                 Lf = s.ReadInt16BE();
                 if (Lf < 11)
                 {
-                    Error("bad SOF len");
+                    s.Error(ErrorCode.BadSOFLength);
                     return false;
                 }
                 p = s.ReadByte();
                 if (p != 8)
                 {
-                    Error("only 8-bit");
+                    s.Error(ErrorCode.UnsupportedBitDepth);
                     return false;
                 }
                 z.ri.Height = s.ReadInt16BE();
                 if (z.ri.Height == 0)
                 {
-                    Error("no header height");
+                    s.Error(ErrorCode.ZeroHeight);
                     return false;
                 }
                 z.ri.Width = s.ReadInt16BE();
                 if (z.ri.Width == 0)
                 {
-                    Error("0 width");
+                    s.Error(ErrorCode.ZeroWidth);
                     return false;
                 }
                 z.ri.Components = s.ReadByte();
@@ -1235,7 +1231,7 @@ namespace StbSharp
                     (z.ri.Components != 3) &&
                     (z.ri.Components != 4))
                 {
-                    Error("bad component count");
+                    s.Error(ErrorCode.BadComponentCount);
                     return false;
                 }
                 for (i = 0; i < z.ri.Components; ++i)
@@ -1246,7 +1242,7 @@ namespace StbSharp
 
                 if (Lf != 8 + 3 * z.ri.Components)
                 {
-                    Error("bad SOF len");
+                    s.Error(ErrorCode.BadSOFLength);
                     return false;
                 }
                 z.rgb = 0;
@@ -1264,19 +1260,19 @@ namespace StbSharp
                     z.components[i].h = q >> 4;
                     if ((z.components[i].h == 0) || (z.components[i].h > 4))
                     {
-                        Error("bad H");
+                        s.Error(ErrorCode.BadH);
                         return false;
                     }
                     z.components[i].v = q & 15;
                     if ((z.components[i].v == 0) || (z.components[i].v > 4))
                     {
-                        Error("bad V");
+                        s.Error(ErrorCode.BadV);
                         return false;
                     }
                     z.components[i].tq = s.ReadByte();
                     if (z.components[i].tq > 3)
                     {
-                        Error("bad TQ");
+                        s.Error(ErrorCode.BadTQ);
                         return false;
                     }
                 }
@@ -1286,7 +1282,7 @@ namespace StbSharp
 
                 if (AreValidMad3Sizes(z.ri.Width, z.ri.Height, z.ri.Components, 0) == 0)
                 {
-                    Error("too large");
+                    s.Error(ErrorCode.TooLarge);
                     return false;
                 }
 
@@ -1319,7 +1315,7 @@ namespace StbSharp
                     if (z.components[i].raw_data == null)
                     {
                         FreeComponents(z, i + 1);
-                        Error("outofmem");
+                        s.Error(ErrorCode.OutOfMemory);
                         return false;
                     }
 
@@ -1334,7 +1330,7 @@ namespace StbSharp
                         if (z.components[i].raw_coeff == null)
                         {
                             FreeComponents(z, i + 1);
-                            Error("outofmem");
+                            s.Error(ErrorCode.OutOfMemory);
                             return false;
                         }
                         z.components[i].coeff = (short*)(((long)z.components[i].raw_coeff + 15) & ~15);
@@ -1354,7 +1350,7 @@ namespace StbSharp
                 if (!(m == 0xd8))
                 {
                     if (scan == ScanMode.Load)
-                        Error("no SOI");
+                        z.s.Error(ErrorCode.NoSOI);
                     return false;
                 }
 
@@ -1372,7 +1368,7 @@ namespace StbSharp
                     {
                         if (z.s.IsAtEndOfStream())
                         {
-                            Error("no SOF");
+                            z.s.Error(ErrorCode.NoSOF);
                             return false;
                         }
                         m = ReadMarker(z);
@@ -1426,9 +1422,9 @@ namespace StbSharp
                         int Ld = s.ReadInt16BE();
                         uint NL = (uint)s.ReadInt16BE();
                         if (Ld != 4)
-                            Error("bad DNL len");
+                            j.s.Error(ErrorCode.BadDNLLength);
                         if (NL != j.ri.Height)
-                            Error("bad DNL height");
+                            j.s.Error(ErrorCode.BadDNLHeight);
                     }
                     else
                     {
@@ -1579,7 +1575,7 @@ namespace StbSharp
             {
                 if (z.ri.RequestedComponents < 0 || z.ri.RequestedComponents > 4)
                 {
-                    Error("bad req_comp");
+                    z.s.Error(ErrorCode.BadCompRequest);
                     return null;
                 }
 
@@ -1604,7 +1600,7 @@ namespace StbSharp
                     if (z.components[k].linebuf == null)
                     {
                         Cleanup(z);
-                        Error("outofmem");
+                        z.s.Error(ErrorCode.OutOfMemory);
                         return null;
                     }
 
@@ -1632,7 +1628,7 @@ namespace StbSharp
                 if (output == null)
                 {
                     Cleanup(z);
-                    Error("outofmem");
+                    z.s.Error(ErrorCode.OutOfMemory);
                     return null;
                 }
 
