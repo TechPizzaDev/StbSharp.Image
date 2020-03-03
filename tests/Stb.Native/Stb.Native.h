@@ -14,7 +14,7 @@ using namespace System::Threading;
 
 #define STBI_NO_STDIO
 #define STB_IMAGE_IMPLEMENTATION
-#include "../../generation/StbImageSharp.Generator/stb_image.h"
+#include "stb_image.h"
 
 namespace StbNative {
 	int read_callback(void *user, char *data, int size);
