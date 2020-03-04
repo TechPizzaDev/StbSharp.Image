@@ -170,7 +170,7 @@ namespace StbSharp
 
             using (data)
             {
-                fixed (byte* data_ptr = &MemoryMarshal.GetReference(data.Span))
+                fixed (byte* data_ptr = data.Span)
                 {
                     int i;
                     for (int j = 0; j < height; ++j)
