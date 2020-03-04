@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29102.190
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StbSharp.ImageRead", "src\StbSharp.ImageRead.csproj", "{6F2CE1C5-821C-4701-8748-C336B823CBF6}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StbSharp.Shared", "..\Shared\src\StbSharp.Shared.csproj", "{0149AF33-690C-4A1C-B209-581FC37B83B6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6F2CE1C5-821C-4701-8748-C336B823CBF6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F2CE1C5-821C-4701-8748-C336B823CBF6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F2CE1C5-821C-4701-8748-C336B823CBF6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6F2CE1C5-821C-4701-8748-C336B823CBF6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0149AF33-690C-4A1C-B209-581FC37B83B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0149AF33-690C-4A1C-B209-581FC37B83B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0149AF33-690C-4A1C-B209-581FC37B83B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0149AF33-690C-4A1C-B209-581FC37B83B6}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {C9C812E7-F89A-4B6E-8F9D-981D5F8BBAB3}
+	EndGlobalSection
+EndGlobal
