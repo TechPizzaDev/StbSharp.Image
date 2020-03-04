@@ -32,7 +32,7 @@ namespace StbSharp
                 int srcOffset = skipHeader ? 2 : 0;
                 var resultPtr = (byte*)CRuntime.MAlloc(uncompressedSize);
                 int resultLength;
-                fixed (byte* dataPtr = &MemoryMarshal.GetReference(compressed))
+                fixed (byte* dataPtr = compressed)
                 {
                     using (var src = new UnmanagedMemoryStream(dataPtr + srcOffset, compressed.Length - srcOffset))
                     using (var dst = new UnmanagedMemoryStream(resultPtr, 0, uncompressedSize, FileAccess.Write))
