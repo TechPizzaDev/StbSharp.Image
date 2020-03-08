@@ -39,17 +39,17 @@ namespace StbSharp
             [StructLayout(LayoutKind.Sequential)]
             public readonly struct PngChunkHeader
             {
-                public const uint CgBI = ('C' << 24) + ('g' << 16) + ('B' << 8) + 'I';
-                public const uint IHDR = ('I' << 24) + ('H' << 16) + ('D' << 8) + 'R';
-                public const uint PLTE = ('P' << 24) + ('L' << 16) + ('T' << 8) + 'E';
-                public const uint tRNS = ('t' << 24) + ('R' << 16) + ('N' << 8) + 'S';
-                public const uint IDAT = ('I' << 24) + ('D' << 16) + ('A' << 8) + 'T';
-                public const uint IEND = ('I' << 24) + ('E' << 16) + ('N' << 8) + 'D';
+                public const int CgBI = ('C' << 24) + ('g' << 16) + ('B' << 8) + 'I';
+                public const int IHDR = ('I' << 24) + ('H' << 16) + ('D' << 8) + 'R';
+                public const int PLTE = ('P' << 24) + ('L' << 16) + ('T' << 8) + 'E';
+                public const int tRNS = ('t' << 24) + ('R' << 16) + ('N' << 8) + 'S';
+                public const int IDAT = ('I' << 24) + ('D' << 16) + ('A' << 8) + 'T';
+                public const int IEND = ('I' << 24) + ('E' << 16) + ('N' << 8) + 'D';
 
-                public readonly uint Length;
-                public readonly uint Type;
+                public readonly int Length;
+                public readonly int Type;
 
-                public PngChunkHeader(uint length, uint type)
+                public PngChunkHeader(int length, int type)
                 {
                     Length = length;
                     Type = type;
@@ -77,7 +77,7 @@ namespace StbSharp
                 }
             }
 
-            public static PngChunkHeader GetChunkHeader(ReadContext s)
+            public static PngChunkHeader ReadChunkHeader(ReadContext s)
             {
                 return new PngChunkHeader(
                     length: s.ReadInt32BE(),
@@ -100,10 +100,10 @@ namespace StbSharp
                 int out_bytes = out_n * bytes;
                 int x = width;
 
-                a._out_ = (byte*)MAllocMad3(width, height, out_bytes, 0);
+                a._out_ = (byte*)ImageReadHelpers.MAllocMad3(width, height, out_bytes, 0);
                 if (a._out_ == null)
                 {
-                    a.s.Error(ErrorCode.OutOfMemory); ;
+                    a.s.Error(ErrorCode.OutOfMemory);
                     return false;
                 }
 
@@ -433,7 +433,7 @@ namespace StbSharp
                         ref a, image_data, out_n,
                         width, height, comp, depth, color);
 
-                byte* final = (byte*)MAllocMad3(width, height, out_bytes, 0);
+                byte* final = (byte*)ImageReadHelpers.MAllocMad3(width, height, out_bytes, 0);
 
                 int* xorig = stackalloc int[7];
                 xorig[0] = 0;
@@ -565,8 +565,8 @@ namespace StbSharp
             public static bool ExpandPalette(
                 ref PngContext a, int width, int height, byte* palette, int len, int pal_img_n)
             {
-                uint pixel_count = (uint)(width * height);
-                byte* p = (byte*)MAllocMad2((int)pixel_count, pal_img_n, 0);
+                int pixel_count = (width * height);
+                byte* p = (byte*)ImageReadHelpers.MAllocMad2(pixel_count, pal_img_n, 0);
                 if (p == null)
                 {
                     a.s.Error(ErrorCode.OutOfMemory);
@@ -577,7 +577,7 @@ namespace StbSharp
                 byte* tmp_out = p;
                 if (pal_img_n == 3)
                 {
-                    for (uint i = 0; i < pixel_count; ++i)
+                    for (int i = 0; i < pixel_count; ++i)
                     {
                         int n = orig[i] * 4;
                         p[0] = palette[n];
@@ -588,7 +588,7 @@ namespace StbSharp
                 }
                 else
                 {
-                    for (uint i = 0; i < pixel_count; ++i)
+                    for (int i = 0; i < pixel_count; ++i)
                     {
                         int n = orig[i] * 4;
                         p[0] = palette[n];
@@ -610,7 +610,8 @@ namespace StbSharp
                 uint i;
                 uint pixel_count = (uint)(ri.Width * ri.Height);
                 byte* p = z._out_;
-                if (ri.OutComponents == 3)
+
+                if (ri.Components == 3)
                 {
                     for (i = 0; i < pixel_count; ++i)
                     {
@@ -622,7 +623,7 @@ namespace StbSharp
                 }
                 else
                 {
-                    if (s.unpremultiply_on_load)
+                    if (s.UnpremultiplyOnLoad)
                     {
                         for (i = 0; i < pixel_count; ++i)
                         {
@@ -673,14 +674,14 @@ namespace StbSharp
                 if (scan == ScanMode.Type)
                     return true;
 
-                byte* palette = stackalloc byte[1024];
+                byte* palette = stackalloc byte[256 * 4];
                 byte pal_img_n = 0;
                 bool has_transparency = false;
                 byte* tc = stackalloc byte[3];
                 ushort* tc16 = stackalloc ushort[3];
-                uint ioff = 0;
-                uint idata_limit = 0;
-                uint i;
+                int ioff = 0;
+                int idata_limit = 0;
+                int i;
                 int pal_len = 0;
                 int first = 1;
                 int k;
@@ -690,14 +691,9 @@ namespace StbSharp
 
                 for (; ; )
                 {
-                    PngChunkHeader c = GetChunkHeader(s);
+                    PngChunkHeader c = ReadChunkHeader(s);
                     switch (c.Type)
                     {
-                        case PngChunkHeader.CgBI:
-                            is_iphone = true;
-                            s.Skip((int)c.Length);
-                            break;
-
                         case PngChunkHeader.IHDR:
                         {
                             int compression;
@@ -715,14 +711,14 @@ namespace StbSharp
                                 return false;
                             }
 
-                            ri.Width = (int)s.ReadInt32BE();
+                            ri.Width = s.ReadInt32BE();
                             if (ri.Width > (1 << 24))
                             {
                                 s.Error(ErrorCode.TooLarge);
                                 return false;
                             }
 
-                            ri.Height = (int)s.ReadInt32BE();
+                            ri.Height = s.ReadInt32BE();
                             if (ri.Height > (1 << 24))
                             {
                                 s.Error(ErrorCode.TooLarge);
@@ -746,20 +742,15 @@ namespace StbSharp
                                 return false;
                             }
 
-                            if (ri.Depth < 8)
-                                ri.OutDepth = 8;
-                            else
-                                ri.OutDepth = ri.Depth;
-
                             color = s.ReadByte();
                             if (color > 6)
                             {
-                                s.Error(ErrorCode.BadCtype);
+                                s.Error(ErrorCode.BadColorType);
                                 return false;
                             }
                             if ((color == 3) && (ri.Depth == 16))
                             {
-                                s.Error(ErrorCode.BadCtype);
+                                s.Error(ErrorCode.BadColorType);
                                 return false;
                             }
 
@@ -769,7 +760,7 @@ namespace StbSharp
                             }
                             else if ((color & 1) != 0)
                             {
-                                s.Error(ErrorCode.BadCtype);
+                                s.Error(ErrorCode.BadColorType);
                                 return false;
                             }
 
@@ -814,8 +805,17 @@ namespace StbSharp
                                     return false;
                                 }
                             }
+
+                            ri.Orientation = ImageOrientation.TopLeftOrigin;
+
+                            ri.StateReady();
                             break;
                         }
+
+                        case PngChunkHeader.CgBI:
+                            is_iphone = true;
+                            s.Skip(c.Length);
+                            break;
 
                         case PngChunkHeader.PLTE:
                         {
@@ -830,7 +830,7 @@ namespace StbSharp
                                 return false;
                             }
 
-                            pal_len = (int)(c.Length / 3);
+                            pal_len = c.Length / 3;
                             if (pal_len * 3 != c.Length)
                             {
                                 s.Error(ErrorCode.InvalidPalette);
@@ -844,6 +844,8 @@ namespace StbSharp
                                 palette[i * 4 + 2] = s.ReadByte();
                                 palette[i * 4 + 3] = 255;
                             }
+
+                            // TODO: PaletteReady()
                             break;
                         }
 
@@ -928,14 +930,15 @@ namespace StbSharp
                                 return true;
                             }
 
-                            if (((int)(ioff + c.Length)) < ((int)ioff))
+                            if (ioff + c.Length < ioff)
                                 return false;
 
                             if ((ioff + c.Length) > idata_limit)
                             {
-                                uint idata_limit_old = idata_limit;
+                                int idata_limit_old = idata_limit;
                                 if (idata_limit == 0)
                                     idata_limit = c.Length > 4096 ? c.Length : 4096;
+
                                 while ((ioff + c.Length) > idata_limit)
                                     idata_limit *= 2;
 
@@ -948,7 +951,7 @@ namespace StbSharp
                                 z.idata = p;
                             }
 
-                            if (!s.ReadBytes(new Span<byte>(z.idata + ioff, (int)c.Length)))
+                            if (!s.ReadBytes(new Span<byte>(z.idata + ioff, c.Length)))
                             {
                                 s.Error(ErrorCode.OutOfData);
                                 return false;
@@ -982,7 +985,7 @@ namespace StbSharp
                             IMemoryHolder decompressed;
                             try
                             {
-                                var data = new ReadOnlySpan<byte>(z.idata, (int)ioff);
+                                var data = new ReadOnlySpan<byte>(z.idata, ioff);
                                 decompressed = Zlib.DeflateDecompress(data, raw_len, skipHeader);
                                 if (decompressed == null)
                                     return false;
@@ -1017,7 +1020,7 @@ namespace StbSharp
                                             return false;
                                 }
 
-                                if (is_iphone && s.de_iphone_flag && ri.OutComponents > 2)
+                                if (is_iphone && s.DeIphoneFlag && ri.OutComponents > 2)
                                     DeIphone(ref z, ref ri);
 
                                 if (pal_img_n != 0)
@@ -1053,13 +1056,15 @@ namespace StbSharp
                                 return false;
                             }
 
-                            s.Skip((int)c.Length);
+                            s.Skip(c.Length);
                             break;
                     }
 
                     s.ReadInt32BE();
                 }
             }
+
+            /*
 
             public static IMemoryHolder Load(ref PngContext p, ref ReadState ri)
             {
@@ -1078,7 +1083,7 @@ namespace StbSharp
                     var result = new HGlobalMemoryHolder(p._out_, (bits + 7) / 8);
                     p._out_ = null;
 
-                    var errorCode = ConvertFormat(result, ref ri, out var convertedResult);
+                    var errorCode = ImageReadHelpers.ConvertFormat(result, ref ri, out var convertedResult);
                     if (errorCode != ErrorCode.Ok)
                         return null;
                     return convertedResult;
@@ -1095,6 +1100,8 @@ namespace StbSharp
                 var p = new PngContext(s);
                 return Load(ref p, ref ri);
             }
+
+            */
 
             public static bool Test(ReadContext s)
             {

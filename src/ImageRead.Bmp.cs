@@ -13,11 +13,10 @@ namespace StbSharp
                 public int bpp;
                 public int offset;
                 public int headerSize;
-                public uint mr;
-                public uint mg;
-                public uint mb;
-                public uint ma;
-                public uint all_a;
+                public int mr;
+                public int mg;
+                public int mb;
+                public int ma;
             }
 
             public static bool Test(ReadContext s)
@@ -33,15 +32,13 @@ namespace StbSharp
             public static bool Info(ReadContext s, out ReadState ri)
             {
                 var info = new BmpInfo();
-                info.all_a = 255;
-
                 ri = new ReadState();
                 bool success = ParseHeader(s, ref info, ref ri, ScanMode.Header);
                 s.Rewind();
                 return success;
             }
 
-            public static int HighBit(uint z)
+            public static int HighBit(int z)
             {
                 if (z == 0)
                     return -1;
@@ -81,14 +78,14 @@ namespace StbSharp
                 return n;
             }
 
-            public static int BitCount(uint a)
+            public static int BitCount(int a)
             {
                 a = (a & 0x55555555) + ((a >> 1) & 0x55555555);
                 a = (a & 0x33333333) + ((a >> 2) & 0x33333333);
                 a = (a + (a >> 4)) & 0x0f0f0f0f;
                 a += a >> 8;
                 a += a >> 16;
-                return (int)(a & 0xff);
+                return a & 0xff;
             }
 
             public static int ShiftSigned(int v, int shift, int bits)
@@ -123,8 +120,8 @@ namespace StbSharp
                 s.ReadInt16LE();
                 s.ReadInt16LE();
 
-                info.offset = (int)s.ReadInt32LE();
-                info.headerSize = (int)s.ReadInt32LE();
+                info.offset = s.ReadInt32LE();
+                info.headerSize = s.ReadInt32LE();
                 info.mr = info.mg = info.mb = info.ma = 0;
 
                 if (info.headerSize != 12 &&
@@ -147,9 +144,12 @@ namespace StbSharp
                 }
                 else
                 {
-                    ri.Width = (int)s.ReadInt32LE();
-                    ri.Height = (int)s.ReadInt32LE();
+                    ri.Width = s.ReadInt32LE();
+                    ri.Height = s.ReadInt32LE();
                 }
+                ri.Orientation = ri.Height > 0
+                    ? ImageOrientation.BottomLeftOrigin
+                    : ImageOrientation.TopLeftOrigin;
                 ri.Height = CRuntime.FastAbs(ri.Height);
 
                 if (s.ReadInt16LE() != 1)
@@ -167,7 +167,7 @@ namespace StbSharp
 
                 if (info.headerSize != 12)
                 {
-                    int compress = (int)s.ReadInt32LE();
+                    int compress = s.ReadInt32LE();
                     if ((compress == 1) || (compress == 2))
                     {
                         s.Error(ErrorCode.RLENotSupported);
@@ -179,6 +179,7 @@ namespace StbSharp
                     s.ReadInt32LE();
                     s.ReadInt32LE();
                     s.ReadInt32LE();
+
                     if (info.headerSize == 40 ||
                         info.headerSize == 56)
                     {
@@ -196,17 +197,16 @@ namespace StbSharp
                             {
                                 if (info.bpp == 32)
                                 {
-                                    info.mr = 0xffu << 16;
-                                    info.mg = 0xffu << 8;
-                                    info.mb = 0xffu << 0;
-                                    info.ma = 0xffu << 24;
-                                    info.all_a = 0;
+                                    info.mr = 0xff << 16;
+                                    info.mg = 0xff << 8;
+                                    info.mb = 0xff << 0;
+                                    info.ma = 0xff << 24;
                                 }
                                 else
                                 {
-                                    info.mr = 31u << 10;
-                                    info.mg = 31u << 5;
-                                    info.mb = 31u << 0;
+                                    info.mr = 31 << 10;
+                                    info.mg = 31 << 5;
+                                    info.mb = 31 << 0;
                                 }
                             }
                             else if (compress == 3)
@@ -257,7 +257,8 @@ namespace StbSharp
                 }
 
 
-                if (info.bpp == 24 && info.ma == 0xff000000)
+                if (info.bpp == 24 &&
+                    info.ma == 0xff << 24)
                     ri.Components = 3;
                 else
                     ri.Components = info.ma != 0 ? 4 : 3;
@@ -267,20 +268,11 @@ namespace StbSharp
                 return true;
             }
 
-            public static IMemoryHolder Load(ReadContext s, ref ReadState ri)
+            public static bool Load(ReadContext s, ref ReadState ri)
             {
                 var info = new BmpInfo();
-                info.all_a = 255;
-
                 if (!ParseHeader(s, ref info, ref ri, ScanMode.Load))
-                    return null;
-
-                if (ri.RequestedComponents.HasValue && ri.RequestedComponents >= 3)
-                    ri.OutComponents = ri.RequestedComponents.Value;
-                else
-                    ri.OutComponents = ri.Components;
-                
-                ri.OutDepth = ri.RequestedDepth ?? ri.Depth;
+                    return true;
 
                 int psize = 0;
                 if (info.headerSize == 12)
@@ -294,17 +286,11 @@ namespace StbSharp
                         psize = (info.offset - 14 - info.headerSize) >> 2;
                 }
 
-                if (AreValidMad3Sizes(ri.OutComponents, ri.Width, ri.Height, 0) == 0)
+                // TODO: remove this?
+                if (ImageReadHelpers.AreValidMad3Sizes(ri.Components, ri.Width, ri.Height, 0) == 0)
                 {
                     s.Error(ErrorCode.TooLarge);
-                    return null;
-                }
-
-                byte* _out_ = (byte*)MAllocMad3(ri.OutComponents, ri.Width, ri.Height, 0);
-                if (_out_ == null)
-                {
-                    s.Error(ErrorCode.OutOfMemory);
-                    return null;
+                    return false;
                 }
 
                 int easy = 0;
@@ -314,62 +300,68 @@ namespace StbSharp
                 }
                 else if (info.bpp == 32)
                 {
-                    if (info.mb == 0xff &&
-                        info.mg == 0xff00 &&
-                        info.mr == 0x00ff0000 &&
-                        info.ma == 0xff000000)
+                    if (info.mb == 0xff << 0 &&
+                        info.mg == 0xff << 8 &&
+                        info.mr == 0xff << 16 &&
+                        info.ma == 0xff << 24)
                     {
                         easy = 2;
                     }
                 }
 
                 int rowComp = easy == 2 ? 4 : 3;
-                int rowBufferSize = ri.Width * Math.Max(ri.Components, ri.OutComponents);
+                int rowBufferSize = ri.Width * ri.Components;
                 byte* rowBuffer = (byte*)CRuntime.MAlloc(rowBufferSize);
                 var rowBufferSpan = new Span<byte>(rowBuffer, rowBufferSize);
+
                 try
                 {
-                    int width;
-                    int pad;
                     if (info.bpp < 16)
                     {
-                        int z = 0;
                         if ((psize == 0) || (psize > 256))
                         {
-                            CRuntime.Free(_out_);
                             s.Error(ErrorCode.InvalidPalette);
-                            return null;
+                            return false;
                         }
 
-                        byte* pal = stackalloc byte[256 * 4];
+                        Span<byte> palette = stackalloc byte[256 * 4];
                         for (int x = 0; x < psize; ++x)
                         {
-                            pal[x * 4 + 2] = s.ReadByte();
-                            pal[x * 4 + 1] = s.ReadByte();
-                            pal[x * 4 + 0] = s.ReadByte();
-                            if (info.headerSize != 12)
-                                s.ReadByte();
-                            pal[x * 4 + 3] = 255;
+                            palette[x * 4 + 2] = s.ReadByte();
+                            palette[x * 4 + 1] = s.ReadByte();
+                            palette[x * 4 + 0] = s.ReadByte();
+                            palette[x * 4 + 3] = info.headerSize == 12 ? (byte)255 : s.ReadByte();
                         }
 
                         s.Skip(info.offset - 14 - info.headerSize - psize * (info.headerSize == 12 ? 3 : 4));
 
+                        int width;
                         if (info.bpp == 4)
                             width = (ri.Width + 1) >> 1;
                         else if (info.bpp == 8)
                             width = ri.Width;
                         else
                         {
-                            CRuntime.Free(_out_);
                             s.Error(ErrorCode.BadBitsPerPixel);
-                            return null;
+                            return false;
                         }
 
-                        pad = (-width) & 3;
+                        int pad = (-width) & 3;
                         for (int y = 0; y < ri.Height; ++y)
                         {
-                            for (int x = 0; x < ri.Width; x += 2)
+                            for (int x = 0, z = 0; x < ri.Width; x += 2)
                             {
+                                void WriteFromPalette(int comp, Span<byte> palette)
+                                {
+                                    rowBuffer[z + 0] = palette[0];
+                                    rowBuffer[z + 1] = palette[1];
+                                    rowBuffer[z + 2] = palette[2];
+
+                                    if (comp == 4)
+                                        rowBuffer[z + 3] = palette[3];
+                                    z += comp;
+                                }
+
                                 int v2 = 0;
                                 int v1 = s.ReadByte();
                                 if (info.bpp == 4)
@@ -377,26 +369,15 @@ namespace StbSharp
                                     v2 = v1 & 15;
                                     v1 >>= 4;
                                 }
-
-                                _out_[z++] = pal[v1 * 4 + 0];
-                                _out_[z++] = pal[v1 * 4 + 1];
-                                _out_[z++] = pal[v1 * 4 + 2];
-
-                                if (ri.OutComponents == 4)
-                                    _out_[z++] = 255;
+                                WriteFromPalette(ri.Components, palette.Slice(v1 * 4));
 
                                 if ((x + 1) == ri.Width)
                                     break;
-
-                                v1 = (info.bpp == 8) ? s.ReadByte() : v2;
-                                _out_[z++] = pal[v1 * 4 + 0];
-                                _out_[z++] = pal[v1 * 4 + 1];
-                                _out_[z++] = pal[v1 * 4 + 2];
-
-                                if (ri.OutComponents == 4)
-                                    _out_[z++] = 255;
+                                v2 = info.bpp == 8 ? s.ReadByte() : v2;
+                                WriteFromPalette(ri.Components, palette.Slice(v2 * 4));
                             }
 
+                            ri.OutputBytes(y, rowBufferSpan);
                             s.Skip(pad);
                         }
                     }
@@ -404,23 +385,23 @@ namespace StbSharp
                     {
                         s.Skip(info.offset - 14 - info.headerSize);
 
+                        int width;
                         if (info.bpp == 24)
                             width = 3 * ri.Width;
                         else if (info.bpp == 16)
                             width = 2 * ri.Width;
                         else
                             width = 0;
-                        pad = (-width) & 3;
 
                         int rshift = 0, gshift = 0, bshift = 0, ashift = 0;
                         int rcount = 0, gcount = 0, bcount = 0, acount = 0;
+
                         if (easy == 0)
                         {
                             if (info.mr == 0 || info.mg == 0 || info.mb == 0)
                             {
-                                CRuntime.Free(_out_);
                                 s.Error(ErrorCode.BadMasks);
-                                return null;
+                                return false;
                             }
 
                             rshift = HighBit(info.mr) - 7;
@@ -436,94 +417,69 @@ namespace StbSharp
                             acount = BitCount(info.ma);
                         }
 
-                        byte a = 255;
+                        int pad = (-width) & 3;
                         int z = 0;
                         if (easy != 0)
                         {
-                            var rowBufferSlice = new Span<byte>(rowBuffer, ri.Width * rowComp);
-
-                            if (easy != 2)
-                                info.all_a = 255;
+                            var rowBufferSlice = rowBufferSpan.Slice(0, ri.Width * rowComp);
 
                             for (int y = 0; y < ri.Height; ++y)
                             {
                                 if (!s.ReadBytes(rowBufferSlice))
-                                    break;
+                                    break; // TODO: error code?
 
                                 for (int x = 0, o = 0; x < ri.Width; x++, z += rowComp)
                                 {
-                                    _out_[z + 2] = rowBuffer[o++];
-                                    _out_[z + 1] = rowBuffer[o++];
-                                    _out_[z + 0] = rowBuffer[o++];
+                                    byte b = rowBuffer[o++];
+                                    byte g = rowBuffer[o++];
+                                    byte r = rowBuffer[o++];
+                                    rowBuffer[z + 0] = r;
+                                    rowBuffer[z + 1] = g;
+                                    rowBuffer[z + 2] = b;
 
                                     if (easy == 2)
-                                    {
-                                        a = rowBuffer[o++];
-                                        info.all_a |= a;
-                                    }
-
-                                    if (ri.OutComponents == 4)
-                                        _out_[z + 3] = a;
+                                        rowBuffer[z + 3] = rowBuffer[o++];
                                 }
+
+                                ri.OutputBytes(y, rowBufferSpan);
                                 s.Skip(pad);
                             }
                         }
                         else
                         {
-                            if (info.ma == 0)
-                                info.all_a = 255;
-
                             for (int y = 0; y < ri.Height; ++y)
                             {
                                 for (int x = 0; x < ri.Width; x++, z += rowComp)
                                 {
-                                    uint v = info.bpp == 16 ? (uint)s.ReadInt16LE() : s.ReadInt32LE();
-                                    _out_[z + 0] = (byte)(ShiftSigned((int)(v & info.mr), rshift, rcount) & 0xff);
-                                    _out_[z + 1] = (byte)(ShiftSigned((int)(v & info.mg), gshift, gcount) & 0xff);
-                                    _out_[z + 2] = (byte)(ShiftSigned((int)(v & info.mb), bshift, bcount) & 0xff);
+                                    int v = info.bpp == 16 ? s.ReadInt16LE() : s.ReadInt32LE();
+                                    rowBuffer[z + 0] = (byte)(ShiftSigned(v & info.mr, rshift, rcount) & 0xff);
+                                    rowBuffer[z + 1] = (byte)(ShiftSigned(v & info.mg, gshift, gcount) & 0xff);
+                                    rowBuffer[z + 2] = (byte)(ShiftSigned(v & info.mb, bshift, bcount) & 0xff);
 
                                     if (info.ma != 0)
-                                    {
-                                        a = (byte)(ShiftSigned((int)(v & info.ma), ashift, acount) & 0xff);
-                                        info.all_a |= a;
-                                    }
-
-                                    if (ri.OutComponents == 4)
-                                        _out_[z + 3] = a;
+                                        rowBuffer[z + 3] = (byte)(ShiftSigned(v & info.ma, ashift, acount) & 0xff);
                                 }
+
+                                ri.OutputBytes(y, rowBufferSpan);
                                 s.Skip(pad);
                             }
                         }
                     }
 
-                    int outStride = ri.Width * ri.OutComponents;
-                    if (ri.OutComponents == 4 && info.all_a == 0)
-                    {
-                        for (int x = outStride * ri.Height - 1; x >= 0; x -= 4)
-                            _out_[x] = 255;
-                    }
-
-                    bool flip_vertically = ri.Height > 0;
-                    if (flip_vertically)
-                    {
-                        int rows = ri.Height >> 1;
-                        for (int y = 0; y < rows; ++y)
-                        {
-                            var row1 = new Span<byte>(_out_ + y * outStride, outStride);
-                            var row2 = new Span<byte>(_out_ + (ri.Height - 1 - y) * outStride, outStride);
-
-                            row1.CopyTo(rowBufferSpan);
-                            row2.CopyTo(row1);
-                            rowBufferSpan.CopyTo(row2);
-                        }
-                    }
-
-                    IMemoryHolder result = new HGlobalMemoryHolder(_out_, ri.Height * outStride);
-
-                    var errorCode = ConvertFormat(result, ref ri, out var convertedResult);
-                    if (errorCode != ErrorCode.Ok)
-                        return null;
-                    return convertedResult;
+                    //if (ri.Orientation == ImageOrientation.)
+                    //{
+                    //    int rows = ri.Height >> 1;
+                    //    for (int y = 0; y < rows; ++y)
+                    //    {
+                    //        var row1 = new Span<byte>(_out_ + y * outStride, outStride);
+                    //        var row2 = new Span<byte>(_out_ + (ri.Height - 1 - y) * outStride, outStride);
+                    //
+                    //        row1.CopyTo(rowBufferSpan);
+                    //        row2.CopyTo(row1);
+                    //        rowBufferSpan.CopyTo(row2);
+                    //    }
+                    //}
+                    return true;
                 }
                 finally
                 {

@@ -6,30 +6,29 @@ namespace StbSharp
 {
     public static unsafe partial class ImageRead
     {
-        public delegate int ReadCallbackDelegate(ReadContext context, Span<byte> data);
-        public delegate int SkipCallbackDelegate(ReadContext context, int n);
+        public delegate int ReadCallback(ReadContext context, Span<byte> data);
+        public delegate int SkipCallback(ReadContext context, int count);
 
         public class ReadContext : IDisposable
         {
-            public readonly Stream Stream;
-            public readonly byte[] ReadBuffer;
-            public readonly CancellationToken CancellationToken;
+            public Stream Stream { get; }
+            public CancellationToken CancellationToken { get; }
 
-            public readonly ReadCallbackDelegate ReadCallback;
-            public readonly SkipCallbackDelegate SkipCallback;
-            public bool ReadFromCallbacks;
+            public ReadCallback ReadCallback { get; }
+            public SkipCallback SkipCallback { get; }
+            public bool ReadFromCallbacks { get; private set; }
 
             public int DataLength { get; }
-            public byte* DataOriginalStart { get; private set; }
-            public byte* DataOriginalEnd { get; }
+            public byte* DataStartOriginal { get; private set; }
+            public byte* DataEndOriginal { get; }
 
-            public byte* DataStart;
-            public byte* Data;
-            public byte* DataEnd;
+            public byte* DataStart { get; private set; }
+            public byte* Data { get; private set; }
+            public byte* DataEnd { get; private set; }
 
-            public bool vertically_flip_on_load = false;
-            public bool unpremultiply_on_load = true;
-            public bool de_iphone_flag = true;
+            public bool VerticallyFlipOnLoad { get; set; } = false;
+            public bool UnpremultiplyOnLoad { get; set; } = true;
+            public bool DeIphoneFlag { get; set; } = true;
 
             public ErrorCode ErrorCode { get; private set; }
 
@@ -42,28 +41,27 @@ namespace StbSharp
 
                 DataLength = len;
                 DataStart = null;
-                DataOriginalStart = data;
-                Data = DataOriginalStart;
-                DataEnd = DataOriginalEnd = data + len;
+                DataStartOriginal = data;
+                Data = DataStartOriginal;
+                DataEnd = DataEndOriginal = data + len;
             }
 
             public ReadContext(
-                Stream stream, byte[] readBuffer, CancellationToken cancellationToken,
-                ReadCallbackDelegate readCallback, SkipCallbackDelegate skipCallback)
+                Stream stream, CancellationToken cancellationToken,
+                ReadCallback readCallback, SkipCallback skipCallback)
             {
                 ReadFromCallbacks = true;
                 Stream = stream;
-                ReadBuffer = readBuffer;
                 ReadCallback = readCallback;
                 SkipCallback = skipCallback;
                 CancellationToken = cancellationToken;
 
                 DataLength = 256;
-                DataOriginalStart = (byte*)CRuntime.MAlloc(DataLength);
+                DataStartOriginal = (byte*)CRuntime.MAlloc(DataLength);
 
-                DataStart = DataOriginalStart;
+                DataStart = DataStartOriginal;
                 RefillBuffer();
-                DataOriginalEnd = DataEnd;
+                DataEndOriginal = DataEnd;
             }
 
             #endregion
@@ -86,9 +84,9 @@ namespace StbSharp
                 return Data >= DataEnd ? true : false;
             }
 
-            public void Skip(int n)
+            public void Skip(int count)
             {
-                if (n < 0)
+                if (count < 0)
                 {
                     Data = DataEnd;
                     return;
@@ -97,27 +95,27 @@ namespace StbSharp
                 if (ReadCallback != null)
                 {
                     int blen = (int)(DataEnd - Data);
-                    if (blen < n)
+                    if (blen < count)
                     {
                         Data = DataEnd;
-                        SkipCallback(this, n - blen);
+                        SkipCallback(this, count - blen);
                         return;
                     }
                 }
 
-                Data += n;
+                Data += count;
             }
 
             public void Rewind()
             {
-                Data = DataOriginalStart;
-                DataEnd = DataOriginalEnd;
+                Data = DataStartOriginal;
+                DataEnd = DataEndOriginal;
             }
 
             public void RefillBuffer()
             {
-                int n = ReadCallback(this, new Span<byte>(DataStart, DataLength));
-                if (n == 0)
+                int count = ReadCallback(this, new Span<byte>(DataStart, DataLength));
+                if (count == 0)
                 {
                     ReadFromCallbacks = false;
                     Data = DataStart;
@@ -129,9 +127,10 @@ namespace StbSharp
                 {
                     Data = DataStart;
                     DataEnd = DataStart;
-                    DataEnd += n;
+                    DataEnd += count;
                 }
             }
+
             public bool ReadBytes(Span<byte> destination)
             {
                 if (ReadCallback != null)
@@ -154,6 +153,7 @@ namespace StbSharp
                     Data += destination.Length;
                     return true;
                 }
+
                 return false;
             }
 
@@ -171,36 +171,36 @@ namespace StbSharp
                 return 0;
             }
 
-            public int ReadInt16BE()
+            public short ReadInt16LE()
             {
-                int z = ReadByte();
-                return (z << 8) + ReadByte();
+                byte z = ReadByte();
+                return (short)(z + (ReadByte() << 8));
             }
 
-            public uint ReadInt32BE()
+            public short ReadInt16BE()
             {
-                uint z = (uint)ReadInt16BE();
-                return (uint)((z << 16) + ReadInt16BE());
+                byte z = ReadByte();
+                return (short)((z << 8) + ReadByte());
             }
 
-            public int ReadInt16LE()
+            public int ReadInt32LE()
             {
-                int z = ReadByte();
-                return z + (ReadByte() << 8);
+                short z = ReadInt16LE();
+                return z + (ReadInt16LE() << 16);
             }
 
-            public uint ReadInt32LE()
+            public int ReadInt32BE()
             {
-                uint z = (uint)ReadInt16LE();
-                return (uint)(z + (ReadInt16LE() << 16));
+                short z = ReadInt16BE();
+                return (z << 16) + ReadInt16BE();
             }
 
             #region IDisposable
 
             protected virtual void Dispose(bool disposing)
             {
-                CRuntime.Free(DataOriginalStart);
-                DataOriginalStart = null;
+                CRuntime.Free(DataStartOriginal);
+                DataStartOriginal = null;
             }
 
             public void Dispose()

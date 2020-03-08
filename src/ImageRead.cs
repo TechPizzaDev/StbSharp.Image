@@ -1,50 +1,10 @@
-﻿using System.Runtime.InteropServices;
+﻿using System;
+using System.Runtime.InteropServices;
 
 namespace StbSharp
 {
     public static unsafe partial class ImageRead
     {
-        public static string LastError;
-
-        public delegate void BufferReadyCallback(in ReadState readState, IMemoryHolder buffer);
-        public delegate void ReadProgressCallback(double progress, Rect? rect);
-
-        public enum ScanMode
-        {
-            Load = 0,
-            Type = 1,
-            Header = 2
-        }
-
-        public struct ReadState
-        {
-            public readonly int? RequestedComponents;
-            public readonly int? RequestedDepth;
-
-            public readonly BufferReadyCallback BufferReady;
-            public readonly ReadProgressCallback Progress;
-
-            public int Width;
-            public int Height;
-            public int Depth;
-            public int Components;
-
-            public int OutDepth;
-            public int OutComponents;
-
-            public ReadState(
-                int? requestedComponents,
-                int? requestedDepth,
-                BufferReadyCallback onBufferReady = null,
-                ReadProgressCallback onProgress = null) : this()
-            {
-                RequestedComponents = requestedComponents;
-                RequestedDepth = requestedDepth;
-                BufferReady = onBufferReady;
-                Progress = onProgress;
-            }
-        }
-
         [StructLayout(LayoutKind.Sequential)]
         public readonly struct Rect
         {
@@ -60,6 +20,27 @@ namespace StbSharp
                 W = w;
                 H = h;
             }
+        }
+        
+        public enum ScanMode
+        {
+            Load = 0,
+            Type = 1,
+            Header = 2
+        }
+
+        [Flags]
+        public enum ImageOrientation
+        {
+            LeftToRight = 1 << 0,
+            RightToLeft = 1 << 1,
+            TopToBottom = 1 << 2,
+            BottomToTop = 1 << 3,
+
+            TopLeftOrigin = LeftToRight | TopToBottom,
+            BottomLeftOrigin = LeftToRight | BottomToTop,
+            TopRightOrigin = RightToLeft | TopToBottom,
+            BottomRightOrigin = RightToLeft | BottomToTop
         }
 
         public enum ErrorCode
@@ -119,7 +100,7 @@ namespace StbSharp
             BadIHDRLength, 
             EmptyImage,
             UnsupportedBitDepth,
-            BadCtype,
+            BadColorType,
             BadCompressionMethod,
             BadFilterMethod,
             BadInterlaceMethod,
