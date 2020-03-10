@@ -5,16 +5,16 @@ namespace StbSharp
     public static unsafe partial class ImageRead
     {
         public delegate void StateReadyCallback(in ReadState state);
-        public delegate void OutputBytePixelsCallback(in ReadState state, int row, ReadOnlySpan<byte> pixels);
-        public delegate void OutputShortPixelsCallback(in ReadState state, int row, ReadOnlySpan<ushort> pixels);
-        public delegate void OutputFloatPixelsCallback(in ReadState state, int row, ReadOnlySpan<float> pixels);
+        public delegate void OutputByteRowCallback(in ReadState state, int row, ReadOnlySpan<byte> pixels);
+        public delegate void OutputShortRowCallback(in ReadState state, int row, ReadOnlySpan<ushort> pixels);
+        public delegate void OutputFloatRowCallback(in ReadState state, int row, ReadOnlySpan<float> pixels);
 
         public struct ReadState
         {
             public readonly StateReadyCallback StateReadyCallback;
-            public readonly OutputBytePixelsCallback OutputBytesCallback;
-            public readonly OutputShortPixelsCallback OutputShortsCallback;
-            public readonly OutputFloatPixelsCallback OutputFloatsCallback;
+            public readonly OutputByteRowCallback OutputByteRowCallback;
+            public readonly OutputShortRowCallback OutputShortRowCallback;
+            public readonly OutputFloatRowCallback OutputFloatRowCallback;
 
             public int Width;
             public int Height;
@@ -26,15 +26,15 @@ namespace StbSharp
 
             public ReadState(
                 StateReadyCallback onStateReady,
-                OutputBytePixelsCallback onOutputBytes,
-                OutputShortPixelsCallback onOutputShorts,
-                OutputFloatPixelsCallback onOutputFloats)
+                OutputByteRowCallback onOutputBytes,
+                OutputShortRowCallback onOutputShorts,
+                OutputFloatRowCallback onOutputFloats)
                 : this()
             {
                 StateReadyCallback = onStateReady;
-                OutputBytesCallback = onOutputBytes;
-                OutputShortsCallback = onOutputShorts;
-                OutputFloatsCallback = onOutputFloats;
+                OutputByteRowCallback = onOutputBytes;
+                OutputShortRowCallback = onOutputShorts;
+                OutputFloatRowCallback = onOutputFloats;
             }
 
             public readonly void StateReady()
@@ -42,19 +42,19 @@ namespace StbSharp
                 StateReadyCallback?.Invoke(this);
             }
 
-            public readonly void OutputBytes(int row, ReadOnlySpan<byte> pixels)
+            public readonly void OutputByteRow(int row, ReadOnlySpan<byte> pixels)
             {
-                OutputBytesCallback?.Invoke(this, row, pixels);
+                OutputByteRowCallback?.Invoke(this, row, pixels);
             }
 
-            public readonly void OutputShorts(int row, ReadOnlySpan<ushort> pixels)
+            public readonly void OutputShortRow(int row, ReadOnlySpan<ushort> pixels)
             {
-                OutputShortsCallback?.Invoke(this, row, pixels);
+                OutputShortRowCallback?.Invoke(this, row, pixels);
             }
 
-            public readonly void OutputFloats(int row, ReadOnlySpan<float> pixels)
+            public readonly void OutputFloatRow(int row, ReadOnlySpan<float> pixels)
             {
-                OutputFloatsCallback?.Invoke(this, row, pixels);
+                OutputFloatRowCallback?.Invoke(this, row, pixels);
             }
         }
     }
