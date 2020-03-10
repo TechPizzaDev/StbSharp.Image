@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers.Binary;
 using System.IO;
 using System.Threading;
 
@@ -173,26 +174,34 @@ namespace StbSharp
 
             public short ReadInt16LE()
             {
-                byte z = ReadByte();
-                return (short)(z + (ReadByte() << 8));
+                Span<byte> tmp = stackalloc byte[sizeof(short)];
+                if (!ReadBytes(tmp))
+                    return 0;
+                return BinaryPrimitives.ReadInt16LittleEndian(tmp);
             }
 
             public short ReadInt16BE()
             {
-                byte z = ReadByte();
-                return (short)((z << 8) + ReadByte());
+                Span<byte> tmp = stackalloc byte[sizeof(short)];
+                if (!ReadBytes(tmp))
+                    return 0;
+                return BinaryPrimitives.ReadInt16BigEndian(tmp);
             }
 
             public int ReadInt32LE()
             {
-                short z = ReadInt16LE();
-                return z + (ReadInt16LE() << 16);
+                Span<byte> tmp = stackalloc byte[sizeof(int)];
+                if (!ReadBytes(tmp))
+                    return 0;
+                return BinaryPrimitives.ReadInt32LittleEndian(tmp);
             }
 
             public int ReadInt32BE()
             {
-                short z = ReadInt16BE();
-                return (z << 16) + ReadInt16BE();
+                Span<byte> tmp = stackalloc byte[sizeof(int)];
+                if (!ReadBytes(tmp))
+                    return 0;
+                return BinaryPrimitives.ReadInt32BigEndian(tmp);
             }
 
             #region IDisposable

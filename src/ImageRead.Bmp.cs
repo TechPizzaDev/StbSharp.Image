@@ -247,12 +247,8 @@ namespace StbSharp
                             s.ReadInt32LE();
 
                         if (info.headerSize == 124)
-                        {
-                            s.ReadInt32LE();
-                            s.ReadInt32LE();
-                            s.ReadInt32LE();
-                            s.ReadInt32LE();
-                        }
+                            for (int i = 0; i < 4; ++i)
+                                s.ReadInt32LE();
                     }
                 }
 
@@ -264,6 +260,7 @@ namespace StbSharp
                     ri.Components = info.ma != 0 ? 4 : 3;
 
                 ri.Depth = info.bpp / ri.Components;
+                ri.OutDepth = Math.Max(ri.Depth, 8);
 
                 return true;
             }
@@ -272,7 +269,9 @@ namespace StbSharp
             {
                 var info = new BmpInfo();
                 if (!ParseHeader(s, ref info, ref ri, ScanMode.Load))
-                    return true;
+                    return false;
+
+                ri.StateReady();
 
                 int psize = 0;
                 if (info.headerSize == 12)
@@ -309,10 +308,10 @@ namespace StbSharp
                     }
                 }
 
-                int rowComp = easy == 2 ? 4 : 3;
-                int rowBufferSize = ri.Width * ri.Components;
-                byte* rowBuffer = (byte*)CRuntime.MAlloc(rowBufferSize);
-                var rowBufferSpan = new Span<byte>(rowBuffer, rowBufferSize);
+                int rowByteSize = ri.Width * ri.Components;
+                byte* rowBuffer = (byte*)CRuntime.MAlloc(rowByteSize);
+                var rowBufferSpan = new Span<byte>(rowBuffer, rowByteSize);
+                bool flipRows = (ri.Orientation & ImageOrientation.BottomToTop) == ImageOrientation.BottomToTop;
 
                 try
                 {
@@ -377,7 +376,8 @@ namespace StbSharp
                                 WriteFromPalette(ri.Components, palette.Slice(v2 * 4));
                             }
 
-                            ri.OutputBytes(y, rowBufferSpan);
+                            int row = flipRows ? (ri.Height - y - 1) : y;
+                            ri.OutputBytes(row, rowBufferSpan);
                             s.Skip(pad);
                         }
                     }
@@ -418,17 +418,16 @@ namespace StbSharp
                         }
 
                         int pad = (-width) & 3;
-                        int z = 0;
                         if (easy != 0)
                         {
-                            var rowBufferSlice = rowBufferSpan.Slice(0, ri.Width * rowComp);
+                            var rowBufferSlice = rowBufferSpan.Slice(0, ri.Width * ri.Components);
 
                             for (int y = 0; y < ri.Height; ++y)
                             {
                                 if (!s.ReadBytes(rowBufferSlice))
                                     break; // TODO: error code?
 
-                                for (int x = 0, o = 0; x < ri.Width; x++, z += rowComp)
+                                for (int x = 0, o = 0, z = 0; x < ri.Width; x++, z += ri.Components)
                                 {
                                     byte b = rowBuffer[o++];
                                     byte g = rowBuffer[o++];
@@ -437,11 +436,12 @@ namespace StbSharp
                                     rowBuffer[z + 1] = g;
                                     rowBuffer[z + 2] = b;
 
-                                    if (easy == 2)
-                                        rowBuffer[z + 3] = rowBuffer[o++];
+                                    if (ri.Components == 4)
+                                        rowBuffer[z + 3] = easy == 2 ? rowBuffer[o++] : (byte)255;
                                 }
 
-                                ri.OutputBytes(y, rowBufferSpan);
+                                int row = flipRows ? (ri.Height - y - 1) : y;
+                                ri.OutputBytes(row, rowBufferSpan);
                                 s.Skip(pad);
                             }
                         }
@@ -449,18 +449,21 @@ namespace StbSharp
                         {
                             for (int y = 0; y < ri.Height; ++y)
                             {
-                                for (int x = 0; x < ri.Width; x++, z += rowComp)
+                                for (int x = 0; x < rowByteSize; x += ri.Components)
                                 {
                                     int v = info.bpp == 16 ? s.ReadInt16LE() : s.ReadInt32LE();
-                                    rowBuffer[z + 0] = (byte)(ShiftSigned(v & info.mr, rshift, rcount) & 0xff);
-                                    rowBuffer[z + 1] = (byte)(ShiftSigned(v & info.mg, gshift, gcount) & 0xff);
-                                    rowBuffer[z + 2] = (byte)(ShiftSigned(v & info.mb, bshift, bcount) & 0xff);
+                                    rowBufferSpan[x + 0] = (byte)(ShiftSigned(v & info.mr, rshift, rcount) & 0xff);
+                                    rowBufferSpan[x + 1] = (byte)(ShiftSigned(v & info.mg, gshift, gcount) & 0xff);
+                                    rowBufferSpan[x + 2] = (byte)(ShiftSigned(v & info.mb, bshift, bcount) & 0xff);
 
-                                    if (info.ma != 0)
-                                        rowBuffer[z + 3] = (byte)(ShiftSigned(v & info.ma, ashift, acount) & 0xff);
+                                    if (ri.Components == 4)
+                                        rowBufferSpan[x + 3] = info.ma != 0
+                                            ? (byte)(ShiftSigned(v & info.ma, ashift, acount) & 0xff)
+                                            : (byte)255;
                                 }
 
-                                ri.OutputBytes(y, rowBufferSpan);
+                                int row = flipRows ? (ri.Height - y - 1) : y;
+                                ri.OutputBytes(row, rowBufferSpan);
                                 s.Skip(pad);
                             }
                         }

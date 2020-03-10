@@ -32,10 +32,10 @@ namespace StbSharp
         [Flags]
         public enum ImageOrientation
         {
-            LeftToRight = 1 << 0,
-            RightToLeft = 1 << 1,
-            TopToBottom = 1 << 2,
-            BottomToTop = 1 << 3,
+            TopToBottom = 1 << 0,
+            BottomToTop = 1 << 1,
+            LeftToRight = 1 << 2,
+            RightToLeft = 1 << 3,
 
             TopLeftOrigin = LeftToRight | TopToBottom,
             BottomLeftOrigin = LeftToRight | BottomToTop,
