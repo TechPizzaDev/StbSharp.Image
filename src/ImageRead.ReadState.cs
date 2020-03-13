@@ -23,6 +23,7 @@ namespace StbSharp
             public int Components;
 
             public int OutDepth;
+            public int OutComponents;
 
             public ReadState(
                 StateReadyCallback onStateReady,

@@ -260,7 +260,6 @@ namespace StbSharp
                     ri.Components = info.ma != 0 ? 4 : 3;
 
                 ri.Depth = info.bpp / ri.Components;
-                ri.OutDepth = Math.Max(ri.Depth, 8);
 
                 return true;
             }
@@ -270,6 +269,9 @@ namespace StbSharp
                 var info = new BmpInfo();
                 if (!ParseHeader(s, ref info, ref ri, ScanMode.Load))
                     return false;
+
+                ri.OutComponents = ri.Components;
+                ri.OutDepth = Math.Max(ri.Depth, 8);
 
                 ri.StateReady();
 
@@ -286,18 +288,14 @@ namespace StbSharp
                 }
 
                 // TODO: remove this?
-                if (ImageReadHelpers.AreValidMad3Sizes(ri.Components, ri.Width, ri.Height, 0) == 0)
+                if (ImageReadHelpers.AreValidMad3Sizes(ri.OutComponents, ri.Width, ri.Height, 0) == 0)
                 {
                     s.Error(ErrorCode.TooLarge);
                     return false;
                 }
 
                 int easy = 0;
-                if (info.bpp == 24)
-                {
-                    easy = 1;
-                }
-                else if (info.bpp == 32)
+                if (info.bpp == 32)
                 {
                     if (info.mb == 0xff << 0 &&
                         info.mg == 0xff << 8 &&
@@ -307,8 +305,12 @@ namespace StbSharp
                         easy = 2;
                     }
                 }
+                else if (info.bpp == 24)
+                {
+                    easy = 1;
+                }
 
-                int rowByteSize = ri.Width * ri.Components;
+                int rowByteSize = ri.Width * ri.OutComponents;
                 byte* rowBuffer = (byte*)CRuntime.MAlloc(rowByteSize);
                 var rowBufferSpan = new Span<byte>(rowBuffer, rowByteSize);
                 bool flipRows = (ri.Orientation & ImageOrientation.BottomToTop) == ImageOrientation.BottomToTop;
@@ -368,12 +370,12 @@ namespace StbSharp
                                     v2 = v1 & 15;
                                     v1 >>= 4;
                                 }
-                                WriteFromPalette(ri.Components, palette.Slice(v1 * 4));
+                                WriteFromPalette(ri.OutComponents, palette.Slice(v1 * 4));
 
                                 if ((x + 1) == ri.Width)
                                     break;
                                 v2 = info.bpp == 8 ? s.ReadByte() : v2;
-                                WriteFromPalette(ri.Components, palette.Slice(v2 * 4));
+                                WriteFromPalette(ri.OutComponents, palette.Slice(v2 * 4));
                             }
 
                             int row = flipRows ? (ri.Height - y - 1) : y;
@@ -393,51 +395,25 @@ namespace StbSharp
                         else
                             width = 0;
 
-                        int rshift = 0, gshift = 0, bshift = 0, ashift = 0;
-                        int rcount = 0, gcount = 0, bcount = 0, acount = 0;
-
-                        if (easy == 0)
-                        {
-                            if (info.mr == 0 || info.mg == 0 || info.mb == 0)
-                            {
-                                s.Error(ErrorCode.BadMasks);
-                                return false;
-                            }
-
-                            rshift = HighBit(info.mr) - 7;
-                            rcount = BitCount(info.mr);
-
-                            gshift = HighBit(info.mg) - 7;
-                            gcount = BitCount(info.mg);
-
-                            bshift = HighBit(info.mb) - 7;
-                            bcount = BitCount(info.mb);
-
-                            ashift = HighBit(info.ma) - 7;
-                            acount = BitCount(info.ma);
-                        }
-
                         int pad = (-width) & 3;
                         if (easy != 0)
                         {
-                            var rowBufferSlice = rowBufferSpan.Slice(0, ri.Width * ri.Components);
-
                             for (int y = 0; y < ri.Height; ++y)
                             {
-                                if (!s.ReadBytes(rowBufferSlice))
+                                if (!s.ReadBytes(rowBufferSpan))
                                     break; // TODO: error code?
 
-                                for (int x = 0, o = 0, z = 0; x < ri.Width; x++, z += ri.Components)
+                                for (int x = 0, o = 0; x < rowByteSize; x += ri.OutComponents)
                                 {
                                     byte b = rowBuffer[o++];
                                     byte g = rowBuffer[o++];
                                     byte r = rowBuffer[o++];
-                                    rowBuffer[z + 0] = r;
-                                    rowBuffer[z + 1] = g;
-                                    rowBuffer[z + 2] = b;
+                                    rowBuffer[x + 0] = r;
+                                    rowBuffer[x + 1] = g;
+                                    rowBuffer[x + 2] = b;
 
-                                    if (ri.Components == 4)
-                                        rowBuffer[z + 3] = easy == 2 ? rowBuffer[o++] : (byte)255;
+                                    if (ri.OutComponents == 4)
+                                        rowBuffer[x + 3] = easy == 2 ? rowBuffer[o++] : (byte)255;
                                 }
 
                                 int row = flipRows ? (ri.Height - y - 1) : y;
@@ -447,16 +423,31 @@ namespace StbSharp
                         }
                         else
                         {
+                            if (info.mr == 0 || info.mg == 0 || info.mb == 0)
+                            {
+                                s.Error(ErrorCode.BadMasks);
+                                return false;
+                            }
+
+                            int rshift = HighBit(info.mr) - 7;
+                            int gshift = HighBit(info.mg) - 7;
+                            int bshift = HighBit(info.mb) - 7;
+                            int ashift = HighBit(info.ma) - 7;
+                            int rcount = BitCount(info.mr);
+                            int gcount = BitCount(info.mg);
+                            int bcount = BitCount(info.mb);
+                            int acount = BitCount(info.ma);
+
                             for (int y = 0; y < ri.Height; ++y)
                             {
-                                for (int x = 0; x < rowByteSize; x += ri.Components)
+                                for (int x = 0; x < rowByteSize; x += ri.OutComponents)
                                 {
                                     int v = info.bpp == 16 ? s.ReadInt16LE() : s.ReadInt32LE();
                                     rowBufferSpan[x + 0] = (byte)(ShiftSigned(v & info.mr, rshift, rcount) & 0xff);
                                     rowBufferSpan[x + 1] = (byte)(ShiftSigned(v & info.mg, gshift, gcount) & 0xff);
                                     rowBufferSpan[x + 2] = (byte)(ShiftSigned(v & info.mb, bshift, bcount) & 0xff);
 
-                                    if (ri.Components == 4)
+                                    if (ri.OutComponents == 4)
                                         rowBufferSpan[x + 3] = info.ma != 0
                                             ? (byte)(ShiftSigned(v & info.ma, ashift, acount) & 0xff)
                                             : (byte)255;
