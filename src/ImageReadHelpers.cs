@@ -106,7 +106,7 @@ namespace StbSharp
             int stride = (w * comp * depth + 7) / 8;
             Span<byte> rowBuffer = stackalloc byte[2048];
 
-            for (int row = 0; row < (h >> 1); row++)
+            for (int row = 0; row < (h / 2); row++)
             {
                 Span<byte> row1 = data.Slice(row * stride);
                 Span<byte> row2 = data.Slice((h - row - 1) * stride);

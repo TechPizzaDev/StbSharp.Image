@@ -338,7 +338,7 @@ namespace StbSharp
 
                         int width;
                         if (info.bpp == 4)
-                            width = (ri.Width + 1) >> 1;
+                            width = (ri.Width + 1) / 2;
                         else if (info.bpp == 8)
                             width = ri.Width;
                         else
@@ -462,7 +462,7 @@ namespace StbSharp
 
                     //if (ri.Orientation == ImageOrientation.)
                     //{
-                    //    int rows = ri.Height >> 1;
+                    //    int rows = ri.Height / 2;
                     //    for (int y = 0; y < rows; ++y)
                     //    {
                     //        var row1 = new Span<byte>(_out_ + y * outStride, outStride);
