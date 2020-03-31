@@ -29,6 +29,12 @@ namespace StbSharp
             Header = 2
         }
 
+        public enum AddressingMajor
+        {
+            Row,
+            Column
+        }
+
         [Flags]
         public enum ImageOrientation
         {
