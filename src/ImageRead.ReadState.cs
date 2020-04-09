@@ -9,6 +9,9 @@ namespace StbSharp
         public delegate void OutputByteDataCallback(
             in ReadState state, int line, AddressingMajor addressMajor, ReadOnlySpan<byte> pixels);
 
+        public delegate void OutputShortDataCallback(
+            in ReadState state, int line, AddressingMajor addressMajor, ReadOnlySpan<ushort> pixels);
+
         public delegate void OutputFloatDataCallback(
             in ReadState state, int line, AddressingMajor addressMajor, ReadOnlySpan<float> pixels);
 
@@ -16,6 +19,7 @@ namespace StbSharp
         {
             public readonly StateReadyCallback StateReadyCallback;
             public readonly OutputByteDataCallback OutputByteRowCallback;
+            public readonly OutputShortDataCallback OutputShortRowCallback;
             public readonly OutputFloatDataCallback OutputFloatRowCallback;
 
             public int Width;
@@ -32,11 +36,13 @@ namespace StbSharp
             public ReadState(
                 StateReadyCallback onStateReady,
                 OutputByteDataCallback onOutputBytes,
+                OutputShortDataCallback onOutputShorts,
                 OutputFloatDataCallback onOutputFloats)
                 : this()
             {
                 StateReadyCallback = onStateReady;
                 OutputByteRowCallback = onOutputBytes;
+                OutputShortRowCallback = onOutputShorts;
                 OutputFloatRowCallback = onOutputFloats;
             }
 
@@ -49,6 +55,12 @@ namespace StbSharp
                 int line, AddressingMajor addressMajor, ReadOnlySpan<byte> pixels)
             {
                 OutputByteRowCallback?.Invoke(this, line, addressMajor, pixels);
+            }
+
+            public readonly void OutputShortRow(
+                int line, AddressingMajor addressMajor, ReadOnlySpan<ushort> pixels)
+            {
+                OutputShortRowCallback?.Invoke(this, line, addressMajor, pixels);
             }
 
             public readonly void OutputFloatRow(
