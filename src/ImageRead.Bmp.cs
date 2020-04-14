@@ -21,19 +21,16 @@ namespace StbSharp
 
             public static bool Test(ReadContext s)
             {
-                var info = new BmpInfo();
                 var ri = new ReadState();
-
-                bool r = ParseHeader(s, ref info, ref ri, ScanMode.Type);
+                bool r = ParseHeader(s, ri, out _, ScanMode.Type);
                 s.Rewind();
                 return r;
             }
 
             public static bool Info(ReadContext s, out ReadState ri)
             {
-                var info = new BmpInfo();
                 ri = new ReadState();
-                bool success = ParseHeader(s, ref info, ref ri, ScanMode.Header);
+                bool success = ParseHeader(s, ri, out _, ScanMode.Header);
                 s.Rewind();
                 return success;
             }
@@ -107,12 +104,13 @@ namespace StbSharp
             }
 
             public static bool ParseHeader(
-                ReadContext s, ref BmpInfo info, ref ReadState ri, ScanMode scan)
+                ReadContext s, ReadState ri, out BmpInfo info, ScanMode scan)
             {
                 if (s.ReadByte() != 'B' ||
                     s.ReadByte() != 'M')
                 {
                     s.Error(ErrorCode.NotBMP);
+                    info = default;
                     return false;
                 }
 
@@ -131,11 +129,15 @@ namespace StbSharp
                     info.headerSize != 124)
                 {
                     s.Error(ErrorCode.UnknownHeader);
+                    info = default;
                     return false;
                 }
 
                 if (scan == ScanMode.Type)
+                {
+                    info = default;
                     return true;
+                }
 
                 if (info.headerSize == 12)
                 {
@@ -155,6 +157,7 @@ namespace StbSharp
                 if (s.ReadInt16LE() != 1)
                 {
                     s.Error(ErrorCode.BadBMP);
+                    info = default;
                     return false;
                 }
 
@@ -264,10 +267,9 @@ namespace StbSharp
                 return true;
             }
 
-            public static bool Load(ReadContext s, ref ReadState ri)
+            public static bool Load(ReadContext s, ReadState ri)
             {
-                var info = new BmpInfo();
-                if (!ParseHeader(s, ref info, ref ri, ScanMode.Load))
+                if (!ParseHeader(s, ri, out var info, ScanMode.Load))
                     return false;
 
                 ri.OutComponents = ri.Components;
@@ -379,7 +381,7 @@ namespace StbSharp
                             }
 
                             int row = flipRows ? (ri.Height - y - 1) : y;
-                            ri.OutputByteRow(row, AddressingMajor.Row, rowBufferSpan);
+                            ri.OutputLine(AddressingMajor.Row, row, 0, rowBufferSpan);
                             s.Skip(pad);
                         }
                     }
@@ -401,7 +403,10 @@ namespace StbSharp
                             for (int y = 0; y < ri.Height; ++y)
                             {
                                 if (!s.ReadBytes(rowBufferSpan))
-                                    break; // TODO: error code?
+                                {
+                                    s.Error(ErrorCode.EndOfStream);
+                                    return false;
+                                }
 
                                 for (int x = 0, o = 0; x < rowByteSize; x += ri.OutComponents)
                                 {
@@ -417,7 +422,7 @@ namespace StbSharp
                                 }
 
                                 int row = flipRows ? (ri.Height - y - 1) : y;
-                                ri.OutputByteRow(row, AddressingMajor.Row, rowBufferSpan);
+                                ri.OutputLine(AddressingMajor.Row, row, 0, rowBufferSpan);
                                 s.Skip(pad);
                             }
                         }
@@ -454,7 +459,7 @@ namespace StbSharp
                                 }
 
                                 int row = flipRows ? (ri.Height - y - 1) : y;
-                                ri.OutputByteRow(row, AddressingMajor.Row, rowBufferSpan);
+                                ri.OutputLine(AddressingMajor.Row, row, 0, rowBufferSpan);
                                 s.Skip(pad);
                             }
                         }

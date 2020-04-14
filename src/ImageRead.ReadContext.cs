@@ -35,7 +35,8 @@ namespace StbSharp
 
             #region Constructors
 
-            public ReadContext(byte* data, int len, CancellationToken cancellationToken)
+            public ReadContext(
+                byte* data, int len, CancellationToken cancellationToken)
             {
                 ReadFromCallbacks = false;
                 CancellationToken = cancellationToken;
@@ -48,8 +49,10 @@ namespace StbSharp
             }
 
             public ReadContext(
-                Stream stream, CancellationToken cancellationToken,
-                ReadCallback readCallback, SkipCallback skipCallback)
+                Stream stream,
+                CancellationToken cancellationToken,
+                ReadCallback readCallback,
+                SkipCallback skipCallback)
             {
                 ReadFromCallbacks = true;
                 Stream = stream;
@@ -88,10 +91,7 @@ namespace StbSharp
             public void Skip(int count)
             {
                 if (count < 0)
-                {
-                    Data = DataEnd;
-                    return;
-                }
+                    throw new ArgumentOutOfRangeException(nameof(count));
 
                 if (ReadCallback != null)
                 {
@@ -99,7 +99,8 @@ namespace StbSharp
                     if (blen < count)
                     {
                         Data = DataEnd;
-                        SkipCallback(this, count - blen);
+                        int toSkip = count - blen;
+                        SkipCallback.Invoke(this, toSkip);
                         return;
                     }
                 }
@@ -115,7 +116,7 @@ namespace StbSharp
 
             public void RefillBuffer()
             {
-                int count = ReadCallback(this, new Span<byte>(DataStart, DataLength));
+                int count = ReadCallback.Invoke(this, new Span<byte>(DataStart, DataLength));
                 if (count == 0)
                 {
                     ReadFromCallbacks = false;
@@ -134,6 +135,9 @@ namespace StbSharp
 
             public bool ReadBytes(Span<byte> destination)
             {
+                if (destination.IsEmpty)
+                    return true;
+
                 if (ReadCallback != null)
                 {
                     int bufLen = (int)(DataEnd - Data);
@@ -141,7 +145,7 @@ namespace StbSharp
                     {
                         new Span<byte>(Data, bufLen).CopyTo(destination);
 
-                        int count = ReadCallback(this, destination.Slice(bufLen));
+                        int count = ReadCallback.Invoke(this, destination.Slice(bufLen));
                         Data = DataEnd;
                         return count == destination.Length - bufLen ? true : false;
                     }
