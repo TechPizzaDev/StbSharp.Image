@@ -73,376 +73,6 @@ namespace StbSharp
                 return true;
             }
 
-            public static bool ProcessFilteredRow(
-                ReadContext s, ReadState ri, int width, int y, int color,
-                in Transparency? transparency,
-                in Palette? palette,
-                Span<byte> row,
-                Span<byte> palettizedRow)
-            {
-                int comp = ri.Components;
-                int comp_out = ri.OutComponents;
-                int depth = ri.Depth;
-                int width_bytes = ((width * comp * depth) + 7) / 8;
-
-                int k;
-                if (depth < 8)
-                {
-                    int rowOff = 0;
-                    byte scale = (byte)((color == 0) ? DepthScaleTable[depth] : 1);
-                    var input = row.Slice(width * comp_out - width_bytes);
-                    int inOff = 0;
-                    if (depth == 4)
-                    {
-                        for (k = width * comp; k >= 2; k -= 2, inOff++)
-                        {
-                            row[rowOff++] = (byte)(scale * (input[inOff] >> 4));
-                            row[rowOff++] = (byte)(scale * ((input[inOff]) & 0x0f));
-                        }
-                        if (k > 0)
-                            row[rowOff++] = (byte)(scale * (input[inOff] >> 4));
-                    }
-                    else if (depth == 2)
-                    {
-                        for (k = width * comp; k >= 4; k -= 4, inOff++)
-                        {
-                            row[rowOff++] = (byte)(scale * (input[inOff] >> 6));
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 4) & 0x03));
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 2) & 0x03));
-                            row[rowOff++] = (byte)(scale * ((input[inOff]) & 0x03));
-                        }
-
-                        if (k > 0)
-                            row[rowOff++] = (byte)(scale * (input[inOff] >> 6));
-                        if (k > 1)
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 4) & 0x03));
-                        if (k > 2)
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 2) & 0x03));
-                    }
-                    else if (depth == 1)
-                    {
-                        for (k = width * comp; k >= 8; k -= 8, inOff++)
-                        {
-                            row[rowOff++] = (byte)(scale * (input[inOff] >> 7));
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 6) & 0x01));
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 5) & 0x01));
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 4) & 0x01));
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 3) & 0x01));
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 2) & 0x01));
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 1) & 0x01));
-                            row[rowOff++] = (byte)(scale * ((input[inOff]) & 0x01));
-                        }
-
-                        if (k > 0)
-                            row[rowOff++] = (byte)(scale * (input[inOff] >> 7));
-                        if (k > 1)
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 6) & 0x01));
-                        if (k > 2)
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 5) & 0x01));
-                        if (k > 3)
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 4) & 0x01));
-                        if (k > 4)
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 3) & 0x01));
-                        if (k > 5)
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 2) & 0x01));
-                        if (k > 6)
-                            row[rowOff++] = (byte)(scale * ((input[inOff] >> 1) & 0x01));
-                    }
-
-                    if (comp != comp_out)
-                    {
-                        if (comp == 1)
-                        {
-                            for (int q = width; q-- > 0;)
-                            {
-                                row[q * 2 + 1] = 255;
-                                row[q * 2 + 0] = row[q];
-                            }
-                        }
-                        else
-                        {
-                            for (int q = width; q-- > 0;)
-                            {
-                                row[q * 4 + 3] = 255;
-                                row[q * 4 + 2] = row[q * 3 + 2];
-                                row[q * 4 + 1] = row[q * 3 + 1];
-                                row[q * 4 + 0] = row[q * 3 + 0];
-                            }
-                        }
-                    }
-                }
-                else if (depth == 16)
-                {
-                    Span<ushort> cur16 = MemoryMarshal.Cast<byte, ushort>(row);
-                    for (int i = 0; i < cur16.Length; i++)
-                    {
-                        cur16[i] = (ushort)((row[i * 2] << 8) | row[i * 2 + 1]);
-                    }
-                }
-
-                if (palette.HasValue)
-                {
-                    var paletteData = palette.Value.Data.Span;
-                    var paletteComp = palette.Value.Components;
-
-                    for (int x = 0; x < width; x++)
-                    {
-                        int n = row[x] * 4;
-                        var src = paletteData.Slice(n, paletteComp);
-                        var dst = palettizedRow.Slice(x * paletteComp);
-                        src.CopyTo(dst);
-                    }
-                }
-
-                var resultRow = palette.HasValue ? palettizedRow : row;
-                if (transparency.HasValue)
-                {
-                    if (ri.Depth == 16)
-                    {
-                        if (!ComputeTransparency16(resultRow, transparency.Value.Tc16.Span, comp_out))
-                            return false;
-                    }
-                    else
-                    {
-                        if (!ComputeTransparency8(resultRow, transparency.Value.Tc8.Span, comp_out))
-                            return false;
-                    }
-                }
-
-                return true;
-            }
-
-            public static bool ProcessFilter(
-                ReadContext s, ReadState ri, int width, int y,
-                ReadOnlySpan<byte> data,
-                ReadOnlySpan<byte> previousRow,
-                Span<byte> row)
-            {
-                int comp = ri.Components;
-                int comp_out = ri.OutComponents;
-                int depth = ri.Depth;
-                int bytespc = depth == 16 ? 2 : 1;
-                int bytespp = comp_out * bytespc;
-                int w = width;
-                int filter_bytes = comp * bytespc;
-                int width_bytes = ((width * comp * depth) + 7) / 8;
-
-                int dataOff = 0;
-                int rowOff = 0;
-                int prevOff = 0;
-
-                if (data.Length < width_bytes + 1)
-                {
-                    s.Error(ErrorCode.NotEnoughPixels);
-                    return false;
-                }
-
-                var filter = (FilterType)data[dataOff++];
-                if ((int)filter > 4)
-                {
-                    s.Error(ErrorCode.InvalidFilter);
-                    return false;
-                }
-
-                if (depth < 8)
-                {
-                    int extra = width * comp_out - width_bytes;
-                    rowOff += extra;
-                    prevOff += extra;
-                    w = width_bytes;
-                    filter_bytes = 1;
-                }
-
-                if (y == 0)
-                    filter = FirstRowFilters[(int)filter];
-
-                int k = 0;
-                switch (filter)
-                {
-                    case FilterType.None:
-                    case FilterType.Sub:
-                    case FilterType.AverageFirst:
-                    case FilterType.PaethFirst:
-                        for (; k < filter_bytes; ++k)
-                            row[rowOff + k] = data[dataOff + k];
-                        break;
-
-                    case FilterType.Up:
-                        for (; k < filter_bytes; ++k)
-                            row[rowOff + k] = (byte)((data[dataOff + k] + previousRow[prevOff + k]) & 255);
-                        break;
-
-                    case FilterType.Average:
-                        for (; k < filter_bytes; ++k)
-                            row[rowOff + k] = (byte)((data[dataOff + k] + (previousRow[prevOff + k] >> 1)) & 255);
-                        break;
-
-                    case FilterType.Paeth:
-                        for (; k < filter_bytes; ++k)
-                            row[rowOff + k] = (byte)(
-                                (data[dataOff + k] + CRuntime.Paeth32(0, previousRow[prevOff + k], 0)) & 255);
-                        break;
-                }
-
-                if (depth == 8)
-                {
-                    if (comp != comp_out)
-                        row[rowOff + comp] = 255;
-
-                    dataOff += comp;
-                    rowOff += comp_out;
-                    prevOff += comp_out;
-                }
-                else if (depth == 16)
-                {
-                    if (comp != comp_out)
-                    {
-                        row[rowOff + filter_bytes] = 255;
-                        row[rowOff + filter_bytes + 1] = 255;
-                    }
-
-                    dataOff += filter_bytes;
-                    rowOff += bytespp;
-                    prevOff += bytespp;
-                }
-                else
-                {
-                    dataOff += 1;
-                    rowOff += 1;
-                    prevOff += 1;
-                }
-
-                if ((depth < 8) || (comp == comp_out))
-                {
-                    int nk = (w - 1) * filter_bytes;
-                    var raw = data.Slice(dataOff);
-                    var dst = row.Slice(rowOff);
-                    var prior = previousRow.Slice(prevOff);
-
-                    k = 0;
-                    switch (filter)
-                    {
-                        case FilterType.None:
-                            raw.Slice(0, nk).CopyTo(dst);
-                            break;
-
-                        case FilterType.Sub:
-                            for (; k < nk; ++k)
-                                dst[k] = (byte)((raw[k] + row[rowOff + k - filter_bytes]) & 255);
-                            break;
-
-                        case FilterType.Up:
-                            for (; k < nk; ++k)
-                                dst[k] = (byte)((raw[k] + prior[k]) & 255);
-                            break;
-
-                        case FilterType.Average:
-                            for (; k < nk; ++k)
-                                dst[k] = (byte)(
-                                    (raw[k] + ((prior[k] + row[rowOff + k - filter_bytes]) >> 1)) & 255);
-                            break;
-
-                        case FilterType.Paeth:
-                            for (; k < nk; ++k)
-                                dst[k] = (byte)(raw[k] + CRuntime.Paeth32(
-                                    row[rowOff + k - filter_bytes], prior[k], previousRow[prevOff + k - filter_bytes]) & 255);
-                            break;
-
-                        case FilterType.AverageFirst:
-                            for (; k < nk; ++k)
-                                dst[k] = (byte)((raw[k] + (row[rowOff + k - filter_bytes] >> 1)) & 255);
-                            break;
-
-                        case FilterType.PaethFirst:
-                            for (; k < nk; ++k)
-                                dst[k] = (byte)(raw[k] + CRuntime.Paeth32(
-                                    row[rowOff + k - filter_bytes], 0, 0) & 255);
-                            break;
-                    }
-                }
-                else
-                {
-                    int i = width - 1;
-                    switch (filter)
-                    {
-                        case FilterType.None:
-                            for (; i >= 1; i--, row[rowOff + filter_bytes] = 255,
-                                dataOff += filter_bytes, rowOff += bytespp, prevOff += bytespp)
-                            {
-                                for (k = 0; k < filter_bytes; ++k)
-                                    row[rowOff + k] = data[dataOff + k];
-                            }
-                            break;
-
-                        case FilterType.Sub:
-                            for (; i >= 1; i--, row[rowOff + filter_bytes] = 255,
-                                dataOff += filter_bytes, rowOff += bytespp, prevOff += bytespp)
-                            {
-                                for (k = 0; k < filter_bytes; ++k)
-                                    row[rowOff + k] = (byte)((data[dataOff + k] + row[rowOff + k - bytespp]) & 255);
-                            }
-                            break;
-
-                        case FilterType.Up:
-                            for (; i >= 1; i--, row[rowOff + filter_bytes] = 255,
-                                dataOff += filter_bytes, rowOff += bytespp, prevOff += bytespp)
-                            {
-                                for (k = 0; k < filter_bytes; ++k)
-                                    row[rowOff + k] = (byte)((data[dataOff + k] + previousRow[prevOff + k]) & 255);
-                            }
-                            break;
-
-                        case FilterType.Average:
-                            for (; i >= 1; i--, row[rowOff + filter_bytes] = 255,
-                                dataOff += filter_bytes, rowOff += bytespp, prevOff += bytespp)
-                            {
-                                for (k = 0; k < filter_bytes; ++k)
-                                    row[rowOff + k] = (byte)(
-                                        (data[dataOff + k] + ((previousRow[prevOff + k] + row[rowOff + k - bytespp]) >> 1)) & 255);
-                            }
-                            break;
-
-                        case FilterType.Paeth:
-                            for (; i >= 1; i--, row[rowOff + filter_bytes] = 255,
-                                dataOff += filter_bytes, rowOff += bytespp, prevOff += bytespp)
-                            {
-                                for (k = 0; k < filter_bytes; ++k)
-                                    row[rowOff + k] = (byte)(data[dataOff + k] + CRuntime.Paeth32(
-                                        row[rowOff + k - bytespp], previousRow[prevOff + k], previousRow[prevOff + k - bytespp]) & 255);
-                            }
-                            break;
-
-                        case FilterType.AverageFirst:
-                            for (; i >= 1; i--, row[rowOff + filter_bytes] = 255,
-                                dataOff += filter_bytes, rowOff += bytespp, prevOff += bytespp)
-                            {
-                                for (k = 0; k < filter_bytes; ++k)
-                                    row[rowOff + k] = (byte)((data[dataOff + k] + (row[rowOff + k - bytespp] >> 1)) & 255);
-                            }
-                            break;
-
-                        case FilterType.PaethFirst:
-                            for (; i >= 1; i--, row[rowOff + filter_bytes] = 255,
-                                dataOff += filter_bytes, rowOff += bytespp, prevOff += bytespp)
-                            {
-                                for (k = 0; k < filter_bytes; ++k)
-                                    row[rowOff + k] = (byte)((data[dataOff + k] + CRuntime.Paeth32(
-                                        row[rowOff + k - bytespp], 0, 0)) & 255);
-                            }
-                            break;
-                    }
-
-                    if (depth == 16)
-                    {
-                        for (i = 0; i < width; i++)
-                            row[i * bytespp + filter_bytes + 1] = 255;
-                    }
-                }
-
-
-                return true;
-            }
-
             public static bool CreateImage(
                 ReadContext s, ReadState ri, int raw_comp, int color, int interlaced,
                 Transparency? transparency, Palette? palette, Stream data)
@@ -470,7 +100,7 @@ namespace StbSharp
                     int raw_out_comp = raw_comp + (transparency.HasValue ? 1 : 0);
 
                     var rawdata = ms.GetBuffer().AsSpan(0, (int)ms.Length);
-                    bool r = CreateImageRaw(s, a, rawdata, raw_comp, raw_out_comp, width, height, ri.Depth, color);
+                    bool r = CreateImageRaw(s, a, raw_comp, raw_out_comp, width, height, ri.Depth, color, rawdata);
                     if (r)
                     {
                         if (transparency.HasValue)
@@ -1352,20 +982,21 @@ namespace StbSharp
             public static byte[] stbi__depth_scale_table = { 0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01 };
 
             public static bool CreateImageRaw(
-                ReadContext s, stbi__png a, ReadOnlySpan<byte> raw, int img_n, int out_n, int x, int y, int depth, int color)
+                ReadContext s, stbi__png a, int raw_comp, int out_comp, int width, int height, int depth, int color,
+                ReadOnlySpan<byte> raw)
             {
                 int bytes = depth == 16 ? 2 : 1;
-                int stride = x * out_n * bytes;
-                int output_bytes = out_n * bytes;
-                int filter_bytes = img_n * bytes;
-                int width = x;
-                a._out_ = (byte*)stbi__malloc_mad3(x, y, output_bytes, 0);
+                int stride = width * out_comp * bytes;
+                int output_bytes = out_comp * bytes;
+                int filter_bytes = raw_comp * bytes;
+                int w = width;
+                a._out_ = (byte*)stbi__malloc_mad3(width, height, output_bytes, 0);
                 if (a._out_ == null)
                     return false;
-                if (stbi__mad3sizes_valid(img_n, x, depth, 7) == 0)
+                if (stbi__mad3sizes_valid(raw_comp, width, depth, 7) == 0)
                     return false;
-                int img_width_bytes = ((img_n * x * depth) + 7) >> 3;
-                int img_len = (img_width_bytes + 1) * y;
+                int img_width_bytes = ((raw_comp * width * depth) + 7) >> 3;
+                int img_len = (img_width_bytes + 1) * height;
                 if (raw.Length < img_len)
                 {
                     s.Error(ErrorCode.NotEnoughPixels);
@@ -1375,7 +1006,7 @@ namespace StbSharp
                 int i = 0;
                 int k = 0;
                 int rawOff = 0;
-                for (int j = 0; j < y; ++j)
+                for (int j = 0; j < height; ++j)
                 {
                     int filter = raw[rawOff++];
                     if (filter > 4)
@@ -1387,9 +1018,9 @@ namespace StbSharp
                     byte* cur = a._out_ + stride * j;
                     if (depth < 8)
                     {
-                        cur += x * out_n - img_width_bytes;
+                        cur += width * out_comp - img_width_bytes;
                         filter_bytes = 1;
-                        width = (int)img_width_bytes;
+                        w = img_width_bytes;
                     }
                     byte* prior = cur - stride;
                     if (j == 0)
@@ -1426,15 +1057,15 @@ namespace StbSharp
 
                     if (depth == 8)
                     {
-                        if (img_n != out_n)
-                            cur[img_n] = 255;
-                        rawOff += img_n;
-                        cur += out_n;
-                        prior += out_n;
+                        if (raw_comp != out_comp)
+                            cur[raw_comp] = 255;
+                        rawOff += raw_comp;
+                        cur += out_comp;
+                        prior += out_comp;
                     }
                     else if (depth == 16)
                     {
-                        if (img_n != out_n)
+                        if (raw_comp != out_comp)
                         {
                             cur[filter_bytes] = 255;
                             cur[filter_bytes + 1] = 255;
@@ -1450,9 +1081,9 @@ namespace StbSharp
                         prior += 1;
                     }
 
-                    if ((depth < 8) || (img_n == out_n))
+                    if ((depth < 8) || (raw_comp == out_comp))
                     {
-                        int nk = (width - 1) * filter_bytes;
+                        int nk = (w - 1) * filter_bytes;
                         var rawslice = raw.Slice(rawOff, nk);
                         switch (filter)
                         {
@@ -1508,7 +1139,7 @@ namespace StbSharp
                         switch (filter)
                         {
                             case STBI__F_none:
-                                for (i = x - 1; i >= 1; --i, cur[filter_bytes] = 255,
+                                for (i = width - 1; i >= 1; --i, cur[filter_bytes] = 255,
                                     rawOff += filter_bytes, cur += output_bytes, prior += output_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
@@ -1518,7 +1149,7 @@ namespace StbSharp
                                 }
                                 break;
                             case STBI__F_sub:
-                                for (i = x - 1; i >= 1; --i, cur[filter_bytes] = 255,
+                                for (i = width - 1; i >= 1; --i, cur[filter_bytes] = 255,
                                     rawOff += filter_bytes, cur += output_bytes, prior += output_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
@@ -1528,7 +1159,7 @@ namespace StbSharp
                                 }
                                 break;
                             case STBI__F_up:
-                                for (i = x - 1; i >= 1; --i, cur[filter_bytes] = 255,
+                                for (i = width - 1; i >= 1; --i, cur[filter_bytes] = 255,
                                     rawOff += filter_bytes, cur += output_bytes, prior += output_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
@@ -1538,7 +1169,7 @@ namespace StbSharp
                                 }
                                 break;
                             case STBI__F_avg:
-                                for (i = x - 1; i >= 1; --i, cur[filter_bytes] = 255,
+                                for (i = width - 1; i >= 1; --i, cur[filter_bytes] = 255,
                                     rawOff += filter_bytes, cur += output_bytes, prior += output_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
@@ -1549,7 +1180,7 @@ namespace StbSharp
                                 }
                                 break;
                             case STBI__F_paeth:
-                                for (i = x - 1; i >= 1; --i, cur[filter_bytes] = 255,
+                                for (i = width - 1; i >= 1; --i, cur[filter_bytes] = 255,
                                     rawOff += filter_bytes, cur += output_bytes, prior += output_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
@@ -1561,7 +1192,7 @@ namespace StbSharp
                                 }
                                 break;
                             case STBI__F_avg_first:
-                                for (i = x - 1; i >= 1; --i, cur[filter_bytes] = 255,
+                                for (i = width - 1; i >= 1; --i, cur[filter_bytes] = 255,
                                     rawOff += filter_bytes, cur += output_bytes, prior += output_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
@@ -1571,7 +1202,7 @@ namespace StbSharp
                                 }
                                 break;
                             case STBI__F_paeth_first:
-                                for (i = x - 1; i >= 1; --i, cur[filter_bytes] = 255,
+                                for (i = width - 1; i >= 1; --i, cur[filter_bytes] = 255,
                                     rawOff += filter_bytes, cur += output_bytes, prior += output_bytes)
                                 {
                                     for (k = 0; k < filter_bytes; ++k)
@@ -1587,7 +1218,7 @@ namespace StbSharp
                         if (depth == 16)
                         {
                             cur = a._out_ + stride * j;
-                            for (i = 0; i < x; ++i, cur += output_bytes)
+                            for (i = 0; i < width; ++i, cur += output_bytes)
                             {
                                 cur[filter_bytes + 1] = 255;
                             }
@@ -1597,14 +1228,14 @@ namespace StbSharp
 
                 if (depth < 8)
                 {
-                    for (int j = 0; j < y; ++j)
+                    for (int j = 0; j < height; ++j)
                     {
                         byte* cur = a._out_ + stride * j;
-                        byte* _in_ = a._out_ + stride * j + x * out_n - img_width_bytes;
+                        byte* _in_ = a._out_ + stride * j + width * out_comp - img_width_bytes;
                         byte scale = (byte)((color == 0) ? stbi__depth_scale_table[depth] : 1);
                         if (depth == 4)
                         {
-                            for (k = x * img_n; k >= 2; k -= 2, ++_in_)
+                            for (k = width * raw_comp; k >= 2; k -= 2, ++_in_)
                             {
                                 *cur++ = (byte)(scale * (*_in_ >> 4));
                                 *cur++ = (byte)(scale * ((*_in_) & 0x0f));
@@ -1614,7 +1245,7 @@ namespace StbSharp
                         }
                         else if (depth == 2)
                         {
-                            for (k = x * img_n; k >= 4; k -= 4, ++_in_)
+                            for (k = width * raw_comp; k >= 4; k -= 4, ++_in_)
                             {
                                 *cur++ = (byte)(scale * (*_in_ >> 6));
                                 *cur++ = (byte)(scale * ((*_in_ >> 4) & 0x03));
@@ -1630,7 +1261,7 @@ namespace StbSharp
                         }
                         else if (depth == 1)
                         {
-                            for (k = x * img_n; k >= 8; k -= 8, ++_in_)
+                            for (k = width * raw_comp; k >= 8; k -= 8, ++_in_)
                             {
                                 *cur++ = (byte)(scale * (*_in_ >> 7));
                                 *cur++ = (byte)(scale * ((*_in_ >> 6) & 0x01));
@@ -1656,13 +1287,13 @@ namespace StbSharp
                             if (k > 6)
                                 *cur++ = (byte)(scale * ((*_in_ >> 1) & 0x01));
                         }
-                        if (img_n != out_n)
+                        if (raw_comp != out_comp)
                         {
                             int q = 0;
                             cur = a._out_ + stride * j;
-                            if (img_n == 1)
+                            if (raw_comp == 1)
                             {
-                                for (q = x - 1; q >= 0; --q)
+                                for (q = width - 1; q >= 0; --q)
                                 {
                                     cur[q * 2 + 1] = 255;
                                     cur[q * 2 + 0] = cur[q];
@@ -1670,7 +1301,7 @@ namespace StbSharp
                             }
                             else
                             {
-                                for (q = x - 1; q >= 0; --q)
+                                for (q = width - 1; q >= 0; --q)
                                 {
                                     cur[q * 4 + 3] = 255;
                                     cur[q * 4 + 2] = cur[q * 3 + 2];
@@ -1685,9 +1316,9 @@ namespace StbSharp
                 {
                     byte* cur = a._out_;
                     ushort* cur16 = (ushort*)cur;
-                    for (int jj = 0; jj < y; jj++)
+                    for (int jj = 0; jj < height; jj++)
                     {
-                        for (i = 0; i < (x * out_n); ++i, cur16++, cur += 2)
+                        for (i = 0; i < (width * out_comp); ++i, cur16++, cur += 2)
                         {
                             *cur16 = (ushort)((cur[0] << 8) | cur[1]);
                         }
