@@ -244,8 +244,10 @@ namespace StbSharp
                             row[i + 3] = 0;
                     }
                 }
-
-                throw new StbImageReadException(ErrorCode.BadComponentCount);
+                else
+                {
+                    throw new StbImageReadException(ErrorCode.BadComponentCount);
+                }
             }
 
             public static void ComputeTransparency16(Span<byte> row, ReadOnlySpan<ushort> tc, int comp)
@@ -272,8 +274,10 @@ namespace StbSharp
                             row16[i + 3] = 0;
                     }
                 }
-
-                throw new StbImageReadException(ErrorCode.BadComponentCount);
+                else
+                {
+                    throw new StbImageReadException(ErrorCode.BadComponentCount);
+                }
             }
 
             public static void DeIphone(ref PngContext z, ref ReadState ri)
@@ -1244,8 +1248,10 @@ namespace StbSharp
                         destination[d + 3] = paletteData[n + 3];
                     }
                 }
-
-                throw new StbImageReadException(ErrorCode.BadPalette);
+                else
+                {
+                    throw new StbImageReadException(ErrorCode.BadPalette);
+                }
             }
 
             public class stbi__png
