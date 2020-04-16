@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 
 namespace StbSharp
 {
@@ -6,10 +7,7 @@ namespace StbSharp
     {
         public delegate void StateReadyDelegate(ReadState state);
 
-        public delegate void OutputLineDelegate(
-            ReadState state, AddressingMajor addressMajor, int line, int start, ReadOnlySpan<byte> pixels);
-
-        public delegate void OutputInterleavedDelegate(
+        public delegate void OutputPixelLineDelegate(
             ReadState state, AddressingMajor addressMajor, int line, int start, int spacing, ReadOnlySpan<byte> pixels);
 
         public delegate void OutputPixelDelegate(
@@ -19,8 +17,7 @@ namespace StbSharp
         {
             public StateReadyDelegate StateReadyCallback;
 
-            public OutputLineDelegate OutputLineCallback;
-            public OutputInterleavedDelegate OutputInterleavedCallback;
+            public OutputPixelLineDelegate OutputPixelLineCallback;
             public OutputPixelDelegate OutputPixelCallback;
 
             public int Width;
@@ -43,18 +40,21 @@ namespace StbSharp
                 StateReadyCallback?.Invoke(this);
             }
 
-            public void OutputLine(
-                AddressingMajor addressMajor, int line, int start, ReadOnlySpan<byte> pixels)
-            {
-                OutputLineCallback?.Invoke(this, addressMajor, line, start, pixels);
-            }
-
-            public void OutputInterleaved(
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void OutputPixelLine(
                 AddressingMajor addressMajor, int line, int start, int spacing, ReadOnlySpan<byte> pixels)
             {
-                OutputInterleavedCallback?.Invoke(this, addressMajor, line, start, spacing, pixels);
+                OutputPixelLineCallback?.Invoke(this, addressMajor, line, start, spacing, pixels);
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void OutputPixelLine(
+                AddressingMajor addressMajor, int line, int start, ReadOnlySpan<byte> pixels)
+            {
+                OutputPixelLine(addressMajor, line, start, 1, pixels);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void OutputPixel(int x, int y, ReadOnlySpan<byte> pixels)
             {
                 OutputPixelCallback?.Invoke(this, x, y, pixels);

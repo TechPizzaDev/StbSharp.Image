@@ -41,28 +41,28 @@ namespace StbSharp
             [StructLayout(LayoutKind.Sequential)]
             public readonly struct PngChunkHeader
             {
-                public const int CgBI = ('C' << 24) + ('g' << 16) + ('B' << 8) + 'I';
-                public const int IHDR = ('I' << 24) + ('H' << 16) + ('D' << 8) + 'R';
-                public const int PLTE = ('P' << 24) + ('L' << 16) + ('T' << 8) + 'E';
-                public const int tRNS = ('t' << 24) + ('R' << 16) + ('N' << 8) + 'S';
-                public const int IDAT = ('I' << 24) + ('D' << 16) + ('A' << 8) + 'T';
-                public const int IEND = ('I' << 24) + ('E' << 16) + ('N' << 8) + 'D';
+                public const uint CgBI = ('C' << 24) + ('g' << 16) + ('B' << 8) + 'I';
+                public const uint IHDR = ('I' << 24) + ('H' << 16) + ('D' << 8) + 'R';
+                public const uint PLTE = ('P' << 24) + ('L' << 16) + ('T' << 8) + 'E';
+                public const uint tRNS = ('t' << 24) + ('R' << 16) + ('N' << 8) + 'S';
+                public const uint IDAT = ('I' << 24) + ('D' << 16) + ('A' << 8) + 'T';
+                public const uint IEND = ('I' << 24) + ('E' << 16) + ('N' << 8) + 'D';
 
                 public readonly int Length;
-                public readonly int Type;
+                public readonly uint Type;
 
-                public PngChunkHeader(int length, int type)
+                public PngChunkHeader(int length, uint type)
                 {
-                    Length = length;
                     Type = type;
+                    Length = length;
                 }
             }
 
             public static PngChunkHeader ReadChunkHeader(ReadContext s)
             {
-                return new PngChunkHeader(
-                    length: s.ReadInt32BE(),
-                    type: s.ReadInt32BE());
+                int length = s.ReadInt32BE();
+                uint type = (uint)s.ReadInt32BE();
+                return new PngChunkHeader(length, type);
             }
 
             public static bool CheckSignature(ReadContext s)
@@ -83,6 +83,8 @@ namespace StbSharp
                 int bytes_per_pixel = ri.OutComponents * bytes_per_comp;
                 int raw_out_comp = raw_comp + (transparency.HasValue ? 1 : 0);
 
+                int stride = width * bytes_per_pixel;
+
                 if (interlaced == 0)
                 {
                     var a = new stbi__png();
@@ -95,7 +97,7 @@ namespace StbSharp
 
                     if (transparency.HasValue)
                     {
-                        var ppp = new Span<byte>(a._out_, width * height * bytes_per_pixel);
+                        var ppp = new Span<byte>(a._out_, height * stride);
                         if (ri.Depth == 16)
                             ComputeTransparency16(ppp, transparency.Value.Tc16.Span, raw_out_comp);
                         else
@@ -107,23 +109,22 @@ namespace StbSharp
 
                     if (palette.HasValue)
                     {
-                        var resultrow = new byte[width * bytes_per_pixel].AsSpan();
+                        var resultrow = new byte[stride].AsSpan();
                         var indexrows = new Span<byte>(a._out_, height * width);
                         for (int y = 0; y < height; y++)
                         {
                             var indexrow = indexrows.Slice(y * width, width);
                             ExpandPalette(indexrow, resultrow, palette.Value);
-                            ri.OutputLine(AddressingMajor.Row, y, 0, resultrow);
+                            ri.OutputPixelLine(AddressingMajor.Row, y, 0, resultrow);
                         }
                     }
                     else
                     {
-                        int stride = width * bytes_per_pixel;
                         var rows = new Span<byte>(a._out_, height * stride);
                         for (int y = 0; y < height; y++)
                         {
                             var row = rows.Slice(y * stride, stride);
-                            ri.OutputLine(AddressingMajor.Row, y, 0, row);
+                            ri.OutputPixelLine(AddressingMajor.Row, y, 0, row);
                         }
                     }
 
@@ -481,7 +482,7 @@ namespace StbSharp
                 int filter;
                 int pal_len = 0;
 
-                var seenChunkTypes = new HashSet<int>();
+                var seenChunkTypes = new HashSet<uint>();
 
                 // TODO: add custom deflate algo support
                 Stream deflateStream = null;

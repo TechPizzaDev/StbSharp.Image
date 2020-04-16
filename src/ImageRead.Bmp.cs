@@ -362,7 +362,7 @@ namespace StbSharp
                         }
 
                         int row = flipRows ? (ri.Height - y - 1) : y;
-                        ri.OutputLine(AddressingMajor.Row, row, 0, rowBufferSpan);
+                        ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBufferSpan);
                         s.Skip(pad);
                     }
                 }
@@ -400,7 +400,7 @@ namespace StbSharp
                             }
 
                             int row = flipRows ? (ri.Height - y - 1) : y;
-                            ri.OutputLine(AddressingMajor.Row, row, 0, rowBufferSpan);
+                            ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBufferSpan);
                             s.Skip(pad);
                         }
                     }
@@ -434,7 +434,7 @@ namespace StbSharp
                             }
 
                             int row = flipRows ? (ri.Height - y - 1) : y;
-                            ri.OutputLine(AddressingMajor.Row, row, 0, rowBufferSpan);
+                            ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBufferSpan);
                             s.Skip(pad);
                         }
                     }
