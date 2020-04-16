@@ -63,7 +63,7 @@ namespace StbSharp
             RLENotSupported,
             TooLarge,
             OutOfMemory,
-            InvalidPalette,
+            InvalidPLTE,
             BadBitsPerPixel,
             BadMasks,
             NoClearCode,
@@ -116,10 +116,8 @@ namespace StbSharp
             BadtRNSLength,
             tRNSWithAlpha,
             NoPLTE,
-            EndOfStream,
             NoIDAT,
             UnknownChunk,
-            BadCompRequest,
             Corrupt,
             WrongChannelCount,
             WrongColorFormat,
@@ -127,8 +125,7 @@ namespace StbSharp
             BadFormat,
             BadPalette,
             InvalidImageLength, 
-            InvalidArguments,
-            UnknownImageType
+            InvalidArguments
         }
     }
 }
