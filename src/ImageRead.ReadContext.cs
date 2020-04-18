@@ -184,12 +184,28 @@ namespace StbSharp
                 return BinaryPrimitives.ReadInt16LittleEndian(tmp);
             }
 
+            public ushort ReadUInt16LE()
+            {
+                Span<byte> tmp = stackalloc byte[sizeof(ushort)];
+                if (!ReadBytes(tmp))
+                    return 0;
+                return BinaryPrimitives.ReadUInt16LittleEndian(tmp);
+            }
+
             public short ReadInt16BE()
             {
                 Span<byte> tmp = stackalloc byte[sizeof(short)];
                 if (!ReadBytes(tmp))
                     return 0;
                 return BinaryPrimitives.ReadInt16BigEndian(tmp);
+            }
+
+            public ushort ReadUInt16BE()
+            {
+                Span<byte> tmp = stackalloc byte[sizeof(ushort)];
+                if (!ReadBytes(tmp))
+                    return 0;
+                return BinaryPrimitives.ReadUInt16BigEndian(tmp);
             }
 
             public int ReadInt32LE()
@@ -206,6 +222,14 @@ namespace StbSharp
                 if (!ReadBytes(tmp))
                     return 0;
                 return BinaryPrimitives.ReadInt32BigEndian(tmp);
+            }
+
+            public uint ReadUInt32BE()
+            {
+                Span<byte> tmp = stackalloc byte[sizeof(uint)];
+                if (!ReadBytes(tmp))
+                    return 0;
+                return BinaryPrimitives.ReadUInt32BigEndian(tmp);
             }
 
             #region IDisposable

@@ -17,7 +17,6 @@
   <ItemGroup>
     <Compile Remove="ImageRead.Gif.cs" />
     <Compile Remove="ImageRead.Jpeg.cs" />
-    <Compile Remove="ImageRead.Png.cs" />
     <Compile Remove="ImageRead.Psd.cs" />
     <Compile Remove="ImageRead.Tga.cs" />
   </ItemGroup>
