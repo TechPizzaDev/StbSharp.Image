@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace StbSharp
@@ -154,10 +156,12 @@ namespace StbSharp
                     {
                         var resultrow = new byte[stride].AsSpan();
                         var indexrows = new Span<byte>(a._out_, height * width);
+                        var paletteData = palette.Value.Data.Span;
+                        int comp = palette.Value.Components;
                         for (int y = 0; y < height; y++)
                         {
                             var indexrow = indexrows.Slice(y * width, width);
-                            ExpandPalette(indexrow, resultrow, palette.Value);
+                            ExpandPalette(indexrow, resultrow, comp, paletteData);
                             ri.OutputPixelLine(AddressingMajor.Row, y, 0, resultrow);
                         }
                     }
@@ -502,7 +506,7 @@ namespace StbSharp
                 if (scan == ScanMode.Type)
                     return true;
 
-                byte[] paletteData = null;
+                Rgba32[] paletteData = null;
                 int paletteLength = 0;
 
                 Rgb24 tc8 = default;
@@ -642,13 +646,13 @@ namespace StbSharp
                                 if (paletteLength * 3 != chunk.Length)
                                     throw new StbImageReadException(ErrorCode.InvalidPLTE);
 
-                                paletteData = new byte[paletteLength * 4];
-                                for (int i = 0; i < paletteData.Length; i += 4)
+                                paletteData = new Rgba32[paletteLength];
+                                for (int i = 0; i < paletteData.Length; i++)
                                 {
-                                    paletteData[i + 0] = s.ReadByte();
-                                    paletteData[i + 1] = s.ReadByte();
-                                    paletteData[i + 2] = s.ReadByte();
-                                    paletteData[i + 3] = 255;
+                                    byte r = s.ReadByte();
+                                    byte g = s.ReadByte();
+                                    byte b = s.ReadByte();
+                                    paletteData[i] = new Rgba32(r, g, b, 255);
                                 }
 
                                 // TODO: PaletteReady()
@@ -674,7 +678,7 @@ namespace StbSharp
 
                                     header.PaletteComp = 4;
                                     for (int i = 0; i < chunk.Length; i++)
-                                        paletteData[i * 4 + 3] = s.ReadByte();
+                                        paletteData[i].A = s.ReadByte();
                                 }
                                 else
                                 {
@@ -814,7 +818,7 @@ namespace StbSharp
                     }
 
                     var palette = header.PaletteComp != 0
-                        ? new Palette(paletteData.AsMemory(0, paletteLength * 4), header.PaletteComp)
+                        ? new Palette(paletteData.AsMemory(0, paletteLength), header.PaletteComp)
                         : (Palette?)null;
 
                     var transparency = has_transparency
@@ -1319,29 +1323,25 @@ namespace StbSharp
             }
 
             public static void ExpandPalette(
-                ReadOnlySpan<byte> source, Span<byte> destination, in Palette palette)
+                ReadOnlySpan<byte> source, Span<byte> destination,
+                int comp, ReadOnlySpan<Rgba32> palette)
             {
-                var paletteData = palette.Data.Span;
-
-                if (palette.Components == 3)
+                if (comp == 3)
                 {
-                    for (int d = 0, s = 0; d < destination.Length; d += 3, s++)
+                    var rgbDst = MemoryMarshal.Cast<byte, Rgb24>(destination);
+                    for (int i = 0; i < rgbDst.Length; i++)
                     {
-                        int n = source[s] * 4;
-                        destination[d + 0] = paletteData[n];
-                        destination[d + 1] = paletteData[n + 1];
-                        destination[d + 2] = paletteData[n + 2];
+                        int n = source[i];
+                        rgbDst[i] = palette[n].Rgb;
                     }
                 }
-                else if (palette.Components == 4)
+                else if (comp == 4)
                 {
-                    for (int d = 0, s = 0; d < destination.Length; d += 4, s++)
+                    var rgbaDst = MemoryMarshal.Cast<byte, Rgba32>(destination);
+                    for (int i = 0; i < rgbaDst.Length; i++)
                     {
-                        int n = source[s] * 4;
-                        destination[d + 0] = paletteData[n];
-                        destination[d + 1] = paletteData[n + 1];
-                        destination[d + 2] = paletteData[n + 2];
-                        destination[d + 3] = paletteData[n + 3];
+                        int n = source[i];
+                        rgbaDst[i] = palette[n];
                     }
                 }
                 else
@@ -1357,10 +1357,10 @@ namespace StbSharp
 
             public readonly struct Palette
             {
-                public ReadOnlyMemory<byte> Data { get; }
+                public ReadOnlyMemory<Rgba32> Data { get; }
                 public int Components { get; }
 
-                public Palette(ReadOnlyMemory<byte> data, int components)
+                public Palette(ReadOnlyMemory<Rgba32> data, int components)
                 {
                     Data = data;
                     Components = components;
@@ -1379,6 +1379,7 @@ namespace StbSharp
                 }
             }
 
+            [StructLayout(LayoutKind.Sequential)]
             public struct Rgb24
             {
                 public byte R;
@@ -1393,6 +1394,24 @@ namespace StbSharp
                 }
             }
 
+            [StructLayout(LayoutKind.Sequential)]
+            public struct Rgba32
+            {
+                public Rgb24 Rgb;
+                public byte A;
+
+                public Rgba32(Rgb24 rgb, byte a)
+                {
+                    Rgb = rgb;
+                    A = a;
+                }
+
+                public Rgba32(byte r, byte g, byte b, byte a) : this(new Rgb24(r, g, b), a)
+                {
+                }
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
             public struct Rgb48
             {
                 public ushort R;
