@@ -122,10 +122,7 @@ namespace StbSharp
                 }
 
                 if (ri.Components == 0)
-                {
-                    s.Error(ErrorCode.BadFormat);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.BadComponentCount);
 
                 ri.OutComponents = ri.Components;
                 ri.OutDepth = ri.Depth;
@@ -137,9 +134,7 @@ namespace StbSharp
                 var info = new TgaInfo();
                 ri = new ReadState();
 
-                bool success = ParseHeader(s, ref info, ref ri, ScanMode.Header);
-                s.Rewind();
-                return success;
+                return ParseHeader(s, ref info, ref ri, ScanMode.Header);
             }
 
             public static bool Test(ReadContext s)
@@ -147,9 +142,7 @@ namespace StbSharp
                 var info = new TgaInfo();
                 var ri = new ReadState();
 
-                bool success = ParseHeader(s, ref info, ref ri, ScanMode.Type);
-                s.Rewind();
-                return success;
+                return ParseHeader(s, ref info, ref ri, ScanMode.Type);
             }
 
             public static void ReadRgb16(ReadContext s, Span<byte> destination)
@@ -225,8 +218,10 @@ namespace StbSharp
                                 pal_entry += ri.OutComponents;
                             }
                         }
-                        else if (!s.ReadBytes(new Span<byte>(tga_palette, info.palette_len * ri.OutComponents)))
+                        else 
                         {
+                            s.ReadBytes(new Span<byte>(tga_palette, info.palette_len * ri.OutComponents));
+
                             CRuntime.Free(_out_);
                             CRuntime.Free(tga_palette);
                             s.Error(ErrorCode.BadPalette);

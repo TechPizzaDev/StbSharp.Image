@@ -145,11 +145,6 @@ namespace StbSharp
             return ErrorCode.Ok;
         }
 
-        public static byte ComputeY8(int r, int g, int b)
-        {
-            return (byte)(((r * 77) + (g * 150) + (29 * b)) >> 8);
-        }
-
         public static ErrorCode ConvertFormat8(
             IMemoryHolder data, int img_n, int req_comp, int width, int height, out IMemoryHolder result)
         {

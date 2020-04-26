@@ -9,7 +9,7 @@ namespace StbSharp
 
         public delegate void OutputPixelLineDelegate(
             ReadState state, AddressingMajor addressing, int line, int start,
-            int increment, ReadOnlySpan<byte> pixels);
+            int spacing, ReadOnlySpan<byte> pixels);
 
         public delegate void OutputPixelDelegate(
             ReadState state, int x, int y, ReadOnlySpan<byte> pixel);
@@ -43,9 +43,9 @@ namespace StbSharp
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void OutputPixelLine(
-                AddressingMajor addressing, int line, int start, int increment, ReadOnlySpan<byte> pixels)
+                AddressingMajor addressing, int line, int start, int spacing, ReadOnlySpan<byte> pixels)
             {
-                OutputPixelLineCallback?.Invoke(this, addressing, line, start, increment, pixels);
+                OutputPixelLineCallback?.Invoke(this, addressing, line, start, spacing, pixels);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

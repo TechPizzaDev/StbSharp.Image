@@ -348,7 +348,7 @@ namespace StbSharp
                 if (t < 0)
                     return ErrorCode.BadHuffmanCode;
 
-                CRuntime.MemSet(data, 0, 64 * sizeof(short));
+                new Span<short>(data, 64).Clear();
                 int diff = t != 0 ? ExtendReceive(j, t) : 0;
                 int dc = j.components[b].dc_pred + diff;
                 j.components[b].dc_pred = dc;
@@ -413,7 +413,7 @@ namespace StbSharp
                 int dc;
                 if (j.succ_high == 0)
                 {
-                    CRuntime.MemSet(data, 0, 64 * sizeof(short));
+                    new Span<short>(data, 64).Clear();
                     t = HuffmanDecode(j, ref hdc);
                     diff = t != 0 ? ExtendReceive(j, t) : 0;
                     dc = j.components[b].dc_pred + diff;
@@ -926,15 +926,11 @@ namespace StbSharp
                 switch (m)
                 {
                     case 0xff:
-                        s.Error(ErrorCode.ExpectedMarker);
-                        return false;
+                        throw new StbImageReadException(ErrorCode.ExpectedMarker);
 
                     case 0xDD:
                         if (s.ReadInt16BE() != 4)
-                        {
-                            s.Error(ErrorCode.BadDRILength);
-                            return false;
-                        }
+                            throw new StbImageReadException(ErrorCode.BadDRILength);
 
                         z.restart_interval = s.ReadInt16BE();
                         return true;
@@ -946,17 +942,11 @@ namespace StbSharp
                             int q = s.ReadByte();
                             int p = q >> 4;
                             if ((p != 0) && (p != 1))
-                            {
-                                s.Error(ErrorCode.BadDQTType);
-                                return false;
-                            }
+                                throw new StbImageReadException(ErrorCode.BadDQTType);
 
                             int t = q & 15;
                             if (t > 3)
-                            {
-                                s.Error(ErrorCode.BadDQTTable);
-                                return false;
-                            }
+                                throw new StbImageReadException(ErrorCode.BadDQTTable);
 
                             int sixteen = (p != 0) ? 1 : 0;
 
@@ -976,10 +966,7 @@ namespace StbSharp
                             int tc = q >> 4;
                             int th = q & 15;
                             if ((tc > 1) || (th > 3))
-                            {
-                                s.Error(ErrorCode.BadDHTHeader);
-                                return false;
-                            }
+                                throw new StbImageReadException(ErrorCode.BadDHTHeader);
 
                             int n = 0;
                             for (int i = 0; i < 16; ++i)
@@ -1020,10 +1007,9 @@ namespace StbSharp
                     if (L < 2)
                     {
                         if (m == 0xFE)
-                            s.Error(ErrorCode.BadCOMLength);
+                            throw new StbImageReadException(ErrorCode.BadCOMLength);
                         else
-                            s.Error(ErrorCode.BadAPPLength);
-                        return false;
+                            throw new StbImageReadException(ErrorCode.BadAPPLength);
                     }
 
                     L -= 2;
@@ -1083,8 +1069,7 @@ namespace StbSharp
                     return true;
                 }
 
-                s.Error(ErrorCode.UnknownMarker);
-                return false;
+                throw new StbImageReadException(ErrorCode.UnknownMarker);
             }
 
             public static bool ProcessScanHeader(Context z)
@@ -1093,15 +1078,10 @@ namespace StbSharp
                 int Ls = s.ReadInt16BE();
                 z.scan_n = s.ReadByte();
                 if ((z.scan_n < 1) || (z.scan_n > 4) || (z.scan_n > z.ri.Components))
-                {
-                    z.s.Error(ErrorCode.BadSOSComponentCount);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.BadSOSComponentCount);
+
                 if (Ls != 6 + 2 * z.scan_n)
-                {
-                    z.s.Error(ErrorCode.BadSOSLength);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.BadSOSLength);
 
                 for (int i = 0; i < z.scan_n; ++i)
                 {
@@ -1118,17 +1098,12 @@ namespace StbSharp
                         return false;
                     z.components[which].hd = q >> 4;
                     if (z.components[which].hd > 3)
-                    {
-                        z.s.Error(ErrorCode.BadDCHuffman);
-                        return false;
-                    }
+                        throw new StbImageReadException(ErrorCode.BadDCHuffman);
 
                     z.components[which].ha = q & 15;
                     if (z.components[which].ha > 3)
-                    {
-                        z.s.Error(ErrorCode.BadACHuffman);
-                        return false;
-                    }
+                        throw new StbImageReadException(ErrorCode.BadACHuffman);
+
                     z.order[i] = which;
                 }
 
@@ -1141,25 +1116,21 @@ namespace StbSharp
                     z.succ_low = aa & 15;
                     if (z.progressive)
                     {
-                        if ((z.spec_start > 63) || (z.spec_end > 63) || (z.spec_start > z.spec_end) ||
-                            (z.succ_high > 13) || (z.succ_low > 13))
-                        {
-                            z.s.Error(ErrorCode.BadSOS);
-                            return false;
-                        }
+                        if ((z.spec_start > 63) ||
+                            (z.spec_end > 63) ||
+                            (z.spec_start > z.spec_end) ||
+                            (z.succ_high > 13) ||
+                            (z.succ_low > 13))
+                            throw new StbImageReadException(ErrorCode.BadSOS);
                     }
                     else
                     {
                         if (z.spec_start != 0)
-                        {
-                            z.s.Error(ErrorCode.BadSOS);
-                            return false;
-                        }
+                            throw new StbImageReadException(ErrorCode.BadSOS);
+
                         if ((z.succ_high != 0) || (z.succ_low != 0))
-                        {
-                            z.s.Error(ErrorCode.BadSOS);
-                            return false;
-                        }
+                            throw new StbImageReadException(ErrorCode.BadSOS);
+
                         z.spec_end = 63;
                     }
                 }
@@ -1169,7 +1140,7 @@ namespace StbSharp
 
             public static void FreeComponents(Context z, int ncomp)
             {
-                for (int i = 0; i < ncomp; ++i)
+                for (int i = 0; i < ncomp; i++)
                 {
                     if (z.components[i].raw_data != null)
                     {
@@ -1204,36 +1175,26 @@ namespace StbSharp
                 int v_max = 1;
                 Lf = s.ReadInt16BE();
                 if (Lf < 11)
-                {
-                    s.Error(ErrorCode.BadSOFLength);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.BadSOFLength);
+
                 p = s.ReadByte();
                 if (p != 8)
-                {
-                    s.Error(ErrorCode.UnsupportedBitDepth);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.UnsupportedBitDepth);
+
                 z.ri.Height = s.ReadInt16BE();
                 if (z.ri.Height == 0)
-                {
-                    s.Error(ErrorCode.ZeroHeight);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.ZeroHeight);
+
                 z.ri.Width = s.ReadInt16BE();
                 if (z.ri.Width == 0)
-                {
-                    s.Error(ErrorCode.ZeroWidth);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.ZeroWidth);
+
                 z.ri.Components = s.ReadByte();
                 if ((z.ri.Components != 1) &&
                     (z.ri.Components != 3) &&
                     (z.ri.Components != 4))
-                {
-                    s.Error(ErrorCode.BadComponentCount);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.BadComponentCount);
+
                 for (i = 0; i < z.ri.Components; ++i)
                 {
                     z.components[i].data = null;
@@ -1241,17 +1202,16 @@ namespace StbSharp
                 }
 
                 if (Lf != 8 + 3 * z.ri.Components)
-                {
-                    s.Error(ErrorCode.BadSOFLength);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.BadSOFLength);
+
                 z.rgb = 0;
 
                 byte* rgb = stackalloc byte[3];
                 rgb[0] = (byte)'R';
                 rgb[1] = (byte)'G';
                 rgb[2] = (byte)'B';
-                for (i = 0; i < z.ri.Components; ++i)
+
+                for (i = 0; i < z.ri.Components; i++)
                 {
                     z.components[i].id = s.ReadByte();
                     if ((z.ri.Components == 3) && (z.components[i].id == rgb[i]))
@@ -1259,22 +1219,15 @@ namespace StbSharp
                     q = s.ReadByte();
                     z.components[i].h = q >> 4;
                     if ((z.components[i].h == 0) || (z.components[i].h > 4))
-                    {
-                        s.Error(ErrorCode.BadH);
-                        return false;
-                    }
+                        throw new StbImageReadException(ErrorCode.BadH);
+
                     z.components[i].v = q & 15;
                     if ((z.components[i].v == 0) || (z.components[i].v > 4))
-                    {
-                        s.Error(ErrorCode.BadV);
-                        return false;
-                    }
+                        throw new StbImageReadException(ErrorCode.BadV);
+
                     z.components[i].tq = s.ReadByte();
                     if (z.components[i].tq > 3)
-                    {
-                        s.Error(ErrorCode.BadTQ);
-                        return false;
-                    }
+                        throw new StbImageReadException(ErrorCode.BadTQ);
                 }
 
                 if (scan != ScanMode.Load)
@@ -1350,7 +1303,8 @@ namespace StbSharp
                 if (!(m == 0xd8))
                 {
                     if (scan == ScanMode.Load)
-                        z.s.Error(ErrorCode.NoSOI);
+                        throw new StbImageReadException(ErrorCode.NoSOI);
+
                     return false;
                 }
 
@@ -1363,16 +1317,11 @@ namespace StbSharp
                     if (!ProcessMarker(z, m))
                         return false;
 
-                    m = ReadMarker(z);
-                    while (m == 0xff)
+                    do
                     {
-                        if (z.s.IsAtEndOfStream())
-                        {
-                            z.s.Error(ErrorCode.NoSOF);
-                            return false;
-                        }
                         m = ReadMarker(z);
                     }
+                    while (m == 0xff);
                 }
 
                 z.progressive = m == 0xc2;
@@ -1406,10 +1355,9 @@ namespace StbSharp
 
                         if (j.marker == 0xff)
                         {
-                            while (!s.IsAtEndOfStream())
+                            while (true)
                             {
-                                int x = s.ReadByte();
-                                if (x == 255)
+                                if (s.ReadByte() == 0xff)
                                 {
                                     j.marker = s.ReadByte();
                                     break;
@@ -1422,9 +1370,10 @@ namespace StbSharp
                         int Ld = s.ReadInt16BE();
                         uint NL = (uint)s.ReadInt16BE();
                         if (Ld != 4)
-                            j.s.Error(ErrorCode.BadDNLLength);
+                            throw new StbImageReadException(ErrorCode.BadDNLLength);
+
                         if (NL != j.ri.Height)
-                            j.s.Error(ErrorCode.BadDNLHeight);
+                            throw new StbImageReadException(ErrorCode.BadDNLHeight);
                     }
                     else
                     {
@@ -1571,14 +1520,13 @@ namespace StbSharp
                 return (byte)((t + (t >> 8)) >> 8);
             }
 
+            public static byte ComputeY8(byte r, byte g, byte b)
+            {
+                return (byte)(((r * 77) + (g * 150) + (29 * b)) >> 8);
+            }
+
             public static IMemoryHolder LoadImage(Context z)
             {
-                if (z.ri.RequestedComponents < 0 || z.ri.RequestedComponents > 4)
-                {
-                    z.s.Error(ErrorCode.BadCompRequest);
-                    return null;
-                }
-
                 if (!Load(z))
                 {
                     Cleanup(z);
@@ -1796,18 +1744,13 @@ namespace StbSharp
             public static bool Test(ReadContext s)
             {
                 var j = new Context(s, new ReadState());
-                bool r = ParseHeader(j, ScanMode.Type);
-                s.Rewind();
-                return r;
+                return ParseHeader(j, ScanMode.Type);
             }
 
             public static bool InfoCore(Context j)
             {
                 if (!ParseHeader(j, ScanMode.Header))
-                {
-                    j.s.Rewind();
                     return false;
-                }
                 return true;
             }
 

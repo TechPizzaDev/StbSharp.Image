@@ -52,11 +52,9 @@ namespace StbSharp
         public enum ErrorCode
         {
             Ok,
+            Undefined,
             
-            NotBMP,
-            NotGIF,
-            NotPNG,
-
+            UnknownFormat,
             UnknownHeader,
             BadBMP,
             MonochromeNotSupported,
@@ -119,8 +117,8 @@ namespace StbSharp
             NoIDAT,
             UnknownChunk,
             Corrupt,
-            WrongChannelCount,
-            WrongColorFormat,
+            BadChannelCount,
+            BadColorPlane,
             BadCompression,
             BadFormat,
             BadPalette,

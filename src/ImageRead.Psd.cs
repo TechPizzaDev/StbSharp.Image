@@ -14,10 +14,7 @@
             {
                 var info = new PsdInfo();
                 var ri = new ReadState();
-
-                bool success = ParseHeader(s, ref info, ref ri, ScanMode.Type);
-                s.Rewind();
-                return success;
+                return ParseHeader(s, ref info, ref ri, ScanMode.Type);
             }
 
             public static bool Info(ReadContext s, out ReadState ri)
@@ -25,9 +22,7 @@
                 var info = new PsdInfo();
                 ri = new ReadState();
 
-                bool success = ParseHeader(s, ref info, ref ri, ScanMode.Header);
-                s.Rewind();
-                return success;
+                return ParseHeader(s, ref info, ref ri, ScanMode.Header);
             }
 
             public static bool DecodeRLE(ReadContext s, byte* destination, int pixelCount)
@@ -112,8 +107,7 @@
                             if (!DecodeRLE(s, dst, pixelCount))
                             {
                                 CRuntime.Free(_out_);
-                                s.Error(ErrorCode.Corrupt);
-                                return null;
+                                throw new StbImageReadException(ErrorCode.Corrupt);
                             }
                         }
                     }
@@ -226,35 +220,24 @@
 
                 info.channelCount = s.ReadInt16BE();
                 if ((info.channelCount < 0) || (info.channelCount > 16))
-                {
-                    s.Error(ErrorCode.WrongChannelCount);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.BadChannelCount);
 
-                ri.Height = (int)s.ReadInt32BE();
-                ri.Width = (int)s.ReadInt32BE();
+                ri.Height = s.ReadInt32BE();
+                ri.Width = s.ReadInt32BE();
                 ri.Depth = s.ReadInt16BE();
                 if (ri.Depth != 8 && ri.Depth != 16)
-                {
-                    s.Error(ErrorCode.UnsupportedBitDepth);
-                    return false;
-                }
-                if (s.ReadInt16BE() != 3)
-                {
-                    s.Error(ErrorCode.WrongColorFormat);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.UnsupportedBitDepth);
 
-                s.Skip((int)s.ReadInt32BE());
-                s.Skip((int)s.ReadInt32BE());
-                s.Skip((int)s.ReadInt32BE());
+                if (s.ReadInt16BE() != 3)
+                    throw new StbImageReadException(ErrorCode.BadColorType);
+
+                s.Skip(s.ReadInt32BE());
+                s.Skip(s.ReadInt32BE());
+                s.Skip(s.ReadInt32BE());
 
                 info.compression = s.ReadInt16BE();
                 if (info.compression > 1)
-                {
-                    s.Error(ErrorCode.BadCompression);
-                    return false;
-                }
+                    throw new StbImageReadException(ErrorCode.BadCompression);
 
                 ri.OutDepth = ri.RequestedDepth ?? ri.Depth;
 

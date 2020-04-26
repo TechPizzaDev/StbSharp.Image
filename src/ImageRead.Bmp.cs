@@ -1,5 +1,4 @@
 ﻿using System;
-using System.IO;
 using System.Runtime.InteropServices;
 
 namespace StbSharp
@@ -23,17 +22,13 @@ namespace StbSharp
             public static bool Test(ReadContext s)
             {
                 var ri = new ReadState();
-                bool r = ParseHeader(s, ri, out _, ScanMode.Type);
-                s.Rewind();
-                return r;
+                return ParseHeader(s, ri, out _, ScanMode.Type);
             }
 
             public static bool Info(ReadContext s, out ReadState ri)
             {
                 ri = new ReadState();
-                bool success = ParseHeader(s, ri, out _, ScanMode.Header);
-                s.Rewind();
-                return success;
+                return ParseHeader(s, ri, out _, ScanMode.Header);
             }
 
             public static int HighBit(int z)
@@ -111,7 +106,7 @@ namespace StbSharp
                     s.ReadByte() != 'M')
                 {
                     if (scan != ScanMode.Type)
-                        throw new StbImageReadException(ErrorCode.NotBMP);
+                        throw new StbImageReadException(ErrorCode.UnknownFormat);
 
                     info = default;
                     return false;
@@ -162,7 +157,7 @@ namespace StbSharp
                 ri.Height = CRuntime.FastAbs(ri.Height);
 
                 if (s.ReadInt16LE() != 1)
-                    throw new StbImageReadException(ErrorCode.BadBMP);
+                    throw new StbImageReadException(ErrorCode.BadColorPlane);
 
                 info.bpp = s.ReadInt16LE();
                 if (info.bpp == 1)
@@ -216,11 +211,11 @@ namespace StbSharp
                                 info.mb = s.ReadInt32LE();
 
                                 if ((info.mr == info.mg) && (info.mg == info.mb))
-                                    throw new StbImageReadException(ErrorCode.BadBMP);
+                                    throw new StbImageReadException(ErrorCode.BadMasks);
                             }
                             else
                             {
-                                throw new StbImageReadException(ErrorCode.BadBMP);
+                                throw new StbImageReadException(ErrorCode.BadCompression);
                             }
                         }
                     }
@@ -229,7 +224,7 @@ namespace StbSharp
                         if (info.headerSize != 108 &&
                             info.headerSize != 124)
                         {
-                            throw new StbImageReadException(ErrorCode.BadBMP);
+                            throw new StbImageReadException(ErrorCode.UnknownHeader);
                         }
 
                         info.mr = s.ReadInt32LE();
@@ -383,9 +378,8 @@ namespace StbSharp
                     {
                         for (int y = 0; y < ri.Height; ++y)
                         {
-                            if (!s.ReadBytes(rowBufferSpan))
-                                throw new StbImageReadException(new EndOfStreamException());
-
+                            s.ReadBytes(rowBufferSpan);
+                        
                             for (int x = 0, o = 0; x < rowByteSize; x += ri.OutComponents)
                             {
                                 byte b = rowBuffer[o++];

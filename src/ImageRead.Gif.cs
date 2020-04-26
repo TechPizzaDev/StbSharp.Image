@@ -90,9 +90,7 @@ namespace StbSharp
             public static bool Test(ReadContext s, Context g)
             {
                 var ri = new ReadState();
-                bool r = ParseHeader(s, g, ref ri, ScanMode.Type);
-                s.Rewind();
-                return r;
+                return ParseHeader(s, g, ref ri, ScanMode.Type);
             }
 
             public static bool Test(ReadContext s)
@@ -104,25 +102,28 @@ namespace StbSharp
             public static bool ParseHeader(
                 ReadContext s, Context g, ref ReadState ri, ScanMode scan)
             {
-                byte version;
                 if ((s.ReadByte() != 'G') ||
                     (s.ReadByte() != 'I') ||
                     (s.ReadByte() != 'F') ||
                     (s.ReadByte() != '8'))
                 {
-                    s.Error(ErrorCode.NotGIF);
+                    if (scan != ScanMode.Type)
+                        throw new StbImageReadException(ErrorCode.UnknownFormat);
                     return false;
                 }
 
-                version = s.ReadByte();
+                byte version = s.ReadByte();
                 if ((version != '7') && (version != '9'))
                 {
-                    s.Error(ErrorCode.NotGIF);
+                    if (scan != ScanMode.Type)
+                        throw new StbImageReadException(ErrorCode.UnknownFormat);
                     return false;
                 }
+
                 if (s.ReadByte() != 'a')
                 {
-                    s.Error(ErrorCode.NotGIF);
+                    if (scan != ScanMode.Type)
+                        throw new StbImageReadException(ErrorCode.UnknownFormat);
                     return false;
                 }
 
@@ -240,28 +241,20 @@ namespace StbSharp
                         else if (code <= avail)
                         {
                             if (first != 0)
-                            {
-                                s.Error(ErrorCode.NoClearCode);
-                                return null;
-                            }
+                                throw new StbImageReadException(ErrorCode.NoClearCode);
 
                             if (oldcode >= 0)
                             {
                                 p = g.codes + avail++;
                                 if (avail > 4096)
-                                {
-                                    s.Error(ErrorCode.TooManyCodes);
-                                }
-
+                                    throw new StbImageReadException(ErrorCode.TooManyCodes);
+                                
                                 p->prefix = (short)oldcode;
                                 p->first = g.codes[oldcode].first;
                                 p->suffix = (code == avail) ? p->first : g.codes[code].first;
                             }
                             else if (code == avail)
-                            {
-                                s.Error(ErrorCode.IllegalCodeInRaster);
-                                return null;
-                            }
+                                throw new StbImageReadException(ErrorCode.IllegalCodeInRaster);
 
                             OutCode(g, (ushort)code);
                             if (((avail & codemask) == 0) && (avail <= 0x0FFF))
@@ -273,10 +266,7 @@ namespace StbSharp
                             oldcode = code;
                         }
                         else
-                        {
-                            s.Error(ErrorCode.IllegalCodeInRaster);
-                            return null;
-                        }
+                            throw new StbImageReadException(ErrorCode.IllegalCodeInRaster);
                     }
                 }
             }
@@ -342,9 +332,9 @@ namespace StbSharp
                         return null;
                     }
 
-                    CRuntime.MemSet(g._out_, 0, ri.OutComponents * pcount);
-                    CRuntime.MemSet(g.background, 0, ri.OutComponents * pcount);
-                    CRuntime.MemSet(g.history, 0, pcount);
+                    new Span<byte>(g._out_, ri.OutComponents * pcount).Clear();
+                    new Span<byte>(g.background, ri.OutComponents * pcount).Clear();
+                    new Span<byte>(g.history, pcount).Clear();
                     first_frame = 1;
                 }
                 else
@@ -375,7 +365,7 @@ namespace StbSharp
                     CRuntime.MemCopy(g.background, g._out_, ri.OutComponents * pcount);
                 }
 
-                CRuntime.MemSet(g.history, 0, pcount);
+                new Span<byte>(g.history, pcount).Clear();
                 for (; ; )
                 {
                     int tag = s.ReadByte();
@@ -388,10 +378,7 @@ namespace StbSharp
                             int w = s.ReadInt16LE();
                             int h = s.ReadInt16LE();
                             if (((x + w) > ri.Width) || ((y + h) > ri.Height))
-                            {
-                                s.Error(ErrorCode.BadImageDescriptor);
-                                return null;
-                            }
+                                throw new StbImageReadException(ErrorCode.BadImageDescriptor);
 
                             g.line_size = ri.Width * ri.OutComponents;
                             g.start_x = x * ri.OutComponents;
@@ -430,10 +417,7 @@ namespace StbSharp
                                 g.color_table = g.pal;
                             }
                             else
-                            {
-                                s.Error(ErrorCode.MissingColorTable);
-                                return null;
-                            }
+                                throw new StbImageReadException(ErrorCode.NoColorTable);
 
                             var o = ProcessRaster(s, ref g, ref ri);
                             if (o == null)
@@ -496,7 +480,7 @@ namespace StbSharp
                             return null;
 
                         default:
-                            s.Error(ErrorCode.UnknownCode);
+                            throw new StbImageReadException(ErrorCode.UnknownCode);
                             return null;
                     }
                 }
@@ -585,12 +569,7 @@ namespace StbSharp
                 using (var g = new Context(true))
                 {
                     ri = new ReadState();
-                    if (!ParseHeader(s, g, ref ri, ScanMode.Header))
-                    {
-                        s.Rewind();
-                        return false;
-                    }
-                    return true;
+                    return ParseHeader(s, g, ref ri, ScanMode.Header);
                 }
             }
         }
