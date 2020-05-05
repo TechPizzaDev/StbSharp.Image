@@ -32,6 +32,9 @@ namespace StbSharp
             public int OutDepth;
             public int OutComponents;
 
+            public bool UnpremultiplyOnLoad { get; set; } = true;
+            public bool DeIphoneFlag { get; set; } = true;
+
             public ReadState()
             {
             }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 
 namespace StbSharp
 {
@@ -6,6 +7,8 @@ namespace StbSharp
     {
         public static unsafe class Tga
         {
+            public const int HeaderSize = 3;
+
             public struct TgaInfo
             {
                 public int offset;
@@ -47,15 +50,31 @@ namespace StbSharp
                 }
             }
 
-            public static bool ParseHeader(ReadContext s, ref TgaInfo info, ref ReadState ri, ScanMode scan)
+            public static bool Test(ReadOnlySpan<byte> header)
             {
-                info.offset = s.ReadByte();
+                var info = new TgaInfo();
+                return TestCore(header, ref info);
+            }
 
-                info.colormap_type = s.ReadByte();
+            public static bool Info(BinReader s, out ReadState ri)
+            {
+                ri = new ReadState();
+                var info = new TgaInfo();
+                return ParseHeader(s, ri, ref info);
+            }
+
+            public static bool TestCore(ReadOnlySpan<byte> header, ref TgaInfo info)
+            {
+                if (header.Length < HeaderSize)
+                    return false;
+
+                info.offset = header[0];
+
+                info.colormap_type = header[1];
                 if (info.colormap_type > 1)
                     return false;
 
-                info.image_type = s.ReadByte();
+                info.image_type = header[2];
                 if (info.image_type >= 8)
                 {
                     info.image_type -= 8;
@@ -75,8 +94,17 @@ namespace StbSharp
                         return false;
                 }
 
-                if (scan == ScanMode.Type)
-                    return true;
+                return true;
+            }
+
+            public static bool ParseHeader(BinReader s, ReadState ri, ref TgaInfo info)
+            {
+                Span<byte> tmp = stackalloc byte[HeaderSize];
+                if (!s.TryReadBytes(tmp))
+                    return false;
+
+                if (!TestCore(tmp, ref info))
+                    throw new StbImageReadException(ErrorCode.UnknownFormat);
 
                 info.palette_start = s.ReadInt16LE();
                 info.palette_len = s.ReadInt16LE();
@@ -129,23 +157,7 @@ namespace StbSharp
                 return true;
             }
 
-            public static bool Info(ReadContext s, out ReadState ri)
-            {
-                var info = new TgaInfo();
-                ri = new ReadState();
-
-                return ParseHeader(s, ref info, ref ri, ScanMode.Header);
-            }
-
-            public static bool Test(ReadContext s)
-            {
-                var info = new TgaInfo();
-                var ri = new ReadState();
-
-                return ParseHeader(s, ref info, ref ri, ScanMode.Type);
-            }
-
-            public static void ReadRgb16(ReadContext s, Span<byte> destination)
+            public static void ReadRgb16(BinReader s, Span<byte> destination)
             {
                 const ushort fiveBitMask = 31;
                 ushort px = (ushort)s.ReadInt16LE();
@@ -157,27 +169,16 @@ namespace StbSharp
                 destination[2] = (byte)(b * 255 / 31);
             }
 
-            public static IMemoryHolder Load(ReadContext s, ref ReadState ri)
+            public static IMemoryHolder Load(BinReader s, ReadState ri)
             {
                 var info = new TgaInfo();
-                if (!ParseHeader(s, ref info, ref ri, ScanMode.Load))
+                if (!ParseHeader(s, ri, ref info))
                     return null;
 
-                if (AreValidMad3Sizes(ri.Width, ri.Height, ri.OutComponents, 0) == 0)
-                {
-                    s.Error(ErrorCode.TooLarge);
-                    return null;
-                }
-
-                byte* _out_ = (byte*)MAllocMad3(ri.Width, ri.Height, ri.OutComponents, 0);
-                if (_out_ == null)
-                {
-                    s.Error(ErrorCode.OutOfMemory);
-                    return null;
-                }
-
+                byte[] _out_ = new byte[ri.Width * ri.Height * ri.OutComponents];
+                
                 Span<byte> raw_data = stackalloc byte[4];
-                raw_data[0] = 0;
+                raw_data.Clear();
 
                 s.Skip(info.offset);
 
@@ -218,14 +219,17 @@ namespace StbSharp
                                 pal_entry += ri.OutComponents;
                             }
                         }
-                        else 
+                        else
                         {
+                            // TODO: something is missing here...
+                            throw new NotImplementedException();
+
                             s.ReadBytes(new Span<byte>(tga_palette, info.palette_len * ri.OutComponents));
 
                             CRuntime.Free(_out_);
                             CRuntime.Free(tga_palette);
-                            s.Error(ErrorCode.BadPalette);
-                            return null;
+
+                            throw new StbImageReadException(ErrorCode.BadPalette);
                         }
                     }
 

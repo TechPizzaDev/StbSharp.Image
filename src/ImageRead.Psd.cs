@@ -1,31 +1,44 @@
-﻿namespace StbSharp
+﻿using System;
+using System.Buffers.Binary;
+
+namespace StbSharp
 {
     public static partial class ImageRead
     {
         public static unsafe class Psd
         {
+            public const int HeaderSize = 6;
+
             public struct PsdInfo
             {
                 public int channelCount;
                 public int compression;
             }
 
-            public static bool Test(ReadContext s)
+            public static bool Test(ReadOnlySpan<byte> header)
             {
-                var info = new PsdInfo();
-                var ri = new ReadState();
-                return ParseHeader(s, ref info, ref ri, ScanMode.Type);
+                if (header.Length < HeaderSize)
+                    return false;
+
+                // TODO: check byte per byte instead?
+
+                if (BinaryPrimitives.ReadInt32BigEndian(header) != 0x38425053) // "8BPS"
+                    return false;
+
+                if (BinaryPrimitives.ReadInt16BigEndian(header.Slice(sizeof(int))) != 1)
+                    return false;
+
+                return true;
             }
 
-            public static bool Info(ReadContext s, out ReadState ri)
+            public static bool Info(BinReader s, out ReadState ri)
             {
-                var info = new PsdInfo();
                 ri = new ReadState();
-
-                return ParseHeader(s, ref info, ref ri, ScanMode.Header);
+                var info = new PsdInfo();
+                return ParseHeader(s, ri, ref info);
             }
 
-            public static bool DecodeRLE(ReadContext s, byte* destination, int pixelCount)
+            public static bool DecodeRLE(BinReader s, byte* destination, int pixelCount)
             {
                 int count = 0;
                 int nleft;
@@ -69,10 +82,10 @@
                 return true;
             }
 
-            public static IMemoryHolder Load(ReadContext s, ref ReadState ri)
+            public static IMemoryHolder Load(BinReader s, ReadState ri)
             {
                 var info = new PsdInfo();
-                if (!ParseHeader(s, ref info, ref ri, ScanMode.Load))
+                if (!ParseHeader(s, ri, ref info))
                     return null;
 
                 if (AreValidMad3Sizes(4, ri.Width, ri.Height, 0) == 0)
@@ -118,7 +131,7 @@
                     {
                         if (channel >= info.channelCount)
                         {
-                            if (ri.Depth == 16 && ri.RequestedDepth == ri.Depth)
+                            if (ri.Depth == 16)
                             {
                                 ushort* q = ((ushort*)_out_) + channel;
                                 ushort val = (ushort)(channel == 3 ? 65535 : 0);
@@ -198,24 +211,22 @@
                 IMemoryHolder result = new HGlobalMemoryHolder(
                     _out_, (ri.Width * ri.Height * ri.OutComponents * ri.OutDepth + 7) / 8);
 
-                var errorCode = ConvertFormat(result, ref ri, out var convertedResult);
+                var errorCode = ConvertFormat(result, ri, out var convertedResult);
                 if (errorCode != ErrorCode.Ok)
                     return null;
                 return convertedResult;
             }
 
-            public static bool ParseHeader(
-               ReadContext s, ref PsdInfo info, ref ReadState ri, ScanMode scan)
+            public static bool ParseHeader(BinReader s, ReadState ri, ref PsdInfo info)
             {
-                if (s.ReadInt32BE() != 0x38425053) // "8BPS"
+                Span<byte> tmp = stackalloc byte[HeaderSize];
+                if (!s.TryReadBytes(tmp))
                     return false;
 
-                if (s.ReadInt16BE() != 1)
-                    return false;
+                if (!Test(tmp))
+                    throw new StbImageReadException(ErrorCode.UnknownFormat);
 
-                if (scan == ScanMode.Type)
-                    return true;
-
+                // TODO: figure out what this skips
                 s.Skip(6);
 
                 info.channelCount = s.ReadInt16BE();
@@ -239,10 +250,10 @@
                 if (info.compression > 1)
                     throw new StbImageReadException(ErrorCode.BadCompression);
 
-                ri.OutDepth = ri.RequestedDepth ?? ri.Depth;
+                ri.OutDepth = ri.Depth;
 
                 if (info.compression == 0)
-                    ri.OutDepth = ri.RequestedDepth ?? ri.Depth;
+                    ri.OutDepth = ri.Depth;
                 else
                     ri.OutDepth = 8;
 

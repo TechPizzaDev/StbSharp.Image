@@ -1,14 +1,15 @@
 ﻿using System;
-using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace StbSharp
 {
     public static partial class ImageRead
     {
-        public static unsafe class Bmp
+        public static class Bmp
         {
-            [StructLayout(LayoutKind.Sequential)]
-            public struct BmpInfo
+            public const int HeaderSize = 2;
+
+            public class BmpInfo
             {
                 public int bpp;
                 public int offset;
@@ -19,16 +20,22 @@ namespace StbSharp
                 public int ma;
             }
 
-            public static bool Test(ReadContext s)
+            public static bool Test(ReadOnlySpan<byte> header)
             {
-                var ri = new ReadState();
-                return ParseHeader(s, ri, out _, ScanMode.Type);
+                if (header.Length < HeaderSize)
+                    return false;
+
+                if (header[0] != 'B' ||
+                    header[1] != 'M')
+                    return false;
+
+                return true;
             }
 
-            public static bool Info(ReadContext s, out ReadState ri)
+            public static Task<BmpInfo> Info(BinReader s, out ReadState ri)
             {
                 ri = new ReadState();
-                return ParseHeader(s, ri, out _, ScanMode.Header);
+                return ParseHeader(s, ri);
             }
 
             public static int HighBit(int z)
@@ -99,25 +106,23 @@ namespace StbSharp
                 return result;
             }
 
-            public static bool ParseHeader(
-                ReadContext s, ReadState ri, out BmpInfo info, ScanMode scan)
+            public static async Task<BmpInfo> ParseHeader(BinReader s, ReadState ri)
             {
-                if (s.ReadByte() != 'B' ||
-                    s.ReadByte() != 'M')
-                {
-                    if (scan != ScanMode.Type)
-                        throw new StbImageReadException(ErrorCode.UnknownFormat);
+                var tmp = new byte[HeaderSize];
+                if (!await s.TryReadBytes(tmp))
+                    return null;
 
-                    info = default;
-                    return false;
-                }
+                if (!Test(tmp))
+                    throw new StbImageReadException(ErrorCode.UnknownFormat);
 
-                s.ReadInt32LE();
-                s.ReadInt16LE();
-                s.ReadInt16LE();
+                var info = new BmpInfo();
 
-                info.offset = s.ReadInt32LE();
-                info.headerSize = s.ReadInt32LE();
+                await s.ReadInt32LE();
+                await s.ReadInt16LE();
+                await s.ReadInt16LE();
+
+                info.offset = await s.ReadInt32LE();
+                info.headerSize = await s.ReadInt32LE();
                 info.mr = info.mg = info.mb = info.ma = 0;
 
                 if (info.headerSize != 12 &&
@@ -125,29 +130,17 @@ namespace StbSharp
                     info.headerSize != 56 &&
                     info.headerSize != 108 &&
                     info.headerSize != 124)
-                {
-                    if (scan != ScanMode.Type)
-                        throw new StbImageReadException(ErrorCode.UnknownHeader);
-
-                    info = default;
-                    return false;
-                }
-
-                if (scan == ScanMode.Type)
-                {
-                    info = default;
-                    return true;
-                }
+                    throw new StbImageReadException(ErrorCode.UnknownHeader);
 
                 if (info.headerSize == 12)
                 {
-                    ri.Width = s.ReadInt16LE();
-                    ri.Height = s.ReadInt16LE();
+                    ri.Width = await s.ReadInt16LE();
+                    ri.Height = await s.ReadInt16LE();
                 }
                 else
                 {
-                    ri.Width = s.ReadInt32LE();
-                    ri.Height = s.ReadInt32LE();
+                    ri.Width = await s.ReadInt32LE();
+                    ri.Height = await s.ReadInt32LE();
                 }
 
                 ri.Orientation = ri.Height > 0
@@ -156,34 +149,34 @@ namespace StbSharp
 
                 ri.Height = CRuntime.FastAbs(ri.Height);
 
-                if (s.ReadInt16LE() != 1)
+                if (await s.ReadInt16LE() != 1)
                     throw new StbImageReadException(ErrorCode.BadColorPlane);
 
-                info.bpp = s.ReadInt16LE();
+                info.bpp = await s.ReadInt16LE();
                 if (info.bpp == 1)
                     throw new StbImageReadException(ErrorCode.MonochromeNotSupported);
 
                 if (info.headerSize != 12)
                 {
-                    int compress = s.ReadInt32LE();
+                    int compress = await s.ReadInt32LE();
                     if ((compress == 1) || (compress == 2))
                         throw new StbImageReadException(ErrorCode.RLENotSupported);
 
-                    s.ReadInt32LE();
-                    s.ReadInt32LE();
-                    s.ReadInt32LE();
-                    s.ReadInt32LE();
-                    s.ReadInt32LE();
+                    await s.ReadInt32LE();
+                    await s.ReadInt32LE();
+                    await s.ReadInt32LE();
+                    await s.ReadInt32LE();
+                    await s.ReadInt32LE();
 
                     if (info.headerSize == 40 ||
                         info.headerSize == 56)
                     {
                         if (info.headerSize == 56)
                         {
-                            s.ReadInt32LE();
-                            s.ReadInt32LE();
-                            s.ReadInt32LE();
-                            s.ReadInt32LE();
+                            await s.ReadInt32LE();
+                            await s.ReadInt32LE();
+                            await s.ReadInt32LE();
+                            await s.ReadInt32LE();
                         }
 
                         if ((info.bpp == 16) || (info.bpp == 32))
@@ -206,9 +199,9 @@ namespace StbSharp
                             }
                             else if (compress == 3)
                             {
-                                info.mr = s.ReadInt32LE();
-                                info.mg = s.ReadInt32LE();
-                                info.mb = s.ReadInt32LE();
+                                info.mr = await s.ReadInt32LE();
+                                info.mg = await s.ReadInt32LE();
+                                info.mb = await s.ReadInt32LE();
 
                                 if ((info.mr == info.mg) && (info.mg == info.mb))
                                     throw new StbImageReadException(ErrorCode.BadMasks);
@@ -227,18 +220,19 @@ namespace StbSharp
                             throw new StbImageReadException(ErrorCode.UnknownHeader);
                         }
 
-                        info.mr = s.ReadInt32LE();
-                        info.mg = s.ReadInt32LE();
-                        info.mb = s.ReadInt32LE();
-                        info.ma = s.ReadInt32LE();
+                        info.mr = await s.ReadInt32LE();
+                        info.mg = await s.ReadInt32LE();
+                        info.mb = await s.ReadInt32LE();
+                        info.ma = await s.ReadInt32LE();
 
-                        s.ReadInt32LE();
+                        await s.ReadInt32LE();
+
                         for (int i = 0; i < 12; ++i)
-                            s.ReadInt32LE();
+                            await s.ReadInt32LE();
 
                         if (info.headerSize == 124)
                             for (int i = 0; i < 4; ++i)
-                                s.ReadInt32LE();
+                                await s.ReadInt32LE();
                     }
                 }
 
@@ -251,13 +245,14 @@ namespace StbSharp
 
                 ri.Depth = info.bpp / ri.Components;
 
-                return true;
+                return info;
             }
 
-            public static bool Load(ReadContext s, ReadState ri)
+            public static async Task<BmpInfo> Load(BinReader s, ReadState ri)
             {
-                if (!ParseHeader(s, ri, out var info, ScanMode.Load))
-                    return false;
+                var info = await ParseHeader(s, ri);
+                if (info == null)
+                    throw new StbImageReadException(ErrorCode.UnknownHeader);
 
                 ri.OutComponents = ri.Components;
                 ri.OutDepth = Math.Max(ri.Depth, 8);
@@ -275,10 +270,6 @@ namespace StbSharp
                     if (info.bpp < 16)
                         psize = (info.offset - 14 - info.headerSize) >> 2;
                 }
-
-                // TODO: remove this?
-                if (ImageReadHelpers.AreValidMad3Sizes(ri.OutComponents, ri.Width, ri.Height, 0) == 0)
-                    throw new StbImageReadException(ErrorCode.TooLarge);
 
                 int easy = 0;
                 if (info.bpp == 32)
@@ -298,24 +289,28 @@ namespace StbSharp
 
                 bool flipRows = (ri.Orientation & ImageOrientation.BottomToTop) == ImageOrientation.BottomToTop;
                 int rowByteSize = ri.Width * ri.OutComponents;
-                byte[] rowBuffer = new byte[rowByteSize];
-                var rowBufferSpan = rowBuffer.AsSpan();
+                var rowBuffer = new byte[rowByteSize];
 
                 if (info.bpp < 16)
                 {
                     if ((psize == 0) || (psize > 256))
                         throw new StbImageReadException(ErrorCode.InvalidPLTE);
 
-                    Span<byte> palette = stackalloc byte[256 * 4];
+                    var palette = new byte[256 * 4];
                     for (int x = 0; x < psize; ++x)
                     {
-                        palette[x * 4 + 2] = s.ReadByte();
-                        palette[x * 4 + 1] = s.ReadByte();
-                        palette[x * 4 + 0] = s.ReadByte();
-                        palette[x * 4 + 3] = info.headerSize == 12 ? (byte)255 : s.ReadByte();
+                        palette[x * 4 + 2] = await s.ReadByte();
+                        palette[x * 4 + 1] = await s.ReadByte();
+                        palette[x * 4 + 0] = await s.ReadByte();
+
+                        palette[x * 4 + 3] = info.headerSize == 12 
+                            ? (byte)255 
+                            : await s.ReadByte();
                     }
 
-                    s.Skip(info.offset - 14 - info.headerSize - psize * (info.headerSize == 12 ? 3 : 4));
+                    await s.Skip(
+                        info.offset - 14 - info.headerSize -
+                        psize * (info.headerSize == 12 ? 3 : 4));
 
                     int width;
                     if (info.bpp == 4)
@@ -342,28 +337,28 @@ namespace StbSharp
                             }
 
                             int v2 = 0;
-                            int v1 = s.ReadByte();
+                            int v1 = await s.ReadByte();
                             if (info.bpp == 4)
                             {
                                 v2 = v1 & 15;
                                 v1 >>= 4;
                             }
-                            WriteFromPalette(ri.OutComponents, palette.Slice(v1 * 4));
+                            WriteFromPalette(ri.OutComponents, palette.AsSpan(v1 * 4));
 
                             if ((x + 1) == ri.Width)
                                 break;
-                            v2 = info.bpp == 8 ? s.ReadByte() : v2;
-                            WriteFromPalette(ri.OutComponents, palette.Slice(v2 * 4));
+                            v2 = info.bpp == 8 ? await s.ReadByte() : v2;
+                            WriteFromPalette(ri.OutComponents, palette.AsSpan(v2 * 4));
                         }
 
                         int row = flipRows ? (ri.Height - y - 1) : y;
-                        ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBufferSpan);
-                        s.Skip(pad);
+                        ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer);
+                        await s.Skip(pad);
                     }
                 }
                 else
                 {
-                    s.Skip(info.offset - 14 - info.headerSize);
+                    await s.Skip(info.offset - 14 - info.headerSize);
 
                     int width;
                     if (info.bpp == 24)
@@ -378,8 +373,8 @@ namespace StbSharp
                     {
                         for (int y = 0; y < ri.Height; ++y)
                         {
-                            s.ReadBytes(rowBufferSpan);
-                        
+                            await s.ReadBytes(rowBuffer);
+
                             for (int x = 0, o = 0; x < rowByteSize; x += ri.OutComponents)
                             {
                                 byte b = rowBuffer[o++];
@@ -394,8 +389,8 @@ namespace StbSharp
                             }
 
                             int row = flipRows ? (ri.Height - y - 1) : y;
-                            ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBufferSpan);
-                            s.Skip(pad);
+                            ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer);
+                            await s.Skip(pad);
                         }
                     }
                     else
@@ -416,25 +411,28 @@ namespace StbSharp
                         {
                             for (int x = 0; x < rowByteSize; x += ri.OutComponents)
                             {
-                                int v = info.bpp == 16 ? s.ReadInt16LE() : s.ReadInt32LE();
-                                rowBufferSpan[x + 0] = (byte)(ShiftSigned(v & info.mr, rshift, rcount) & 0xff);
-                                rowBufferSpan[x + 1] = (byte)(ShiftSigned(v & info.mg, gshift, gcount) & 0xff);
-                                rowBufferSpan[x + 2] = (byte)(ShiftSigned(v & info.mb, bshift, bcount) & 0xff);
+                                int v = info.bpp == 16 
+                                    ? await s.ReadInt16LE() 
+                                    : await s.ReadInt32LE();
+                                
+                                rowBuffer[x + 0] = (byte)(ShiftSigned(v & info.mr, rshift, rcount) & 0xff);
+                                rowBuffer[x + 1] = (byte)(ShiftSigned(v & info.mg, gshift, gcount) & 0xff);
+                                rowBuffer[x + 2] = (byte)(ShiftSigned(v & info.mb, bshift, bcount) & 0xff);
 
                                 if (ri.OutComponents == 4)
-                                    rowBufferSpan[x + 3] = info.ma != 0
+                                    rowBuffer[x + 3] = info.ma != 0
                                         ? (byte)(ShiftSigned(v & info.ma, ashift, acount) & 0xff)
                                         : (byte)255;
                             }
 
                             int row = flipRows ? (ri.Height - y - 1) : y;
-                            ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBufferSpan);
-                            s.Skip(pad);
+                            ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer);
+                            await s.Skip(pad);
                         }
                     }
                 }
 
-                return true;
+                return info;
             }
         }
     }

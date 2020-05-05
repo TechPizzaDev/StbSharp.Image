@@ -8,6 +8,8 @@ namespace StbSharp
     {
         public static unsafe class Gif
         {
+            public const int HeaderSize = 6;
+
             [StructLayout(LayoutKind.Sequential)]
             public struct GifLzw
             {
@@ -16,7 +18,7 @@ namespace StbSharp
                 public byte suffix;
             }
 
-            public class Context : IDisposable
+            public class GifState : IDisposable
             {
                 public byte* _out_;
                 public byte* background;
@@ -42,7 +44,7 @@ namespace StbSharp
                 public int cur_y;
                 public int line_size;
 
-                public Context(bool allocatePalette)
+                public GifState(bool allocatePalette)
                 {
                     if (allocatePalette)
                     {
@@ -79,7 +81,7 @@ namespace StbSharp
                     GC.SuppressFinalize(this);
                 }
 
-                ~Context()
+                ~GifState()
                 {
                     Dispose(false);
                 }
@@ -87,48 +89,35 @@ namespace StbSharp
                 #endregion
             }
 
-            public static bool Test(ReadContext s, Context g)
+            public static bool Test(ReadOnlySpan<byte> header)
             {
-                var ri = new ReadState();
-                return ParseHeader(s, g, ref ri, ScanMode.Type);
-            }
-
-            public static bool Test(ReadContext s)
-            {
-                using (var g = new Context(false))
-                    return Test(s, g);
-            }
-
-            public static bool ParseHeader(
-                ReadContext s, Context g, ref ReadState ri, ScanMode scan)
-            {
-                if ((s.ReadByte() != 'G') ||
-                    (s.ReadByte() != 'I') ||
-                    (s.ReadByte() != 'F') ||
-                    (s.ReadByte() != '8'))
-                {
-                    if (scan != ScanMode.Type)
-                        throw new StbImageReadException(ErrorCode.UnknownFormat);
+                if (header.Length < HeaderSize)
                     return false;
-                }
 
-                byte version = s.ReadByte();
+                if ((header[0] != 'G') ||
+                    (header[1] != 'I') ||
+                    (header[2] != 'F') ||
+                    (header[3] != '8'))
+                    return false;
+
+                byte version = header[4];
                 if ((version != '7') && (version != '9'))
-                {
-                    if (scan != ScanMode.Type)
-                        throw new StbImageReadException(ErrorCode.UnknownFormat);
                     return false;
-                }
 
-                if (s.ReadByte() != 'a')
-                {
-                    if (scan != ScanMode.Type)
-                        throw new StbImageReadException(ErrorCode.UnknownFormat);
+                if (header[5] != 'a')
                     return false;
-                }
 
-                if (scan == ScanMode.Type)
-                    return true;
+                return true;
+            }
+
+            public static bool ParseHeader(BinReader s, ReadState ri, GifState g)
+            {
+                Span<byte> tmp = stackalloc byte[HeaderSize];
+                if (!s.TryReadBytes(tmp))
+                    return false;
+
+                if (!Test(tmp))
+                    throw new StbImageReadException(ErrorCode.UnknownFormat);
 
                 ri.Width = s.ReadInt16LE();
                 ri.Height = s.ReadInt16LE();
@@ -141,12 +130,12 @@ namespace StbSharp
                 g.transparent = -1;
 
                 if ((g.flags & 0x80) != 0)
-                    ParseColortable(s, ref ri, g.pal, 2 << (g.flags & 7), -1);
+                    ParseColortable(s, ri, g.pal, 2 << (g.flags & 7), -1);
 
                 return true;
             }
 
-            public static void OutCode(Context g, ushort code)
+            public static void OutCode(GifState g, ushort code)
             {
                 if (g.codes[code].prefix >= 0)
                     OutCode(g, (ushort)g.codes[code].prefix);
@@ -178,8 +167,7 @@ namespace StbSharp
                 }
             }
 
-            public static IMemoryHolder ProcessRaster(
-                ReadContext s, ref Context g, ref ReadState ri)
+            public static IMemoryHolder ProcessRaster(BinReader s, GifState g, ReadState ri)
             {
                 byte lzw_cs = s.ReadByte();
                 if (lzw_cs > 12)
@@ -248,7 +236,7 @@ namespace StbSharp
                                 p = g.codes + avail++;
                                 if (avail > 4096)
                                     throw new StbImageReadException(ErrorCode.TooManyCodes);
-                                
+
                                 p->prefix = (short)oldcode;
                                 p->first = g.codes[oldcode].first;
                                 p->suffix = (code == avail) ? p->first : g.codes[code].first;
@@ -272,7 +260,7 @@ namespace StbSharp
             }
 
             public static void FillBackground(
-                ref Context g, ref ReadState ri, int x0, int y0, int x1, int y1)
+                GifState g, ReadState ri, int x0, int y0, int x1, int y1)
             {
                 byte* c = g.pal + g.bgindex;
                 for (int y = y0; y < y1; y += ri.OutComponents * ri.Width)
@@ -289,7 +277,7 @@ namespace StbSharp
             }
 
             public static void ParseColortable(
-                ReadContext s, ref ReadState ri, byte* pal, int num_entries, int transp)
+                BinReader s, ReadState ri, byte* pal, int num_entries, int transp)
             {
                 for (int i = 0; i < num_entries; ++i)
                 {
@@ -301,7 +289,7 @@ namespace StbSharp
             }
 
             public static IMemoryHolder LoadNext(
-                ReadContext s, Context g, ref ReadState ri, byte* two_back)
+                BinReader s, GifState g, ReadState ri, byte* two_back)
             {
                 int dispose = 0;
                 int first_frame = 0;
@@ -310,7 +298,7 @@ namespace StbSharp
 
                 if (g._out_ == null)
                 {
-                    if (!ParseHeader(s, g, ref ri, ScanMode.Load))
+                    if (!ParseHeader(s, ri, g))
                         return null;
 
                     ri.OutComponents = ri.Components;
@@ -405,7 +393,7 @@ namespace StbSharp
                             {
                                 ParseColortable(
                                     s,
-                                    ref ri,
+                                    ri,
                                     g.lpal,
                                     2 << (g.lflags & 7),
                                     (g.eflags & 0x01) != 0 ? g.transparent : -1);
@@ -419,7 +407,7 @@ namespace StbSharp
                             else
                                 throw new StbImageReadException(ErrorCode.NoColorTable);
 
-                            var o = ProcessRaster(s, ref g, ref ri);
+                            var o = ProcessRaster(s, g, ri);
                             if (o == null)
                                 return null;
 
@@ -487,16 +475,13 @@ namespace StbSharp
             }
 
             public static IMemoryHolder LoadMain(
-                ReadContext s, out List<int> delays, out int layers, ref ReadState ri)
+                BinReader s, out List<int> delays, out int layers, ReadState ri)
             {
                 layers = 0;
                 delays = null;
 
-                using (var g = new Context(true))
+                using (var g = new GifState(true))
                 {
-                    if (!Test(s, g))
-                        return null;
-
                     IMemoryHolder u;
                     byte* _out_ = null;
                     byte* two_back = null;
@@ -507,7 +492,7 @@ namespace StbSharp
                     {
                         do
                         {
-                            u = LoadNext(s, g, ref ri, two_back);
+                            u = LoadNext(s, g, ri, two_back);
                             if (u == null)
                                 break;
 
@@ -537,21 +522,21 @@ namespace StbSharp
 
                     IMemoryHolder result = new HGlobalMemoryHolder(_out_, layers * stride);
 
-                    var errorCode = ConvertFormat(result, ref ri, out var convertedResult);
+                    var errorCode = ConvertFormat(result, ri, out var convertedResult);
                     if (errorCode != ErrorCode.Ok)
                         return null;
                     return convertedResult;
                 }
             }
 
-            public static IMemoryHolder Load(ReadContext s, ref ReadState ri)
+            public static IMemoryHolder Load(BinReader s, ReadState ri)
             {
-                using (var g = new Context(true))
+                using (var g = new GifState(true))
                 {
-                    IMemoryHolder u = LoadNext(s, g, ref ri, null);
+                    IMemoryHolder u = LoadNext(s, g, ri, null);
                     if (u != null)
                     {
-                        var errorCode = ConvertFormat(u, ref ri, out u);
+                        var errorCode = ConvertFormat(u, ri, out u);
                         if (errorCode != ErrorCode.Ok)
                             s.Error(errorCode);
                     }
@@ -564,12 +549,12 @@ namespace StbSharp
                 }
             }
 
-            public static bool Info(ReadContext s, out ReadState ri)
+            public static bool Info(BinReader s, out ReadState ri)
             {
-                using (var g = new Context(true))
+                using (var g = new GifState(true))
                 {
                     ri = new ReadState();
-                    return ParseHeader(s, g, ref ri, ScanMode.Header);
+                    return ParseHeader(s, ri, g);
                 }
             }
         }

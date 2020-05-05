@@ -2,15 +2,18 @@
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace StbSharp
 {
     public static partial class ImageRead
     {
-        public static unsafe class Png
+        public static class Png
         {
+            public const int HeaderSize = 8;
+
             public enum FilterType : byte
             {
                 None = 0,
@@ -40,8 +43,8 @@ namespace StbSharp
                 IEND = ('I' << 24) + ('E' << 16) + ('N' << 8) + 'D'
             }
 
-            public delegate HandleChunkResult HandleChunkDelegate(
-                ChunkHeader chunkHeader, DataStream stream);
+            public delegate ValueTask<HandleChunkResult> HandleChunkDelegate(
+                ChunkHeader chunkHeader, ChunkStream stream);
 
             #region Constants
 
@@ -49,10 +52,10 @@ namespace StbSharp
 
             private static ReadOnlySpan<byte> DepthScaleTable => new byte[] { 0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01 };
 
-            private static ReadOnlySpan<byte> Interlace_xorig => new byte[] { 0, 4, 0, 2, 0, 1, 0, };
-            private static ReadOnlySpan<byte> Interlace_yorig => new byte[] { 0, 0, 4, 0, 2, 0, 1 };
-            private static ReadOnlySpan<byte> Interlace_xspc => new byte[] { 8, 8, 4, 4, 2, 2, 1 };
-            private static ReadOnlySpan<byte> Interlace_yspc => new byte[] { 8, 8, 8, 4, 4, 2, 2 };
+            private static ReadOnlySpan<byte> Interlace_OriginX => new byte[] { 0, 4, 0, 2, 0, 1, 0, };
+            private static ReadOnlySpan<byte> Interlace_OriginY => new byte[] { 0, 0, 4, 0, 2, 0, 1 };
+            private static ReadOnlySpan<byte> Interlace_SpacingX => new byte[] { 8, 8, 4, 4, 2, 2, 1 };
+            private static ReadOnlySpan<byte> Interlace_SpacingY => new byte[] { 8, 8, 8, 4, 4, 2, 2 };
 
             private static FilterType[] FirstRowFilter =
             {
@@ -85,10 +88,10 @@ namespace StbSharp
                     Type = type;
                 }
 
-                public static ChunkHeader Read(ReadContext s)
+                public static async ValueTask<ChunkHeader> Read(BinReader s)
                 {
-                    uint length = s.ReadUInt32BE();
-                    uint type = s.ReadUInt32BE();
+                    uint length = await s.ReadUInt32BE();
+                    uint type = await s.ReadUInt32BE();
                     return new ChunkHeader(length, (ChunkType)type);
                 }
             }
@@ -133,18 +136,6 @@ namespace StbSharp
                 }
             }
 
-            public readonly struct Palette
-            {
-                public ReadOnlyMemory<Rgba32> Data { get; }
-                public int Components { get; }
-
-                public Palette(ReadOnlyMemory<Rgba32> data, int components)
-                {
-                    Data = data;
-                    Components = components;
-                }
-            }
-
             public readonly struct Transparency
             {
                 public Rgb24 Tc8 { get; }
@@ -157,96 +148,37 @@ namespace StbSharp
                 }
             }
 
-            [StructLayout(LayoutKind.Sequential)]
-            public struct Rgb24
-            {
-                public byte R;
-                public byte G;
-                public byte B;
-
-                public Rgb24(byte r, byte g, byte b)
-                {
-                    R = r;
-                    G = g;
-                    B = b;
-                }
-            }
-
-            [StructLayout(LayoutKind.Sequential)]
-            public struct Rgba32
-            {
-                public Rgb24 Rgb;
-                public byte A;
-
-                public Rgba32(Rgb24 rgb, byte a)
-                {
-                    Rgb = rgb;
-                    A = a;
-                }
-
-                public Rgba32(byte r, byte g, byte b, byte a) : this(new Rgb24(r, g, b), a)
-                {
-                }
-            }
-
-            [StructLayout(LayoutKind.Sequential)]
-            public struct Rgb48
-            {
-                public ushort R;
-                public ushort G;
-                public ushort B;
-
-                public Rgb48(ushort r, ushort g, ushort b)
-                {
-                    R = r;
-                    G = g;
-                    B = b;
-                }
-            }
-
             #endregion
 
-            public static bool CheckSignature(ReadContext s)
+            public static bool Test(ReadOnlySpan<byte> header)
             {
-                for (int i = 0; i < 8; i++)
-                    if (s.ReadByte() != Signature[i])
-                        return false;
-                return true;
+                return Signature.SequenceEqual(header);
             }
 
-            public static bool Test(ReadContext s)
-            {
-                return CheckSignature(s);
-            }
-
-            public static bool Info(ReadContext s, out ReadState ri)
+            public static Task Info(BinReader s, out ReadState ri)
             {
                 ri = new ReadState();
-                if (!Load(s, ri, ScanMode.Header))
-                    return false;
-                return true;
+                return Load(s, ri, ScanMode.Header);
             }
 
-            public static bool Load(ReadContext s, ReadState ri, ScanMode scan)
+            public static async Task Load(BinReader s, ReadState ri, ScanMode scan)
             {
-                if (!CheckSignature(s))
-                {
-                    if (scan != ScanMode.Type)
-                        throw new StbImageReadException(ErrorCode.UnknownFormat);
-                    return false;
-                }
+                var tmp = new byte[HeaderSize];
+                if (!await s.TryReadBytes(tmp))
+                    throw new StbImageReadException(ErrorCode.UnknownHeader);
 
-                if (scan == ScanMode.Type)
-                    return true;
+                if (!Test(tmp))
+                    throw new StbImageReadException(ErrorCode.UnknownFormat);
+
+                Header header = default;
 
                 Rgba32[] paletteData = null;
                 int paletteLength = 0;
 
+                bool has_transparency = false;
                 Rgb24 tc8 = default;
                 Rgb48 tc16 = default;
-                Header header = default;
 
-                bool has_transparency = false;
 
                 void InitializeReadState()
                 {
@@ -273,11 +205,10 @@ namespace StbSharp
 
                 var seenChunkTypes = new HashSet<ChunkType>();
 
-                // TODO: add custom deflate algo support
-                Stream deflateStream = null;
+                Stream decompressedStream = null;
 
-                // TODO: add state object and make this method static
-                HandleChunkResult HandleChunk(ChunkHeader chunk, DataStream stream)
+                // TODO: add state object and make this method static?
+                async ValueTask<HandleChunkResult> HandleChunk(ChunkHeader chunk, ChunkStream stream)
                 {
                     if (seenChunkTypes.Count == 0)
                     {
@@ -309,18 +240,18 @@ namespace StbSharp
                                 if (chunk.Length != 13)
                                     throw new StbImageReadException(ErrorCode.BadIHDRLength);
 
-                                int width = s.ReadInt32BE();
+                                int width = await s.ReadInt32BE();
                                 if (width > (1 << 24))
                                     throw new StbImageReadException(ErrorCode.TooLarge);
 
-                                int height = s.ReadInt32BE();
+                                int height = await s.ReadInt32BE();
                                 if (height > (1 << 24))
                                     throw new StbImageReadException(ErrorCode.TooLarge);
 
                                 if ((width == 0) || (height == 0))
                                     throw new StbImageReadException(ErrorCode.EmptyImage);
 
-                                byte depth = s.ReadByte();
+                                byte depth = await s.ReadByte();
                                 if (depth != 1 &&
                                     depth != 2 &&
                                     depth != 4 &&
@@ -328,22 +259,22 @@ namespace StbSharp
                                     depth != 16)
                                     throw new StbImageReadException(ErrorCode.UnsupportedBitDepth);
 
-                                byte color = s.ReadByte();
+                                byte color = await s.ReadByte();
                                 if (color > 6 || (color == 3) && (header.Depth == 16))
                                     throw new StbImageReadException(ErrorCode.BadColorType);
 
                                 if (color != 3 && (color & 1) != 0)
                                     throw new StbImageReadException(ErrorCode.BadColorType);
 
-                                byte compression = s.ReadByte();
+                                byte compression = await s.ReadByte();
                                 if (compression != 0)
                                     throw new StbImageReadException(ErrorCode.BadCompressionMethod);
 
-                                byte filter = s.ReadByte();
+                                byte filter = await s.ReadByte();
                                 if (filter != 0)
                                     throw new StbImageReadException(ErrorCode.BadFilterMethod);
 
-                                byte interlace = s.ReadByte();
+                                byte interlace = await s.ReadByte();
                                 if (interlace > 1)
                                     throw new StbImageReadException(ErrorCode.BadInterlaceMethod);
 
@@ -384,9 +315,9 @@ namespace StbSharp
                                 paletteData = new Rgba32[paletteLength];
                                 for (int i = 0; i < paletteData.Length; i++)
                                 {
-                                    byte r = s.ReadByte();
-                                    byte g = s.ReadByte();
-                                    byte b = s.ReadByte();
+                                    byte r = await s.ReadByte();
+                                    byte g = await s.ReadByte();
+                                    byte b = await s.ReadByte();
                                     paletteData[i] = new Rgba32(r, g, b, 255);
                                 }
 
@@ -413,7 +344,7 @@ namespace StbSharp
 
                                     header.PaletteComp = 4;
                                     for (int i = 0; i < chunk.Length; i++)
-                                        paletteData[i].A = s.ReadByte();
+                                        paletteData[i].A = await s.ReadByte();
                                 }
                                 else
                                 {
@@ -427,14 +358,14 @@ namespace StbSharp
                                     {
                                         if (header.RawComp == 1)
                                         {
-                                            tc16 = new Rgb48(s.ReadUInt16BE(), 0, 0);
+                                            tc16 = new Rgb48(await s.ReadUInt16BE(), 0, 0);
                                         }
                                         else if (header.RawComp == 3)
                                         {
                                             tc16 = new Rgb48(
-                                                s.ReadUInt16BE(),
-                                                s.ReadUInt16BE(),
-                                                s.ReadUInt16BE());
+                                                await s.ReadUInt16BE(),
+                                                await s.ReadUInt16BE(),
+                                                await s.ReadUInt16BE());
                                         }
                                         else
                                         {
@@ -443,21 +374,22 @@ namespace StbSharp
                                     }
                                     else
                                     {
-                                        byte ReadUInt16AsByte()
+                                        async ValueTask<byte> ReadUInt16AsByte()
                                         {
-                                            return (byte)((s.ReadUInt16BE() & 255) * DepthScaleTable[header.Depth]);
+                                            var int16 = await s.ReadUInt16BE();
+                                            return (byte)((int16 & 255) * DepthScaleTable[header.Depth]);
                                         }
 
                                         if (header.RawComp == 1)
                                         {
-                                            tc8 = new Rgb24(ReadUInt16AsByte(), 0, 0);
+                                            tc8 = new Rgb24(await ReadUInt16AsByte(), 0, 0);
                                         }
                                         else if (header.RawComp == 3)
                                         {
                                             tc8 = new Rgb24(
-                                                ReadUInt16AsByte(),
-                                                ReadUInt16AsByte(),
-                                                ReadUInt16AsByte());
+                                                await ReadUInt16AsByte(),
+                                                await ReadUInt16AsByte(),
+                                                await ReadUInt16AsByte());
                                         }
                                         else
                                         {
@@ -486,7 +418,7 @@ namespace StbSharp
                                         return HandleChunkResult.Header;
 
                                     // TODO: add support for custom decompressor streams
-                                    deflateStream = new DeflateStream(stream, CompressionMode.Decompress);
+                                    decompressedStream = ZlibHelper.CreateDecompressor(stream);
                                 }
                                 return HandleChunkResult.Include;
                             }
@@ -529,25 +461,29 @@ namespace StbSharp
                 //uint bpl = (uint)((ri.Width * ri.Depth + 7) / 8);
                 //int raw_len = (int)(bpl * ri.Height * ri.Components + ri.Height);
 
-                using (var dataStream = new DataStream(s, HandleChunk))
+                using (var chunkStream = new ChunkStream(s, HandleChunk))
                 {
-                    dataStream.Read(Span<byte>.Empty);
-                    if (dataStream.LastResult == HandleChunkResult.Header)
+                    await chunkStream.ReadAsync(Memory<byte>.Empty, s.CancellationToken);
+
+                    if (chunkStream.LastResult == HandleChunkResult.Header)
                     {
-                        if (scan == ScanMode.Header)
-                            return true;
+                        if (scan != ScanMode.Header)
+                            throw new InvalidOperationException();
+                        return;
                     }
-                    else if (dataStream.LastResult != HandleChunkResult.Include)
+                    else if (chunkStream.LastResult != HandleChunkResult.Include)
                     {
-                        return false;
+                        return;
                     }
 
                     // CgBI (IPhone) streams dont have deflate header
                     // and we just skip it for normal streams.
                     if (!header.HasCgbi)
                     {
+                        var byteTmp = new byte[1];
                         for (int i = 0; i < 2; i++)
-                            if (dataStream.ReadByte() == -1)
+                            if (await chunkStream.ReadAsync(
+                                byteTmp, s.CancellationToken) == -1)
                                 throw new StbImageReadException(new EndOfStreamException());
                     }
 
@@ -559,31 +495,55 @@ namespace StbSharp
                         ? new Transparency(tc8, tc16)
                         : (Transparency?)null;
 
-                    if (!CreateImage(s, ri, deflateStream, header, transparency, palette))
-                        return false;
-
-                    return true;
+                    await CreateImage(s, ri, decompressedStream, header, transparency, palette);
                 }
             }
 
-            public static bool CreateImage(
-                ReadContext s, ReadState ri, Stream imageData,
-                in Header header, in Transparency? transparency, in Palette? palette)
+            public static void ProcessDefilteredRow(
+                ReadState ri, Span<byte> data, int width, int row, int outComp, int originX, int spacingX,
+                in Header header,
+                in Transparency? transparency,
+                in Palette? palette)
             {
-                int width = header.Width;
-                int height = header.Height;
-                int depth = header.Depth;
-                int rawComp = header.RawComp;
-                int bytes_per_comp = depth == 16 ? 2 : 1;
-                int outComp = header.RawComp + (transparency.HasValue ? 1 : 0);
+                DecodeDefilteredRow(data, width, outComp, header);
 
-                int row_bytes = width * outComp * bytes_per_comp;
-                int img_width_bytes = (width * rawComp * depth + 7) / 8;
-                int raw_width_bytes = img_width_bytes + 1;
+                PostDefilteredRow(
+                    ri, data, width, row, outComp, originX, spacingX,
+                    header, transparency, palette);
+            }
 
-                var previousRowBuffer = new byte[row_bytes];
-                var rowBuffer = new byte[row_bytes];
-                var data = new byte[raw_width_bytes];
+            public static async Task CreateImageRaw(
+                ReadState ri,
+                Stream decompressedStream,
+                Memory<byte> dataBuffer,
+                Memory<byte> previousRowBuffer,
+                Memory<byte> rowBuffer,
+                int width, int height, int outComp,
+                int originX, int originY,
+                int spacingX, int spacingY,
+                Header header,
+                Transparency? transparency,
+                Palette? palette,
+                CancellationToken cancellationToken)
+            {
+                async ValueTask ReadFilteredData(int count)
+                {
+                    var buffer = dataBuffer.Slice(0, count);
+                    do
+                    {
+                        int read = await decompressedStream.ReadAsync(
+                            buffer, cancellationToken);
+
+                        if (read == 0)
+                            break;
+
+                        buffer = buffer.Slice(read);
+                    }
+                    while (buffer.Length > 0);
+
+                    if (buffer.Length != 0)
+                        throw new StbImageReadException(ErrorCode.NotEnoughPixels);
+                }
 
                 void SwapBuffers()
                 {
@@ -592,81 +552,130 @@ namespace StbSharp
                     rowBuffer = tmp;
                 }
 
+                for (int y = 0; y < height; y++)
+                {
+                    await ReadFilteredData(dataBuffer.Length);
+
+                    DefilterRow(
+                        previousRowBuffer.Span, dataBuffer.Span,
+                        width, y, outComp, header, rowBuffer.Span);
+
+                    if (y > 0)
+                    {
+                        int row = originY + (y - 1) * spacingY;
+                        ProcessDefilteredRow(
+                            ri, previousRowBuffer.Span, width, row, outComp,
+                            originX, spacingX,
+                            header, transparency, palette);
+                    }
+                    SwapBuffers();
+                }
+
+                int lastRow = originY + (height - 1) * spacingY;
+                ProcessDefilteredRow(
+                    ri, previousRowBuffer.Span, width, lastRow, outComp,
+                    originX, spacingX,
+                    header, transparency, palette);
+            }
+
+            public static async Task CreateImage(
+                BinReader s, ReadState ri, Stream decompressedStream,
+                Header header, Transparency? transparency, Palette? palette)
+            {
+                int depth = header.Depth;
+                int rawComp = header.RawComp;
+                int bytes_per_comp = depth == 16 ? 2 : 1;
+                int outComp = header.RawComp + (transparency.HasValue ? 1 : 0);
+
+                int width = header.Width;
+                int height = header.Height;
+                int row_bytes = width * outComp * bytes_per_comp;
+                int img_width_bytes = (width * rawComp * depth + 7) / 8;
+                int raw_width_bytes = img_width_bytes + 1;
+
+                var dataBuffer = new byte[raw_width_bytes].AsMemory();
+                var previousRowBuffer = new byte[row_bytes].AsMemory();
+                var rowBuffer = new byte[row_bytes].AsMemory();
+
                 if (header.Interlace == 0)
                 {
-                    for (int y = 0; y < height; y++)
-                    {
-                        int read = imageData.Read(data, 0, data.Length);
-                        if (read != data.Length)
-                            throw new StbImageReadException(ErrorCode.NotEnoughPixels);
-
-                        DefilterRow(previousRowBuffer, data, y, outComp, header, rowBuffer);
-
-                        if (y > 0)
-                        {
-                            DecodeDefilteredRow(previousRowBuffer, outComp, header);
-                            ProcessDefilteredRow(s, ri, previousRowBuffer, y - 1, outComp, 1, header, transparency, palette);
-                        }
-                        SwapBuffers();
-                    }
-
-                    DecodeDefilteredRow(previousRowBuffer, outComp, header);
-                    ProcessDefilteredRow(s, ri, previousRowBuffer, height - 1, outComp, 1, header, transparency, palette);
-
-                    return true;
+                    await CreateImageRaw(
+                        ri, decompressedStream, dataBuffer, previousRowBuffer, rowBuffer,
+                        width, height, outComp,
+                        originX: 0, originY: 0, spacingX: 1, spacingY: 1,
+                        header, transparency, palette, s.CancellationToken);
                 }
-
-                //var ww = new System.Diagnostics.Stopwatch();
-                for (int p = 0; p < 7; p++)
+                else if (header.Interlace == 1)
                 {
-                    //ww.Restart();
-                    int orig_x = Interlace_xorig[p];
-                    int orig_y = Interlace_yorig[p];
-                    int spc_x = Interlace_xspc[p];
-                    int spc_y = Interlace_yspc[p];
-
-                    int w = (width - orig_x + spc_x - 1) / spc_x;
-                    int h = (height - orig_y + spc_y - 1) / spc_y;
-                    if (w != 0 && h != 0)
+                    //var ww = new System.Diagnostics.Stopwatch();
+                    for (int p = 0; p < 7; p++)
                     {
-                        //Console.Write("Interlace step: " + p);
+                        //ww.Restart();
+                        int originX = Interlace_OriginX[p];
+                        int originY = Interlace_OriginY[p];
+                        int spacingX = Interlace_SpacingX[p];
+                        int spacingY = Interlace_SpacingY[p];
 
-                        //if (!ProcessRow(s, ri, buffer, w, h, color))
-                        //    return false;
+                        int interlace_width = (width - originX + spacingX - 1) / spacingX;
+                        int interlace_height = (height - originY + spacingY - 1) / spacingY;
 
-                        // TODO: read row by row instead of buffering the whole file
+                        if (interlace_width != 0 && interlace_height != 0)
+                        {
+                            int interlace_row_bytes = interlace_width * outComp * bytes_per_comp;
+                            int interlace_img_width_bytes = (interlace_width * rawComp * depth + 7) / 8;
+                            int interlace_raw_width_bytes = interlace_img_width_bytes + 1;
 
-                        //for (int y = 0; y < h; y++)
-                        //{
-                        //    int stride = w * bytes_per_pixel;
-                        //    var pixels = primaryRowSpan.Slice(0, stride);
-                        //
-                        //    var src = row.Slice(y * stride);
-                        //    new Span<byte>(src, stride).CopyTo(pixels);
-                        //
-                        //    int out_y = y * spc_y + orig_y;
-                        //    ri.OutputInterleaved(AddressingMajor.Row, out_y, orig_x, spc_x, pixels);
-                        //}
-                        //
-                        //int img_len = ((((ri.Components * w * ri.Depth) + 7) / 8) + 1) * h;
-                        //data = data.Slice(img_len);
+                            var dataSlice = dataBuffer.Slice(0, interlace_raw_width_bytes);
+                            await CreateImageRaw(
+                                ri, decompressedStream, dataSlice,
+                                previousRowBuffer.Slice(0, interlace_row_bytes),
+                                rowBuffer.Slice(0, interlace_row_bytes),
+                                interlace_width, interlace_height, outComp,
+                                originX, originY, spacingX, spacingY,
+                                header, transparency, palette, s.CancellationToken);
+
+                            //Console.Write("Interlace step: " + p);
+
+                            //if (!ProcessRow(s, ri, buffer, w, h, color))
+                            //    return false;
+
+                            // TODO: read row by row instead of buffering the whole file
+
+                            //for (int y = 0; y < h; y++)
+                            //{
+                            //    int stride = w * bytes_per_pixel;
+                            //    var pixels = primaryRowSpan.Slice(0, stride);
+                            //
+                            //    var src = row.Slice(y * stride);
+                            //    new Span<byte>(src, stride).CopyTo(pixels);
+                            //
+                            //    int out_y = y * spc_y + orig_y;
+                            //    ri.OutputInterleaved(AddressingMajor.Row, out_y, orig_x, spc_x, pixels);
+                            //}
+                            //
+                            //int img_len = ((((ri.Components * w * ri.Depth) + 7) / 8) + 1) * h;
+                            //data = data.Slice(img_len);
+                        }
+
+                        //ww.Stop();
+                        //Console.WriteLine(", took " + ww.ElapsedMilliseconds + "ms");
                     }
-
-                    //ww.Stop();
-                    //Console.WriteLine(", took " + ww.ElapsedMilliseconds + "ms");
                 }
-                return true;
+                else
+                {
+                    throw new StbImageReadException(ErrorCode.BadInterlaceMethod);
+                }
             }
 
             public static void DefilterRow(
                 ReadOnlySpan<byte> previousRow,
                 ReadOnlySpan<byte> filteredData,
+                int width,
                 int y,
                 int outComp,
                 in Header header,
                 Span<byte> rowDestination)
             {
-                int width = header.Width;
                 int depth = header.Depth;
                 int rawComp = header.RawComp;
                 int w = width;
@@ -944,9 +953,8 @@ namespace StbSharp
                 }
             }
 
-            public static void DecodeDefilteredRow(Span<byte> row, int outComp, in Header header)
+            public static void DecodeDefilteredRow(Span<byte> row, int width, int outComp, in Header header)
             {
-                int width = header.Width;
                 int depth = header.Depth;
                 int rawComp = header.RawComp;
 
@@ -1051,13 +1059,9 @@ namespace StbSharp
                 }
             }
 
-            public static void ProcessDefilteredRow(
-                ReadContext s,
-                ReadState ri,
-                Span<byte> row,
-                int y,
-                int outComp,
-                int outIncrement,
+            public static void PostDefilteredRow(
+                ReadState ri, Span<byte> data,
+                int width, int row, int outComp, int originX, int spacingX,
                 in Header header,
                 in Transparency? transparency,
                 in Palette? palette)
@@ -1065,14 +1069,14 @@ namespace StbSharp
                 if (transparency.HasValue)
                 {
                     if (header.Depth == 16)
-                        ComputeTransparency16(row, transparency.Value.Tc16, outComp);
+                        ComputeTransparency16(data, transparency.Value.Tc16, outComp);
                     else
-                        ComputeTransparency8(row, transparency.Value.Tc8, outComp);
+                        ComputeTransparency8(data, transparency.Value.Tc8, outComp);
                 }
 
-                if (header.HasCgbi && s.DeIphoneFlag && outComp > 2)
+                if (header.HasCgbi && ri.DeIphoneFlag && outComp > 2)
                 {
-                    DeIphone(row, outComp, s.UnpremultiplyOnLoad);
+                    DeIphone(data, outComp, ri.UnpremultiplyOnLoad);
                 }
 
                 if (palette.HasValue)
@@ -1081,16 +1085,18 @@ namespace StbSharp
                     int comp = palette.Value.Components;
 
                     Span<byte> buffer = stackalloc byte[1024];
-                    int left = header.Width;
                     int offset = 0;
+                    int left = width;
                     while (left > 0)
                     {
                         int count = Math.Min(left, buffer.Length / comp);
-                        var rowSlice = row.Slice(offset, count);
+                        var rowSlice = data.Slice(offset, count);
                         var bufferSlice = buffer.Slice(0, count * comp);
 
                         ExpandPalette(rowSlice, bufferSlice, comp, paletteData);
-                        ri.OutputPixelLine(AddressingMajor.Row, y, offset, bufferSlice);
+
+                        int start = originX + offset;
+                        ri.OutputPixelLine(AddressingMajor.Row, row, start, spacingX, bufferSlice);
 
                         left -= count;
                         offset += count;
@@ -1098,7 +1104,7 @@ namespace StbSharp
                 }
                 else
                 {
-                    ri.OutputPixelLine(AddressingMajor.Row, y, 0, row);
+                    ri.OutputPixelLine(AddressingMajor.Row, row, originX, spacingX, data);
                 }
             }
 
@@ -1229,12 +1235,12 @@ namespace StbSharp
                 }
             }
 
-            public class DataStream : Stream
+            public class ChunkStream : Stream
             {
                 private HandleChunkDelegate _handleChunk;
                 private int _chunkLeftToRead;
 
-                public ReadContext Context { get; }
+                public BinReader Reader { get; }
                 public ChunkHeader LastChunkHeader { get; private set; }
                 public HandleChunkResult LastResult { get; private set; }
 
@@ -1249,26 +1255,27 @@ namespace StbSharp
                     set => Seek(value, SeekOrigin.Begin);
                 }
 
-                public DataStream(ReadContext context, HandleChunkDelegate handleChunk)
+                public ChunkStream(BinReader reader, HandleChunkDelegate handleChunk)
                 {
-                    Context = context ?? throw new ArgumentNullException(nameof(context));
+                    Reader = reader ?? throw new ArgumentNullException(nameof(reader));
                     _handleChunk = handleChunk ?? throw new ArgumentNullException(nameof(handleChunk));
 
                     _chunkLeftToRead = -1;
                 }
 
-                private void FinishChunk()
+                private async ValueTask FinishChunk()
                 {
                     // TODO: validate crc (and based on some config?)
 
-                    // LastChunkHeader.IsCritical and take this into consideration
+                    // take LastChunkHeader.IsCritical into consideration
 
                     // maybe some enum?: CrcValidation { Ignore, Critical, Full } ???
 
-                    int crc = Context.ReadInt32BE();
+                    int crc = await Reader.ReadInt32BE();
                 }
 
-                public override int Read(Span<byte> buffer)
+                public override async ValueTask<int> ReadAsync(
+                    Memory<byte> buffer, CancellationToken cancellationToken = default)
                 {
                     if (LastResult == HandleChunkResult.Header)
                         return 0;
@@ -1277,36 +1284,36 @@ namespace StbSharp
                     if (_chunkLeftToRead >= 0)
                     {
                         int toRead = Math.Min(buffer.Length, _chunkLeftToRead);
-                        Context.ReadBytes(buffer.Slice(0, toRead));
+                        await Reader.ReadBytes(buffer.Slice(0, toRead));
 
                         _chunkLeftToRead -= toRead;
                         if (_chunkLeftToRead == 0)
                         {
-                            FinishChunk();
+                            await FinishChunk();
                             _chunkLeftToRead = -1;
                         }
                         return toRead;
                     }
 
                     Next:
-                    LastChunkHeader = ChunkHeader.Read(Context);
-                    long chunkDataEnd = Context.StreamPosition + LastChunkHeader.Length;
+                    LastChunkHeader = await ChunkHeader.Read(Reader);
+                    long chunkDataEnd = Reader.Position + LastChunkHeader.Length;
 
-                    LastResult = _handleChunk.Invoke(LastChunkHeader, this);
+                    LastResult = await _handleChunk.Invoke(LastChunkHeader, this);
                     switch (LastResult)
                     {
                         case HandleChunkResult.Header:
-                            FinishChunk();
+                            await FinishChunk();
                             return 0;
 
                         case HandleChunkResult.Finish:
-                            long chunkDataLeft = chunkDataEnd - Context.StreamPosition;
+                            long chunkDataLeft = chunkDataEnd - Reader.Position;
                             if (chunkDataLeft < 0)
                                 throw new InvalidOperationException(
                                     "Handler read more data than the chunk contained.");
 
-                            Context.Skip((int)chunkDataLeft);
-                            FinishChunk();
+                            await Reader.Skip((int)chunkDataLeft);
+                            await FinishChunk();
                             goto Next;
 
                         case HandleChunkResult.Include:
@@ -1320,7 +1327,7 @@ namespace StbSharp
 
                 public override int Read(byte[] buffer, int offset, int count)
                 {
-                    return Read(buffer.AsSpan(offset, count));
+                    throw new NotSupportedException();
                 }
 
                 public override long Seek(long offset, SeekOrigin origin)

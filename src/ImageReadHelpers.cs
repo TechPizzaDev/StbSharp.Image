@@ -1,7 +1,3 @@
-using System;
-using System.Runtime.InteropServices;
-using static StbSharp.ImageRead;
-
 namespace StbSharp
 {
     public static unsafe class ImageReadHelpers
@@ -403,7 +399,7 @@ namespace StbSharp
             }
         }
 
-        public static ErrorCode ConvertFormat(IMemoryHolder data, ref ReadState ri, out IMemoryHolder result)
+        public static ErrorCode ConvertFormat(IMemoryHolder data, ReadState ri, out IMemoryHolder result)
         {
             result = data;
             var errorCode = ErrorCode.Ok;
@@ -435,20 +431,20 @@ namespace StbSharp
             return errorCode;
         }
 
-        public static IMemoryHolder LoadMain(ReadContext s, ref ReadState ri)
+        public static IMemoryHolder LoadMain(ReadContext s, ReadState ri)
         {
             if (Jpeg.Test(s))
-                return Jpeg.LoadImage(s, ref ri);
+                return Jpeg.LoadImage(s, ri);
             if (Png.Test(s))
-                return Png.Load(s, ref ri);
+                return Png.Load(s, ri);
             if (Bmp.Test(s))
-                return Bmp.Load(s, ref ri);
+                return Bmp.Load(s, ri);
             if (Gif.Test(s))
-                return Gif.Load(s, ref ri);
+                return Gif.Load(s, ri);
             if (Psd.Test(s))
-                return Psd.Load(s, ref ri);
+                return Psd.Load(s, ri);
             if (Tga.Test(s))
-                return Tga.Load(s, ref ri);
+                return Tga.Load(s, ri);
 
             s.Error(ErrorCode.UnknownImageType);
             return null;

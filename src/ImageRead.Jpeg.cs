@@ -1,13 +1,18 @@
 ﻿using System;
+using System.Buffers;
+using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace StbSharp
 {
     public static partial class ImageRead
     {
-        public static unsafe class Jpeg
+        public static class Jpeg
         {
             #region Constants
+
+            public const int HeaderSize = 2;
 
             private static uint[] BMask =
             {
@@ -19,7 +24,7 @@ namespace StbSharp
                 0, -1, -3, -7, -15, -31, -63, -127, -255, -511, -1023, -2047, -4095, -8191, -16383, -32767
             };
 
-            private static byte[] DeZigZag =
+            private static ReadOnlySpan<byte> DeZigZag => new byte[]
             {
                 0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40,
                 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29,
@@ -34,16 +39,14 @@ namespace StbSharp
                 public int t0, t1, t2, t3, p1, p2, p3, p4, p5, x0, x1, x2, x3;
             }
 
-            public delegate void IdctBlockKernel(byte* output, int out_stride, short* data);
+            public delegate void IdctBlockKernel(
+                Span<byte> output, int out_stride, Span<short> data);
 
             public delegate void YCbCrToRgbKernel(
-                byte* output, byte* y, byte* pcb, byte* pcr, int count, int step);
+                Span<byte> output, Span<byte> y, Span<byte> pcb, Span<byte> pcr);
 
-            public delegate byte* ResamplerMethod(byte* a, byte* b, byte* c, int d, int e);
-
-            private static readonly IdctBlockKernel _cached__idct_block = IdctBlock;
-            private static readonly YCbCrToRgbKernel _cached__YCbCr_to_RGB_row = YCbCrToRGB;
-            private static readonly ResamplerMethod _cached__resample_row_hv_2 = ResampleRowHV2;
+            public delegate Memory<byte> ResamplerMethod(
+                Memory<byte> a, Memory<byte> b, Memory<byte> c, int d, int e);
 
             [StructLayout(LayoutKind.Sequential)]
             public struct ImageComponent
@@ -55,36 +58,84 @@ namespace StbSharp
                 public int dc_pred;
 
                 public int x, y, w2, h2;
-                public byte* data;
-                public void* raw_data;
-                public void* raw_coeff;
-                public byte* linebuf;
+                public byte[] raw_data;
+                public Memory<byte> data;
 
-                public short* coeff; // progressive only
+                public byte[] raw_linebuf;
+                public Memory<byte> linebuf;
+
+                public short[] raw_coeff;
+                public Memory<short> coeff; // progressive only
                 public int coeff_w, coeff_h; // number of 8x8 coefficient blocks
             }
 
-            [StructLayout(LayoutKind.Sequential)]
-            public struct Huffman
+            public class Huffman
             {
-                public const int FastLength = 1 << 9;
+                public const int FastLength = 512;
+                public const int CodeLength = 256;
+                public const int ValuesLength = 256;
+                public const int SizeLength = 257;
+                public const int MaxcodeLength = 18;
+                public const int DeltaLength = 17;
 
-                public fixed byte fast[FastLength];
-                public fixed ushort code[256];
-                public fixed byte values[256];
-                public fixed byte size[257];
-                public fixed uint maxcode[18];
-                public fixed int delta[17];
+                // TODO: arraypool
+                private byte[] _buffer;
+
+                public Memory<byte> MFast { get; }
+                public Memory<byte> MCode { get; }
+                public Memory<byte> MValues { get; }
+                public Memory<byte> MSize { get; }
+                public Memory<byte> MMaxcode { get; }
+                public Memory<byte> MDelta { get; }
+
+                public Span<byte> Fast => MFast.Span;
+                public Span<ushort> Code => MemoryMarshal.Cast<byte, ushort>(MCode.Span);
+                public Span<byte> Values => MValues.Span;
+                public Span<byte> Size => MSize.Span;
+                public Span<uint> Maxcode => MemoryMarshal.Cast<byte, uint>(MMaxcode.Span);
+                public Span<int> Delta => MemoryMarshal.Cast<byte, int>(MDelta.Span);
+
+                public Huffman()
+                {
+                    _buffer = new byte[
+                        FastLength * sizeof(byte) +
+                        CodeLength * sizeof(ushort) +
+                        ValuesLength * sizeof(byte) +
+                        SizeLength * sizeof(byte) +
+                        MaxcodeLength * sizeof(uint) +
+                        DeltaLength * sizeof(int)];
+
+                    var m = _buffer.AsMemory();
+                    int o = 0;
+
+                    MFast = m.Slice(o, FastLength * sizeof(byte));
+                    o += MFast.Length;
+
+                    MCode = m.Slice(o, CodeLength * sizeof(ushort));
+                    o += MCode.Length;
+
+                    MValues = m.Slice(o, ValuesLength * sizeof(byte));
+                    o += MValues.Length;
+
+                    MSize = m.Slice(o, SizeLength * sizeof(byte));
+                    o += MSize.Length;
+
+                    MMaxcode = m.Slice(o, MaxcodeLength * sizeof(uint));
+                    o += MMaxcode.Length;
+
+                    MDelta = m.Slice(o, DeltaLength * sizeof(int));
+                }
             }
 
-            public class Context
+            public class JpegState
             {
-                public ReadContext s;
+                public BinReader s;
                 public readonly Huffman[] huff_dc = new Huffman[4];
                 public readonly Huffman[] huff_ac = new Huffman[4];
                 public readonly ushort[][] dequant;
 
                 public readonly short[][] fast_ac;
+                public bool[] bitbuffer = new bool[64];
 
                 // sizes for components, interleaved MCUs
                 public int img_h_max, img_v_max;
@@ -97,7 +148,7 @@ namespace StbSharp
                 public uint code_buffer; // jpeg entropy-coded buffer
                 public int code_bits; // number of valid bits
                 public byte marker; // marker seen while filling entropy buffer
-                public int nomore; // flag if we saw a marker so must stop
+                public bool nomore; // flag if we saw a marker so must stop
 
                 public bool progressive;
                 public int spec_start;
@@ -121,14 +172,14 @@ namespace StbSharp
                 public bool is_rgb;
                 public ReadState ri;
 
-                public Context(ReadContext context, ReadState readState)
+                public JpegState(BinReader reader, ReadState readState)
                 {
-                    s = context;
+                    s = reader;
                     ri = readState;
 
-                    idct_block_kernel = _cached__idct_block;
-                    YCbCr_to_RGB_kernel = _cached__YCbCr_to_RGB_row;
-                    resample_row_hv_2_kernel = _cached__resample_row_hv_2;
+                    idct_block_kernel = IdctBlock;
+                    YCbCr_to_RGB_kernel = YCbCrToRGB;
+                    resample_row_hv_2_kernel = ResampleRowHV2;
 
                     for (var i = 0; i < 4; ++i)
                     {
@@ -149,12 +200,11 @@ namespace StbSharp
                 }
             };
 
-            [StructLayout(LayoutKind.Sequential)]
-            public struct ResampleData
+            public class ResampleData
             {
                 public ResamplerMethod Resample;
-                public byte* line0;
-                public byte* line1;
+                public Memory<byte> line0;
+                public Memory<byte> line1;
                 public int hs;
                 public int vs;
                 public int w_lores;
@@ -162,7 +212,7 @@ namespace StbSharp
                 public int ypos;
             }
 
-            public static ErrorCode BuildHuffman(ref Huffman h, int* count)
+            public static void BuildHuffman(Huffman h, Span<int> count)
             {
                 int i;
                 int j;
@@ -170,61 +220,59 @@ namespace StbSharp
                 for (i = 0; i < 16; ++i)
                 {
                     for (j = 0; j < count[i]; ++j)
-                        h.size[k++] = (byte)(i + 1);
+                        h.Size[k++] = (byte)(i + 1);
                 }
 
                 int code = 0;
-                h.size[k] = 0;
+                h.Size[k] = 0;
                 k = 0;
                 for (j = 1; j <= 16; ++j)
                 {
-                    h.delta[j] = k - code;
-                    if (h.size[k] == j)
+                    h.Delta[j] = k - code;
+                    if (h.Size[k] == j)
                     {
-                        while (h.size[k] == j)
-                            h.code[k++] = (ushort)code++;
+                        while (h.Size[k] == j)
+                            h.Code[k++] = (ushort)code++;
 
                         if ((code - 1) >= (1 << j))
-                            return ErrorCode.BadCodeLengths;
+                            throw new StbImageReadException(ErrorCode.BadCodeLengths);
                     }
 
-                    h.maxcode[j] = (uint)(code << (16 - j));
+                    h.Maxcode[j] = (uint)(code << (16 - j));
                     code <<= 1;
                 }
 
-                h.maxcode[j] = 0xffffffff;
+                h.Maxcode[j] = 0xffffffff;
 
                 for (i = 0; i < Huffman.FastLength; ++i)
-                    h.fast[i] = 255;
+                    h.Fast[i] = 255;
 
                 for (i = 0; i < k; ++i)
                 {
-                    int s = h.size[i];
+                    int s = h.Size[i];
                     if (s <= 9)
                     {
-                        int c = h.code[i] << (9 - s);
+                        int c = h.Code[i] << (9 - s);
                         int m = 1 << (9 - s);
                         for (j = 0; j < m; ++j)
-                            h.fast[c + j] = (byte)i;
+                            h.Fast[c + j] = (byte)i;
                     }
                 }
-
-                return ErrorCode.Ok;
             }
 
-            public static void BuildFastAc(short[] fast_ac, ref Huffman h)
+            public static void BuildFastAc(short[] fast_ac, Huffman h)
             {
                 int i;
                 for (i = 0; i < (1 << 9); ++i)
                 {
-                    byte fast = h.fast[i];
+                    byte fast = h.Fast[i];
                     fast_ac[i] = 0;
                     if (fast < 255)
                     {
-                        int rs = h.values[fast];
+                        int rs = h.Values[fast];
                         int run = (rs >> 4) & 15;
                         int magbits = rs & 15;
-                        int len = h.size[fast];
+                        int len = h.Size[fast];
                         if ((magbits != 0) && (len + magbits <= 9))
                         {
                             int k = ((i << len) & ((1 << 9) - 1)) >> (9 - magbits);
@@ -238,21 +286,24 @@ namespace StbSharp
                 }
             }
 
-            public static void GrowBufferUnsafe(Context j)
+            public static async ValueTask GrowBufferUnsafe(JpegState j)
             {
+                if (j.nomore)
+                    return;
+
                 do
                 {
-                    int b = j.nomore != 0 ? 0 : j.s.ReadByte();
+                    int b = await j.s.ReadByte();
                     if (b == 0xff)
                     {
-                        int c = j.s.ReadByte();
+                        int c = await j.s.ReadByte();
                         while (c == 0xff)
-                            c = j.s.ReadByte();
+                            c = await j.s.ReadByte();
 
                         if (c != 0)
                         {
                             j.marker = (byte)c;
-                            j.nomore = 1;
+                            j.nomore = true;
                             return;
                         }
                     }
@@ -262,27 +313,27 @@ namespace StbSharp
                 } while (j.code_bits <= 24);
             }
 
-            public static int HuffmanDecode(Context j, ref Huffman h)
+            public static async ValueTask<int> HuffmanDecode(JpegState j, Huffman h)
             {
                 if (j.code_bits < 16)
-                    GrowBufferUnsafe(j);
+                    await GrowBufferUnsafe(j);
 
                 int c = (int)((j.code_buffer >> (32 - 9)) & ((1 << 9) - 1));
-                int k = h.fast[c];
+                int k = h.Fast[c];
                 if (k < 255)
                 {
-                    int s = h.size[k];
+                    int s = h.Size[k];
                     if (s > j.code_bits)
                         return -1;
                     j.code_buffer <<= s;
                     j.code_bits -= s;
-                    return h.values[k];
+                    return h.Values[k];
                 }
 
                 uint tmp = j.code_buffer >> 16;
                 for (k = 9 + 1; ; ++k)
                 {
-                    if (tmp < h.maxcode[k])
+                    if (tmp < h.Maxcode[k])
                         break;
                 }
 
@@ -294,91 +345,90 @@ namespace StbSharp
 
                 if (k > j.code_bits)
                     return -1;
-                c = (int)(((j.code_buffer >> (32 - k)) & BMask[k]) + h.delta[k]);
+                c = (int)(((j.code_buffer >> (32 - k)) & BMask[k]) + h.Delta[k]);
                 j.code_bits -= k;
                 j.code_buffer <<= k;
-                return h.values[c];
+                return h.Values[c];
             }
 
-            public static int ExtendReceive(Context j, int n)
+            public static async ValueTask<int> ExtendReceive(JpegState j, int n)
             {
-                uint k;
-                int sgn;
                 if (j.code_bits < n)
-                    GrowBufferUnsafe(j);
-                sgn = (int)j.code_buffer >> 31;
-                k = CRuntime.RotateBits(j.code_buffer, n);
-                j.code_buffer = k & ~BMask[n];
-                k &= BMask[n];
+                    await GrowBufferUnsafe(j);
+
+                int sgn = (int)j.code_buffer >> 31;
+                uint k = CRuntime.RotateBits(j.code_buffer, n);
+                uint mask = BMask[n];
+                j.code_buffer = k & ~mask;
+                k &= mask;
                 j.code_bits -= n;
                 return (int)(k + (JBias[n] & ~sgn));
             }
 
-            public static int ReadBits(Context j, int n)
+            public static async ValueTask<int> ReadBits(JpegState j, int n)
             {
-                uint k;
                 if (j.code_bits < n)
-                    GrowBufferUnsafe(j);
-                k = CRuntime.RotateBits(j.code_buffer, n);
-                j.code_buffer = k & ~BMask[n];
-                k &= BMask[n];
+                    await GrowBufferUnsafe(j);
+
+                uint k = CRuntime.RotateBits(j.code_buffer, n);
+                uint mask = BMask[n];
+                j.code_buffer = k & ~mask;
+                k &= mask;
                 j.code_bits -= n;
                 return (int)k;
             }
 
-            public static int ReadBit(Context j)
+            public static async ValueTask<bool> ReadBit(JpegState j)
             {
-                uint k;
                 if (j.code_bits < 1)
-                    GrowBufferUnsafe(j);
-                k = j.code_buffer;
+                    await GrowBufferUnsafe(j);
+
+                uint k = j.code_buffer;
                 j.code_buffer <<= 1;
-                --j.code_bits;
-                return (int)(k & 0x80000000);
+                j.code_bits--;
+                return (k & 0x80000000) != 0;
             }
 
-            public static ErrorCode DecodeBlock(
-                Context j, short* data, ref Huffman hdc, ref Huffman hac,
+            public static async ValueTask DecodeBlock(
+                JpegState j, Memory<short> data, Huffman hdc, Huffman hac,
                 short[] fac, int b, ushort[] dequant)
             {
                 if (j.code_bits < 16)
-                    GrowBufferUnsafe(j);
+                    await GrowBufferUnsafe(j);
 
-                int t = HuffmanDecode(j, ref hdc);
+                int t = await HuffmanDecode(j, hdc);
                 if (t < 0)
-                    return ErrorCode.BadHuffmanCode;
+                    throw new StbImageReadException(ErrorCode.BadHuffmanCode);
 
-                new Span<short>(data, 64).Clear();
-                int diff = t != 0 ? ExtendReceive(j, t) : 0;
+                data.Span.Clear();
+                int diff = t != 0 ? await ExtendReceive(j, t) : 0;
                 int dc = j.components[b].dc_pred + diff;
                 j.components[b].dc_pred = dc;
-                data[0] = (short)(dc * dequant[0]);
+                data.Span[0] = (short)(dc * dequant[0]);
 
                 int k = 1;
                 do
                 {
-                    uint zig;
-                    int c;
-                    int r;
-                    int s;
                     if (j.code_bits < 16)
-                        GrowBufferUnsafe(j);
-                    c = (int)((j.code_buffer >> (32 - 9)) & ((1 << 9) - 1));
-                    r = fac[c];
+                        await GrowBufferUnsafe(j);
+
+                    int c = (int)((j.code_buffer >> (32 - 9)) & ((1 << 9) - 1));
+                    int r = fac[c];
+                    int s;
                     if (r != 0)
                     {
                         k += (r >> 4) & 15;
                         s = r & 15;
                         j.code_buffer <<= s;
                         j.code_bits -= s;
-                        zig = DeZigZag[k++];
-                        data[zig] = (short)((r >> 8) * dequant[zig]);
+                        var zig = DeZigZag[k++];
+                        data.Span[zig] = (short)((r >> 8) * dequant[zig]);
                     }
                     else
                     {
-                        int rs = HuffmanDecode(j, ref hac);
+                        int rs = await HuffmanDecode(j, hac);
                         if (rs < 0)
-                            return ErrorCode.BadHuffmanCode;
+                            throw new StbImageReadException(ErrorCode.BadHuffmanCode);
 
                         s = rs & 15;
                         r = rs >> 4;
@@ -391,85 +441,81 @@ namespace StbSharp
                         else
                         {
                             k += r;
-                            zig = DeZigZag[k++];
-                            data[zig] = (short)(ExtendReceive(j, s) * dequant[zig]);
+                            var zig = DeZigZag[k++];
+                            var value = await ExtendReceive(j, s);
+                            data.Span[zig] = (short)(value * dequant[zig]);
                         }
                     }
                 } while (k < 64);
-
-                return ErrorCode.Ok;
             }
 
-            public static ErrorCode DecodeBlockProgressiveDc(
-                Context j, short* data, ref Huffman hdc, int b)
+            public static async ValueTask DecodeBlockProgressiveDc(
+                JpegState j, Memory<short> data, Huffman hdc, int b)
             {
                 if (j.spec_end != 0)
-                    return ErrorCode.CantMergeDcAndAc;
+                    throw new StbImageReadException(ErrorCode.CantMergeDcAndAc);
+
                 if (j.code_bits < 16)
-                    GrowBufferUnsafe(j);
+                    await GrowBufferUnsafe(j);
 
                 int t;
                 int diff;
                 int dc;
                 if (j.succ_high == 0)
                 {
-                    new Span<short>(data, 64).Clear();
-                    t = HuffmanDecode(j, ref hdc);
-                    diff = t != 0 ? ExtendReceive(j, t) : 0;
+                    data.Span.Clear();
+                    t = await HuffmanDecode(j, hdc);
+                    diff = t != 0 ? await ExtendReceive(j, t) : 0;
                     dc = j.components[b].dc_pred + diff;
                     j.components[b].dc_pred = dc;
-                    data[0] = (short)(dc << j.succ_low);
+                    data.Span[0] = (short)(dc << j.succ_low);
                 }
                 else
                 {
-                    if (ReadBit(j) != 0)
-                        data[0] += (short)(1 << j.succ_low);
+                    if (await ReadBit(j))
+                        data.Span[0] += (short)(1 << j.succ_low);
                 }
-
-                return ErrorCode.Ok;
             }
 
-            public static ErrorCode DecodeBlockProggressiveAc(
-                Context j, short* data, ref Huffman hac, short[] fac)
+            public static async ValueTask DecodeBlockProggressiveAc(
+                JpegState j, Memory<short> data, Huffman hac, short[] fac)
             {
                 if (j.spec_start == 0)
-                    return ErrorCode.CantMergeDcAndAc;
+                    throw new StbImageReadException(ErrorCode.CantMergeDcAndAc);
 
-                int k;
                 if (j.succ_high == 0)
                 {
                     int shift = j.succ_low;
                     if (j.eob_run != 0)
                     {
                         --j.eob_run;
-                        return ErrorCode.Ok;
+                        return;
                     }
 
-                    k = j.spec_start;
+                    int k = j.spec_start;
                     do
                     {
-                        uint zig;
-                        int c;
-                        int r;
-                        int s;
                         if (j.code_bits < 16)
-                            GrowBufferUnsafe(j);
-                        c = (int)((j.code_buffer >> (32 - 9)) & ((1 << 9) - 1));
-                        r = fac[c];
+                            await GrowBufferUnsafe(j);
+
+                        int c = (int)((j.code_buffer >> (32 - 9)) & ((1 << 9) - 1));
+                        int r = fac[c];
+                        int s;
                         if (r != 0)
                         {
                             k += (r >> 4) & 15;
                             s = r & 15;
                             j.code_buffer <<= s;
                             j.code_bits -= s;
-                            zig = DeZigZag[k++];
-                            data[zig] = (short)((r >> 8) << shift);
+                            var zig = DeZigZag[k++];
+                            data.Span[zig] = (short)((r >> 8) << shift);
                         }
                         else
                         {
-                            int rs = HuffmanDecode(j, ref hac);
+                            int rs = await HuffmanDecode(j, hac);
                             if (rs < 0)
-                                return ErrorCode.BadHuffmanCode;
+                                throw new StbImageReadException(ErrorCode.BadHuffmanCode);
+
                             s = rs & 15;
                             r = rs >> 4;
                             if (s == 0)
@@ -478,7 +524,7 @@ namespace StbSharp
                                 {
                                     j.eob_run = 1 << r;
                                     if (r != 0)
-                                        j.eob_run += ReadBits(j, r);
+                                        j.eob_run += await ReadBits(j, r);
                                     --j.eob_run;
                                     break;
                                 }
@@ -488,8 +534,9 @@ namespace StbSharp
                             else
                             {
                                 k += r;
-                                zig = DeZigZag[k++];
-                                data[zig] = (short)(ExtendReceive(j, s) << shift);
+                                var zig = DeZigZag[k++];
+                                int extended = await ExtendReceive(j, s);
+                                data.Span[zig] = (short)(extended << shift);
                             }
                         }
                     } while (k <= j.spec_end);
@@ -499,29 +546,59 @@ namespace StbSharp
                     short bit = (short)(1 << j.succ_low);
                     if (j.eob_run != 0)
                     {
-                        --j.eob_run;
-                        for (k = j.spec_start; k <= j.spec_end; ++k)
+                        j.eob_run--;
+
+                        static int CountBits(ReadOnlySpan<short> data, int offset, int end)
                         {
-                            short* p = &data[DeZigZag[k]];
-                            if (*p != 0)
-                                if (ReadBit(j) != 0)
-                                    if ((*p & bit) == 0)
-                                    {
-                                        if ((*p) > 0)
-                                            *p += bit;
-                                        else
-                                            *p -= bit;
-                                    }
+                            int count = 0;
+                            var deZigZag = DeZigZag;
+                            while (offset <= end)
+                            {
+                                if (data[deZigZag[offset++]] != 0)
+                                    count++;
+                            }
+                            return count;
                         }
+
+                        static void DecodeAssignBit(
+                            bool[] bits, Span<short> data, short bit, int offset, int end)
+                        {
+                            int bitOffset = 0;
+                            var deZigZag = DeZigZag;
+
+                            while (offset <= end)
+                            {
+                                ref short p = ref data[deZigZag[offset++]];
+                                if (p != 0)
+                                {
+                                    if (bits[bitOffset++])
+                                    {
+                                        if ((p & bit) == 0)
+                                        {
+                                            if (p > 0)
+                                                p += bit;
+                                            else
+                                                p -= bit;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        int bitCount = CountBits(data.Span, j.spec_start, j.spec_end);
+                        for (int i = 0; i < bitCount; i++)
+                            j.bitbuffer[i] = await ReadBit(j);
+
+                        DecodeAssignBit(j.bitbuffer, data.Span, bit, j.spec_start, j.spec_end);
                     }
                     else
                     {
-                        k = j.spec_start;
+                        int k = j.spec_start;
                         do
                         {
-                            int rs = HuffmanDecode(j, ref hac);
+                            int rs = await HuffmanDecode(j, hac);
                             if (rs < 0)
-                                return ErrorCode.BadHuffmanCode;
+                                throw new StbImageReadException(ErrorCode.BadHuffmanCode);
 
                             int s = rs & 15;
                             int r = rs >> 4;
@@ -531,62 +608,93 @@ namespace StbSharp
                                 {
                                     j.eob_run = (1 << r) - 1;
                                     if (r != 0)
-                                        j.eob_run += ReadBits(j, r);
+                                        j.eob_run += await ReadBits(j, r);
                                     r = 64;
                                 }
                             }
                             else
                             {
                                 if (s != 1)
-                                    return ErrorCode.BadHuffmanCode;
+                                    throw new StbImageReadException(ErrorCode.BadHuffmanCode);
 
-                                if (ReadBit(j) != 0)
+                                if (await ReadBit(j))
                                     s = bit;
                                 else
                                     s = -bit;
                             }
 
-                            while (k <= j.spec_end)
+                            static int CountBits(ReadOnlySpan<short> data, int r, int offset, int end)
                             {
-                                short* p = &data[DeZigZag[k++]];
-                                if (*p != 0)
+                                int count = 0;
+                                var deZigZag = DeZigZag;
+                                while (offset <= end)
                                 {
-                                    if (ReadBit(j) != 0)
-                                        if ((*p & bit) == 0)
-                                        {
-                                            if ((*p) > 0)
-                                                *p += bit;
-                                            else
-                                                *p -= bit;
-                                        }
-                                }
-                                else
-                                {
-                                    if (r == 0)
+                                    if (data[deZigZag[offset++]] != 0)
                                     {
-                                        *p = (short)s;
-                                        break;
+                                        count++;
                                     }
+                                    else
+                                    {
+                                        if (r == 0)
+                                            break;
+                                        r--;
+                                    }
+                                }
+                                return count;
+                            }
 
-                                    --r;
+                            static void DecodeDecrementAssignBit(
+                                bool[] bits, Span<short> data, short s, int r, short bit,
+                                ref int offset, int end)
+                            {
+                                int bitOffset = 0;
+                                var deZigZag = DeZigZag;
+
+                                while (offset <= end)
+                                {
+                                    ref short p = ref data[deZigZag[offset++]];
+                                    if (p != 0)
+                                    {
+                                        if (bits[bitOffset++])
+                                        {
+                                            if ((p & bit) == 0)
+                                            {
+                                                if (p > 0)
+                                                    p += bit;
+                                                else
+                                                    p -= bit;
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        if (r == 0)
+                                        {
+                                            p = s;
+                                            break;
+                                        }
+                                        r--;
+                                    }
                                 }
                             }
+
+                            int bitCount = CountBits(data.Span, r, k, j.spec_end);
+                            for (int i = 0; i < bitCount; i++)
+                                j.bitbuffer[i] = await ReadBit(j);
+
+                            DecodeDecrementAssignBit(j.bitbuffer, data.Span, (short)s, r, bit, ref k, j.spec_end);
+
                         } while (k <= j.spec_end);
                     }
                 }
-
-                return ErrorCode.Ok;
             }
 
             public static byte Clamp(int x)
             {
-                if (((uint)x) > 255)
-                {
-                    if (x < 0)
-                        return 0;
-                    if (x > 255)
-                        return 255;
-                }
+                if (x < 0)
+                    return 0;
+                if (x > 255)
+                    return 255;
                 return (byte)x;
             }
 
@@ -629,17 +737,15 @@ namespace StbSharp
                 idct.t0 += idct.p1 + idct.p3;
             }
 
-            public static void IdctBlock(byte* _out_, int out_stride, short* data)
+            public static void IdctBlock(Span<byte> _out_, int out_stride, Span<short> data)
             {
-                int* val = stackalloc int[64];
-                int* v = val;
-                short* d = data;
+                Span<int> val = stackalloc int[64];
 
-                byte* o;
-                int i;
-                Idct idct;
-                for (i = 0; i < 8; ++i, ++d, ++v)
+                for (int i = 0; i < 8; ++i)
                 {
+                    var v = val.Slice(i);
+                    var d = data.Slice(i);
+
                     if ((d[8] == 0) &&
                         (d[16] == 0) &&
                         (d[24] == 0) &&
@@ -653,7 +759,7 @@ namespace StbSharp
                     }
                     else
                     {
-                        Idct1D(d[0], d[8], d[16], d[24], d[32], d[40], d[48], d[56], out idct);
+                        Idct1D(d[0], d[8], d[16], d[24], d[32], d[40], d[48], d[56], out var idct);
 
                         idct.x0 += 512;
                         idct.x1 += 512;
@@ -671,9 +777,12 @@ namespace StbSharp
                     }
                 }
 
-                for (i = 0, v = val, o = _out_; i < 8; ++i, v += 8, o += out_stride)
+                for (int i = 0; i < 8; ++i)
                 {
-                    Idct1D(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], out idct);
+                    var o = _out_.Slice(i * out_stride);
+                    var v = val.Slice(i * 8);
+
+                    Idct1D(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], out var idct);
 
                     idct.x0 += 65536 + (128 << 17);
                     idct.x1 += 65536 + (128 << 17);
@@ -691,7 +800,7 @@ namespace StbSharp
                 }
             }
 
-            public static byte ReadMarker(Context j)
+            public static async ValueTask<byte> ReadMarker(JpegState j)
             {
                 byte x;
                 if (j.marker != 0xff)
@@ -701,21 +810,21 @@ namespace StbSharp
                     return x;
                 }
 
-                x = j.s.ReadByte();
+                x = await j.s.ReadByte();
                 if (x != 0xff)
                     return 0xff;
 
                 while (x == 0xff)
-                    x = j.s.ReadByte();
+                    x = await j.s.ReadByte();
 
                 return x;
             }
 
-            public static void Reset(Context j)
+            public static void Reset(JpegState j)
             {
                 j.code_bits = 0;
                 j.code_buffer = 0;
-                j.nomore = 0;
+                j.nomore = false;
                 for (int i = 0; i < j.components.Length; i++)
                     j.components[i].dc_pred = 0;
                 j.marker = 0xff;
@@ -723,37 +832,40 @@ namespace StbSharp
                 j.eob_run = 0;
             }
 
-            public static bool ParseEntropyCodedData(Context z)
+            public static async ValueTask<bool> ParseEntropyCodedData(JpegState z)
             {
                 Reset(z);
                 if (!z.progressive)
                 {
                     if (z.scan_n == 1)
                     {
-                        short* data = stackalloc short[64];
+                        var data = new short[64].AsMemory();
                         int n = z.order[0];
-                        int w = (z.components[n].x + 7) >> 3;
-                        int h = (z.components[n].y + 7) >> 3;
+                        int w = (z.components[n].x + 7) / 8;
+                        int h = (z.components[n].y + 7) / 8;
                         for (int j = 0; j < h; ++j)
                         {
                             for (int i = 0; i < w; ++i)
                             {
                                 int ha = z.components[n].ha;
-                                if (DecodeBlock(
-                                        z, data, ref z.huff_dc[z.components[n].hd], ref z.huff_ac[ha],
-                                        z.fast_ac[ha], n, z.dequant[z.components[n].tq]) == 0)
-                                    return false;
+
+                                await DecodeBlock(
+                                    z, data, z.huff_dc[z.components[n].hd], z.huff_ac[ha],
+                                    z.fast_ac[ha], n, z.dequant[z.components[n].tq]);
 
                                 z.idct_block_kernel(
-                                    z.components[n].data + z.components[n].w2 * j * 8 + i * 8,
-                                    z.components[n].w2, data);
+                                    z.components[n].data.Slice(z.components[n].w2 * j * 8 + i * 8).Span,
+                                    z.components[n].w2,
+                                    data.Span);
 
                                 if (--z.todo <= 0)
                                 {
                                     if (z.code_bits < 24)
-                                        GrowBufferUnsafe(z);
+                                        await GrowBufferUnsafe(z);
+
                                     if (!((z.marker >= 0xd0) && (z.marker <= 0xd7)))
                                         return true;
+
                                     Reset(z);
                                 }
                             }
@@ -765,7 +877,7 @@ namespace StbSharp
                         int k;
                         int x;
                         int y;
-                        short* data = stackalloc short[64];
+                        var data = new short[64].AsMemory();
                         for (int j = 0; j < z.img_mcu_y; ++j)
                         {
                             for (int i = 0; i < z.img_mcu_x; ++i)
@@ -780,14 +892,16 @@ namespace StbSharp
                                             int x2 = (i * z.components[n].h + x) * 8;
                                             int y2 = (j * z.components[n].v + y) * 8;
                                             int ha = z.components[n].ha;
-                                            if (
-                                                DecodeBlock(z, data,
-                                                    ref z.huff_dc[z.components[n].hd],
-                                                    ref z.huff_ac[ha], z.fast_ac[ha], n,
-                                                    z.dequant[z.components[n].tq]) == 0)
-                                                return false;
-                                            z.idct_block_kernel(z.components[n].data + z.components[n].w2 * y2 + x2,
-                                                z.components[n].w2, data);
+
+                                            await DecodeBlock(z, data,
+                                                z.huff_dc[z.components[n].hd],
+                                                z.huff_ac[ha], z.fast_ac[ha], n,
+                                                z.dequant[z.components[n].tq]);
+
+                                            z.idct_block_kernel(
+                                                z.components[n].data.Slice(z.components[n].w2 * y2 + x2).Span,
+                                                z.components[n].w2,
+                                                data.Span);
                                         }
                                     }
                                 }
@@ -795,7 +909,8 @@ namespace StbSharp
                                 if (--z.todo <= 0)
                                 {
                                     if (z.code_bits < 24)
-                                        GrowBufferUnsafe(z);
+                                        await GrowBufferUnsafe(z);
+
                                     if (!((z.marker >= 0xd0) && (z.marker <= 0xd7)))
                                         return true;
                                     Reset(z);
@@ -811,31 +926,29 @@ namespace StbSharp
                     if (z.scan_n == 1)
                     {
                         int n = z.order[0];
-                        int w = (z.components[n].x + 7) >> 3;
-                        int h = (z.components[n].y + 7) >> 3;
+                        int w = (z.components[n].x + 7) / 8;
+                        int h = (z.components[n].y + 7) / 8;
                         for (int j = 0; j < h; ++j)
                         {
                             for (int i = 0; i < w; ++i)
                             {
-                                short* data = z.components[n].coeff + 64 * (i + j * z.components[n].coeff_w);
+                                var data = z.components[n].coeff.Slice(64 * (i + j * z.components[n].coeff_w), 64);
+
                                 if (z.spec_start == 0)
                                 {
-                                    if (DecodeBlockProgressiveDc(z, data,
-                                            ref z.huff_dc[z.components[n].hd], n) == 0)
-                                        return false;
+                                    await DecodeBlockProgressiveDc(z, data, z.huff_dc[z.components[n].hd], n);
                                 }
                                 else
                                 {
                                     int ha = z.components[n].ha;
-                                    if (DecodeBlockProggressiveAc(
-                                        z, data, ref z.huff_ac[ha], z.fast_ac[ha]) == 0)
-                                        return false;
+                                    await DecodeBlockProggressiveAc(z, data, z.huff_ac[ha], z.fast_ac[ha]);
                                 }
 
                                 if (--z.todo <= 0)
                                 {
                                     if (z.code_bits < 24)
-                                        GrowBufferUnsafe(z);
+                                        await GrowBufferUnsafe(z);
+
                                     if (!((z.marker >= 0xd0) && (z.marker <= 0xd7)))
                                         return true;
                                     Reset(z);
@@ -862,10 +975,8 @@ namespace StbSharp
                                         {
                                             int x2 = i * z.components[n].h + x;
                                             int y2 = j * z.components[n].v + y;
-                                            short* data = z.components[n].coeff + 64 * (x2 + y2 * z.components[n].coeff_w);
-                                            if (DecodeBlockProgressiveDc(
-                                                z, data, ref z.huff_dc[z.components[n].hd], n) == 0)
-                                                return false;
+                                            var data = z.components[n].coeff.Slice(64 * (x2 + y2 * z.components[n].coeff_w), 64);
+                                            await DecodeBlockProgressiveDc(z, data, z.huff_dc[z.components[n].hd], n);
                                         }
                                     }
                                 }
@@ -873,7 +984,8 @@ namespace StbSharp
                                 if (--z.todo <= 0)
                                 {
                                     if (z.code_bits < 24)
-                                        GrowBufferUnsafe(z);
+                                        await GrowBufferUnsafe(z);
+
                                     if (!((z.marker >= 0xd0) && (z.marker <= 0xd7)))
                                         return true;
                                     Reset(z);
@@ -886,16 +998,13 @@ namespace StbSharp
 
             }
 
-            public static void Dequantize(short* data, ushort[] dequant)
+            public static void Dequantize(Span<short> data, ushort[] dequant)
             {
-                int i;
-                for (i = 0; i < 64; ++i)
-                {
+                for (int i = 0; i < data.Length; ++i)
                     data[i] *= (short)dequant[i];
-                }
             }
 
-            public static void Finish(Context z)
+            public static void Finish(JpegState z)
             {
                 if (!z.progressive)
                     return;
@@ -904,24 +1013,27 @@ namespace StbSharp
                 int j;
                 for (int n = 0; n < z.ri.Components; ++n)
                 {
-                    int w = (z.components[n].x + 7) >> 3;
-                    int h = (z.components[n].y + 7) >> 3;
+                    int w = (z.components[n].x + 7) / 8;
+                    int h = (z.components[n].y + 7) / 8;
                     for (j = 0; j < h; ++j)
                     {
                         for (i = 0; i < w; ++i)
                         {
-                            short* data = z.components[n].coeff + 64 * (i + j * z.components[n].coeff_w);
-                            Dequantize(data, z.dequant[z.components[n].tq]);
-                            z.idct_block_kernel(z.components[n].data + z.components[n].w2 * j * 8 + i * 8,
-                                z.components[n].w2, data);
+                            var data = z.components[n].coeff.Slice(64 * (i + j * z.components[n].coeff_w), 64);
+                            Dequantize(data.Span, z.dequant[z.components[n].tq]);
+
+                            z.idct_block_kernel(
+                                z.components[n].data.Slice(z.components[n].w2 * j * 8 + i * 8).Span,
+                                z.components[n].w2,
+                                data.Span);
                         }
                     }
                 }
             }
 
-            public static bool ProcessMarker(Context z, int m)
+            public static async ValueTask<bool> ProcessMarker(JpegState z, int m)
             {
-                ReadContext s = z.s;
+                var s = z.s;
                 int L;
                 switch (m)
                 {
@@ -929,17 +1041,17 @@ namespace StbSharp
                         throw new StbImageReadException(ErrorCode.ExpectedMarker);
 
                     case 0xDD:
-                        if (s.ReadInt16BE() != 4)
+                        if (await s.ReadInt16BE() != 4)
                             throw new StbImageReadException(ErrorCode.BadDRILength);
 
-                        z.restart_interval = s.ReadInt16BE();
+                        z.restart_interval = await s.ReadInt16BE();
                         return true;
 
                     case 0xDB:
-                        L = s.ReadInt16BE() - 2;
+                        L = await s.ReadInt16BE() - 2;
                         while (L > 0)
                         {
-                            int q = s.ReadByte();
+                            int q = await s.ReadByte();
                             int p = q >> 4;
                             if ((p != 0) && (p != 1))
                                 throw new StbImageReadException(ErrorCode.BadDQTType);
@@ -951,27 +1063,30 @@ namespace StbSharp
                             int sixteen = (p != 0) ? 1 : 0;
 
                             for (int i = 0; i < 64; ++i)
-                                z.dequant[t][DeZigZag[i]] = (ushort)(sixteen != 0 ? s.ReadInt16BE() : s.ReadByte());
-
+                            {
+                                z.dequant[t][DeZigZag[i]] = (ushort)(sixteen != 0
+                                    ? await s.ReadInt16BE()
+                                    : await s.ReadByte());
+                            }
                             L -= sixteen != 0 ? 129 : 65;
                         }
                         return L == 0;
 
                     case 0xC4:
-                        L = s.ReadInt16BE() - 2;
+                        var sizes = new int[16];
+                        L = await s.ReadInt16BE() - 2;
                         while (L > 0)
                         {
-                            int* sizes = stackalloc int[16];
-                            int q = s.ReadByte();
+                            int q = await s.ReadByte();
                             int tc = q >> 4;
                             int th = q & 15;
                             if ((tc > 1) || (th > 3))
                                 throw new StbImageReadException(ErrorCode.BadDHTHeader);
 
                             int n = 0;
-                            for (int i = 0; i < 16; ++i)
+                            for (int i = 0; i < sizes.Length; ++i)
                             {
-                                sizes[i] = s.ReadByte();
+                                sizes[i] = await s.ReadByte();
                                 n += sizes[i];
                             }
 
@@ -980,22 +1095,19 @@ namespace StbSharp
                             L -= 17;
                             if (tc == 0)
                             {
-                                if (BuildHuffman(ref z.huff_dc[th], sizes) == 0)
-                                    return false;
+                                BuildHuffman(z.huff_dc[th], sizes);
                                 huff = z.huff_dc;
                             }
                             else
                             {
-                                if (BuildHuffman(ref z.huff_ac[th], sizes) == 0)
-                                    return false;
+                                BuildHuffman(z.huff_ac[th], sizes);
                                 huff = z.huff_ac;
                             }
 
-                            for (int i = 0; i < n; ++i)
-                                huff[th].values[i] = s.ReadByte();
+                            await s.ReadBytes(huff[th].MValues.Slice(0, n));
 
                             if (tc != 0)
-                                BuildFastAc(z.fast_ac[th], ref z.huff_ac[th]);
+                                BuildFastAc(z.fast_ac[th], z.huff_ac[th]);
                             L -= n;
                         }
                         return L == 0;
@@ -1003,7 +1115,7 @@ namespace StbSharp
 
                 if (((m >= 0xE0) && (m <= 0xEF)) || (m == 0xFE))
                 {
-                    L = s.ReadInt16BE();
+                    L = await s.ReadInt16BE();
                     if (L < 2)
                     {
                         if (m == 0xFE)
@@ -1015,7 +1127,7 @@ namespace StbSharp
                     L -= 2;
                     if ((m == 0xE0) && (L >= 5))
                     {
-                        Span<byte> tag = stackalloc byte[5];
+                        var tag = new byte[5];
                         tag[0] = (byte)'J';
                         tag[1] = (byte)'F';
                         tag[2] = (byte)'I';
@@ -1026,7 +1138,7 @@ namespace StbSharp
                         int i;
                         for (i = 0; i < 5; ++i)
                         {
-                            if (s.ReadByte() != tag[i])
+                            if (await s.ReadByte() != tag[i])
                                 ok = 0;
                         }
 
@@ -1036,7 +1148,7 @@ namespace StbSharp
                     }
                     else if ((m == 0xEE) && (L >= 12))
                     {
-                        Span<byte> tag = stackalloc byte[6];
+                        var tag = new byte[6];
                         tag[0] = (byte)'A';
                         tag[1] = (byte)'d';
                         tag[2] = (byte)'o';
@@ -1047,7 +1159,7 @@ namespace StbSharp
                         bool ok = true;
                         for (int i = 0; i < 6; ++i)
                         {
-                            if (s.ReadByte() != tag[i])
+                            if (await s.ReadByte() != tag[i])
                             {
                                 ok = false;
                                 break;
@@ -1057,26 +1169,26 @@ namespace StbSharp
                         L -= 6;
                         if (ok)
                         {
-                            s.ReadByte();
-                            s.ReadInt16BE();
-                            s.ReadInt16BE();
-                            z.app14_color_transform = s.ReadByte();
+                            await s.ReadByte();
+                            await s.ReadInt16BE();
+                            await s.ReadInt16BE();
+                            z.app14_color_transform = await s.ReadByte();
                             L -= 6;
                         }
                     }
 
-                    s.Skip(L);
+                    await s.Skip(L);
                     return true;
                 }
 
                 throw new StbImageReadException(ErrorCode.UnknownMarker);
             }
 
-            public static bool ProcessScanHeader(Context z)
+            public static async ValueTask<bool> ProcessScanHeader(JpegState z)
             {
                 var s = z.s;
-                int Ls = s.ReadInt16BE();
-                z.scan_n = s.ReadByte();
+                int Ls = await s.ReadInt16BE();
+                z.scan_n = await s.ReadByte();
                 if ((z.scan_n < 1) || (z.scan_n > 4) || (z.scan_n > z.ri.Components))
                     throw new StbImageReadException(ErrorCode.BadSOSComponentCount);
 
@@ -1085,9 +1197,9 @@ namespace StbSharp
 
                 for (int i = 0; i < z.scan_n; ++i)
                 {
-                    int id = s.ReadByte();
+                    int id = await s.ReadByte();
+                    int q = await s.ReadByte();
                     int which;
-                    int q = s.ReadByte();
                     for (which = 0; which < z.ri.Components; ++which)
                     {
                         if (z.components[which].id == id)
@@ -1096,6 +1208,7 @@ namespace StbSharp
 
                     if (which == z.ri.Components)
                         return false;
+
                     z.components[which].hd = q >> 4;
                     if (z.components[which].hd > 3)
                         throw new StbImageReadException(ErrorCode.BadDCHuffman);
@@ -1109,9 +1222,9 @@ namespace StbSharp
 
                 {
                     int aa;
-                    z.spec_start = s.ReadByte();
-                    z.spec_end = s.ReadByte();
-                    aa = s.ReadByte();
+                    z.spec_start = await s.ReadByte();
+                    z.spec_end = await s.ReadByte();
+                    aa = await s.ReadByte();
                     z.succ_high = aa >> 4;
                     z.succ_low = aa & 15;
                     if (z.progressive)
@@ -1138,58 +1251,56 @@ namespace StbSharp
                 return true;
             }
 
-            public static void FreeComponents(Context z, int ncomp)
+            public static void FreeComponents(JpegState z, int ncomp)
             {
                 for (int i = 0; i < ncomp; i++)
                 {
                     if (z.components[i].raw_data != null)
                     {
-                        CRuntime.Free(z.components[i].raw_data);
                         z.components[i].raw_data = null;
                         z.components[i].data = null;
                     }
 
                     if (z.components[i].raw_coeff != null)
                     {
-                        CRuntime.Free(z.components[i].raw_coeff);
                         z.components[i].raw_coeff = null;
                         z.components[i].coeff = null;
                     }
 
-                    if (z.components[i].linebuf != null)
+                    if (z.components[i].raw_linebuf != null)
                     {
-                        CRuntime.Free(z.components[i].linebuf);
+                        z.components[i].raw_linebuf = null;
                         z.components[i].linebuf = null;
                     }
                 }
             }
 
-            public static bool ProcessFrameHeader(Context z, ScanMode scan)
+            public static async ValueTask ProcessFrameHeader(JpegState z, ScanMode scan)
             {
-                ReadContext s = z.s;
+                var s = z.s;
                 int Lf;
                 int p;
                 int i;
                 int q;
                 int h_max = 1;
                 int v_max = 1;
-                Lf = s.ReadInt16BE();
+                Lf = await s.ReadInt16BE();
                 if (Lf < 11)
                     throw new StbImageReadException(ErrorCode.BadSOFLength);
 
-                p = s.ReadByte();
+                p = await s.ReadByte();
                 if (p != 8)
                     throw new StbImageReadException(ErrorCode.UnsupportedBitDepth);
 
-                z.ri.Height = s.ReadInt16BE();
+                z.ri.Height = await s.ReadInt16BE();
                 if (z.ri.Height == 0)
                     throw new StbImageReadException(ErrorCode.ZeroHeight);
 
-                z.ri.Width = s.ReadInt16BE();
+                z.ri.Width = await s.ReadInt16BE();
                 if (z.ri.Width == 0)
                     throw new StbImageReadException(ErrorCode.ZeroWidth);
 
-                z.ri.Components = s.ReadByte();
+                z.ri.Components = await s.ReadByte();
                 if ((z.ri.Components != 1) &&
                     (z.ri.Components != 3) &&
                     (z.ri.Components != 4))
@@ -1206,17 +1317,17 @@ namespace StbSharp
 
                 z.rgb = 0;
 
-                byte* rgb = stackalloc byte[3];
+                var rgb = new byte[3];
                 rgb[0] = (byte)'R';
                 rgb[1] = (byte)'G';
                 rgb[2] = (byte)'B';
 
                 for (i = 0; i < z.ri.Components; i++)
                 {
-                    z.components[i].id = s.ReadByte();
+                    z.components[i].id = await s.ReadByte();
                     if ((z.ri.Components == 3) && (z.components[i].id == rgb[i]))
                         ++z.rgb;
-                    q = s.ReadByte();
+                    q = await s.ReadByte();
                     z.components[i].h = q >> 4;
                     if ((z.components[i].h == 0) || (z.components[i].h > 4))
                         throw new StbImageReadException(ErrorCode.BadH);
@@ -1225,19 +1336,13 @@ namespace StbSharp
                     if ((z.components[i].v == 0) || (z.components[i].v > 4))
                         throw new StbImageReadException(ErrorCode.BadV);
 
-                    z.components[i].tq = s.ReadByte();
+                    z.components[i].tq = await s.ReadByte();
                     if (z.components[i].tq > 3)
                         throw new StbImageReadException(ErrorCode.BadTQ);
                 }
 
                 if (scan != ScanMode.Load)
-                    return true;
-
-                if (AreValidMad3Sizes(z.ri.Width, z.ri.Height, z.ri.Components, 0) == 0)
-                {
-                    s.Error(ErrorCode.TooLarge);
-                    return false;
-                }
+                    return;
 
                 for (i = 0; i < z.ri.Components; ++i)
                 {
@@ -1259,78 +1364,57 @@ namespace StbSharp
                     z.components[i].y = (z.ri.Height * z.components[i].v + v_max - 1) / v_max;
                     z.components[i].w2 = z.img_mcu_x * z.components[i].h * 8;
                     z.components[i].h2 = z.img_mcu_y * z.components[i].v * 8;
-                    z.components[i].coeff = null;
+
                     z.components[i].raw_coeff = null;
+                    z.components[i].coeff = null;
+
+                    z.components[i].raw_linebuf = null;
                     z.components[i].linebuf = null;
-                    z.components[i].raw_data = MAllocMad2(
-                        z.components[i].w2, z.components[i].h2, 15);
 
-                    if (z.components[i].raw_data == null)
-                    {
-                        FreeComponents(z, i + 1);
-                        s.Error(ErrorCode.OutOfMemory);
-                        return false;
-                    }
+                    z.components[i].raw_data = new byte[z.components[i].w2 * z.components[i].h2];
+                    z.components[i].data = z.components[i].raw_data.AsMemory();
 
-                    z.components[i].data = (byte*)(((long)z.components[i].raw_data + 15) & ~15);
                     if (z.progressive)
                     {
                         z.components[i].coeff_w = z.components[i].w2 / 8;
                         z.components[i].coeff_h = z.components[i].h2 / 8;
-                        z.components[i].raw_coeff = MAllocMad3(
-                            z.components[i].w2, z.components[i].h2, 2, 15);
 
-                        if (z.components[i].raw_coeff == null)
-                        {
-                            FreeComponents(z, i + 1);
-                            s.Error(ErrorCode.OutOfMemory);
-                            return false;
-                        }
-                        z.components[i].coeff = (short*)(((long)z.components[i].raw_coeff + 15) & ~15);
+                        z.components[i].raw_coeff = new short[z.components[i].w2 * z.components[i].h2];
+                        z.components[i].coeff = z.components[i].raw_coeff.AsMemory();
                     }
                 }
-
-                return true;
             }
 
-            public static bool ParseHeader(Context z, ScanMode scan)
+            public static async ValueTask<bool> ParseHeader(JpegState z, ScanMode scan)
             {
                 z.jfif = 0;
                 z.app14_color_transform = -1;
                 z.marker = 0xff;
 
-                int m = ReadMarker(z);
+                int m = await ReadMarker(z);
                 if (!(m == 0xd8))
-                {
-                    if (scan == ScanMode.Load)
-                        throw new StbImageReadException(ErrorCode.NoSOI);
+                    throw new StbImageReadException(ErrorCode.NoSOI);
 
-                    return false;
-                }
-
-                if (scan == ScanMode.Type)
-                    return true;
-
-                m = ReadMarker(z);
+                m = await ReadMarker(z);
                 while (!((m == 0xc0) || (m == 0xc1) || (m == 0xc2)))
                 {
-                    if (!ProcessMarker(z, m))
+                    if (!await ProcessMarker(z, m))
                         return false;
 
                     do
                     {
-                        m = ReadMarker(z);
+                        m = await ReadMarker(z);
                     }
                     while (m == 0xff);
                 }
 
                 z.progressive = m == 0xc2;
-                if (!ProcessFrameHeader(z, scan))
-                    return false;
+                await ProcessFrameHeader(z, scan);
+
                 return true;
             }
 
-            public static bool Load(Context j)
+            public static async ValueTask<bool> ParseData(JpegState j)
             {
                 for (int i = 0; i < 4; i++)
                 {
@@ -1339,27 +1423,29 @@ namespace StbSharp
                 }
 
                 j.restart_interval = 0;
-                if (!ParseHeader(j, (int)ScanMode.Load))
+
+                if (!await ParseHeader(j, (int)ScanMode.Load))
                     return false;
 
                 var s = j.s;
-                int m = ReadMarker(j);
+                int m = await ReadMarker(j);
                 while (!(m == 0xd9))
                 {
                     if (m == 0xda)
                     {
-                        if (!ProcessScanHeader(j))
+                        if (!await ProcessScanHeader(j))
                             return false;
-                        if (!ParseEntropyCodedData(j))
+
+                        if (!await ParseEntropyCodedData(j))
                             return false;
 
                         if (j.marker == 0xff)
                         {
                             while (true)
                             {
-                                if (s.ReadByte() == 0xff)
+                                if (await s.ReadByte() == 0xff)
                                 {
-                                    j.marker = s.ReadByte();
+                                    j.marker = await s.ReadByte();
                                     break;
                                 }
                             }
@@ -1367,8 +1453,8 @@ namespace StbSharp
                     }
                     else if (m == 0xdc)
                     {
-                        int Ld = s.ReadInt16BE();
-                        uint NL = (uint)s.ReadInt16BE();
+                        int Ld = await s.ReadInt16BE();
+                        uint NL = (uint)await s.ReadInt16BE();
                         if (Ld != 4)
                             throw new StbImageReadException(ErrorCode.BadDNLLength);
 
@@ -1377,11 +1463,11 @@ namespace StbSharp
                     }
                     else
                     {
-                        if (!ProcessMarker(j, m))
+                        if (!await ProcessMarker(j, m))
                             return false;
                     }
 
-                    m = ReadMarker(j);
+                    m = await ReadMarker(j);
                 }
 
                 if (j.progressive)
@@ -1390,98 +1476,112 @@ namespace StbSharp
                 j.ri.Depth = 8;
 
                 j.is_rgb = j.ri.Components == 3 && (j.rgb == 3 || (j.app14_color_transform == 0 && j.jfif == 0));
-                j.decode_n = (j.ri.Components == 3 && j.ri.OutComponents < 3 && !j.is_rgb) ? 1 : j.ri.Components;
+                j.decode_n = (j.ri.Components < 3 && !j.is_rgb) ? 1 : j.ri.Components;
 
                 return true;
             }
 
-            public static byte* ResampleRow1(byte* _out_, byte* in_near, byte* in_far, int w, int hs)
+            public static Memory<byte> ResampleRow1(
+                Memory<byte> _out_, Memory<byte> in_near, Memory<byte> in_far, int w, int hs)
             {
                 return in_near;
             }
 
-            public static byte* ResampleRowV2(byte* _out_, byte* in_near, byte* in_far, int w, int hs)
+            public static Memory<byte> ResampleRowV2(
+                Memory<byte> _out_, Memory<byte> in_near, Memory<byte> in_far, int w, int hs)
             {
-                int i;
-                for (i = 0; i < w; ++i)
+                var o = _out_.Span;
+                var n = in_near.Span;
+                var f = in_far.Span;
+
+                for (int i = 0; i < w; ++i)
                 {
-                    _out_[i] = (byte)((3 * in_near[i] + in_far[i] + 2) >> 2);
+                    o[i] = (byte)((3 * n[i] + f[i] + 2) >> 2);
                 }
 
                 return _out_;
             }
 
-            public static byte* ResampleRowH2(byte* _out_, byte* in_near, byte* in_far, int w, int hs)
+            public static Memory<byte> ResampleRowH2(
+                Memory<byte> _out_, Memory<byte> in_near, Memory<byte> in_far, int w, int hs)
             {
-                int i;
-                byte* input = in_near;
+                var o = _out_.Span;
+                var input = in_near.Span;
                 if (w == 1)
                 {
-                    _out_[0] = _out_[1] = input[0];
+                    o[0] = o[1] = input[0];
                     return _out_;
                 }
 
-                _out_[0] = input[0];
-                _out_[1] = (byte)((input[0] * 3 + input[1] + 2) >> 2);
+                o[0] = input[0];
+                o[1] = (byte)((input[0] * 3 + input[1] + 2) >> 2);
+                int i;
                 for (i = 1; i < (w - 1); ++i)
                 {
                     int n = 3 * input[i] + 2;
-                    _out_[i * 2 + 0] = (byte)((n + input[i - 1]) >> 2);
-                    _out_[i * 2 + 1] = (byte)((n + input[i + 1]) >> 2);
+                    o[i * 2 + 0] = (byte)((n + input[i - 1]) >> 2);
+                    o[i * 2 + 1] = (byte)((n + input[i + 1]) >> 2);
                 }
 
-                _out_[i * 2 + 0] = (byte)((input[w - 2] * 3 + input[w - 1] + 2) >> 2);
-                _out_[i * 2 + 1] = input[w - 1];
+                o[i * 2 + 0] = (byte)((input[w - 2] * 3 + input[w - 1] + 2) >> 2);
+                o[i * 2 + 1] = input[w - 1];
+
                 return _out_;
             }
 
-            public static byte* ResampleRowHV2(byte* _out_, byte* in_near, byte* in_far, int w, int hs)
+            public static Memory<byte> ResampleRowHV2(
+                Memory<byte> _out_, Memory<byte> in_near, Memory<byte> in_far, int w, int hs)
             {
-                int i;
-                int t0;
-                int t1;
+                var o = _out_.Span;
+                var n = in_near.Span;
+                var f = in_far.Span;
+
                 if (w == 1)
                 {
-                    _out_[0] = _out_[1] = (byte)((3 * in_near[0] + in_far[0] + 2) >> 2);
+                    o[0] = o[1] = (byte)((3 * n[0] + f[0] + 2) >> 2);
                     return _out_;
                 }
 
-                t1 = 3 * in_near[0] + in_far[0];
-                _out_[0] = (byte)((t1 + 2) >> 2);
-                for (i = 1; i < w; ++i)
+                int t1 = 3 * n[0] + f[0];
+                o[0] = (byte)((t1 + 2) >> 2);
+                for (int i = 1; i < w; ++i)
                 {
-                    t0 = t1;
-                    t1 = 3 * in_near[i] + in_far[i];
-                    _out_[i * 2 - 1] = (byte)((3 * t0 + t1 + 8) >> 4);
-                    _out_[i * 2] = (byte)((3 * t1 + t0 + 8) >> 4);
+                    int t0 = t1;
+                    t1 = 3 * n[i] + n[i];
+                    o[i * 2 - 1] = (byte)((3 * t0 + t1 + 8) >> 4);
+                    o[i * 2] = (byte)((3 * t1 + t0 + 8) >> 4);
                 }
 
-                _out_[w * 2 - 1] = (byte)((t1 + 2) >> 2);
+                o[w * 2 - 1] = (byte)((t1 + 2) >> 2);
                 return _out_;
             }
 
-            public static byte* ResampleRowGeneric(byte* _out_, byte* in_near, byte* in_far, int w, int hs)
+            public static Memory<byte> ResampleRowGeneric(
+                Memory<byte> _out_, Memory<byte> in_near, Memory<byte> in_far, int w, int hs)
             {
-                int i;
-                int j;
-                for (i = 0; i < w; ++i)
+                var o = _out_.Span;
+                var n = in_near.Span;
+
+                for (int i = 0; i < w; ++i)
                 {
-                    for (j = 0; j < hs; ++j)
-                    {
-                        _out_[i * hs + j] = in_near[i];
-                    }
+                    var oslice = o.Slice(i * hs);
+                    byte near = n[i];
+
+                    for (int j = 0; j < hs; ++j)
+                        oslice[j] = near;
                 }
 
                 return _out_;
             }
 
-            public static void YCbCrToRGB(byte* _out_, byte* y, byte* pcb, byte* pcr, int count, int step)
+            public static void YCbCrToRGB(
+                Span<byte> _out_, Span<byte> y, Span<byte> pcb, Span<byte> pcr)
             {
-                for (int i = 0; i < count; ++i)
+                for (int i = 0, x = 0; i < _out_.Length; i += 3, x++)
                 {
-                    int y_fixed = (y[i] << 20) + (1 << 19);
-                    int cr = pcr[i] - 128;
-                    int cb = pcb[i] - 128;
+                    int y_fixed = (y[x] << 20) + (1 << 19);
+                    int cr = pcr[x] - 128;
+                    int cb = pcb[x] - 128;
 
                     int r = y_fixed + cr * (((int)(1.40200f * 4096.0f + 0.5f)) << 8);
                     int g = (int)(y_fixed + (cr * -(((int)(0.71414f * 4096.0f + 0.5f)) << 8)) +
@@ -1501,15 +1601,13 @@ namespace StbSharp
                     if (((uint)b) > 255)
                         b = b < 0 ? 0 : 255;
 
-                    _out_[0] = (byte)r;
-                    _out_[1] = (byte)g;
-                    _out_[2] = (byte)b;
-                    _out_[3] = 255;
-                    _out_ += step;
+                    _out_[i + 0] = (byte)r;
+                    _out_[i + 1] = (byte)g;
+                    _out_[i + 2] = (byte)b;
                 }
             }
 
-            public static void Cleanup(Context j)
+            public static void Cleanup(JpegState j)
             {
                 FreeComponents(j, j.ri.Components);
             }
@@ -1525,34 +1623,31 @@ namespace StbSharp
                 return (byte)(((r * 77) + (g * 150) + (29 * b)) >> 8);
             }
 
-            public static IMemoryHolder LoadImage(Context z)
+            public static async Task LoadImage(JpegState z)
             {
-                if (!Load(z))
+                if (!await ParseData(z))
                 {
                     Cleanup(z);
-                    return null;
+                    return;
                 }
 
-                z.ri.OutComponents = z.ri.RequestedComponents ?? (z.ri.Components >= 3 ? 3 : 1);
+                z.ri.OutComponents = z.ri.Components >= 3 ? 3 : 1;
                 z.ri.OutDepth = z.ri.Depth;
 
-                int k;
-                uint i;
-                byte* output;
-                byte** coutput = stackalloc byte*[4];
+                z.ri.StateReady();
+
+                var coutput = new Memory<byte>[4];
                 var res_comp = new ResampleData[4];
 
-                for (k = 0; k < z.decode_n; k++)
-                {
-                    z.components[k].linebuf = (byte*)CRuntime.MAlloc(z.ri.Width + 3);
-                    if (z.components[k].linebuf == null)
-                    {
-                        Cleanup(z);
-                        z.s.Error(ErrorCode.OutOfMemory);
-                        return null;
-                    }
+                for (int i = 0; i < res_comp.Length; i++)
+                    res_comp[i] = new ResampleData();
 
-                    ref ResampleData r = ref res_comp[k];
+                for (int k = 0; k < z.decode_n; k++)
+                {
+                    z.components[k].raw_linebuf = new byte[z.ri.Width + 3];
+                    z.components[k].linebuf = z.components[k].raw_linebuf.AsMemory();
+
+                    ResampleData r = res_comp[k];
                     r.hs = z.img_h_max / z.components[k].h;
                     r.vs = z.img_v_max / z.components[k].v;
                     r.ystep = r.vs >> 1;
@@ -1572,20 +1667,16 @@ namespace StbSharp
                         r.Resample = ResampleRowGeneric;
                 }
 
-                output = (byte*)MAllocMad3(z.ri.OutComponents, z.ri.Width, z.ri.Height, 1);
-                if (output == null)
-                {
-                    Cleanup(z);
-                    z.s.Error(ErrorCode.OutOfMemory);
-                    return null;
-                }
+                int stride = z.ri.OutComponents * z.ri.Width;
+                var output = new byte[stride * z.ri.Height].AsMemory();
 
                 for (int j = 0; j < z.ri.Height; ++j)
                 {
-                    byte* _out_ = output + z.ri.OutComponents * z.ri.Width * j;
-                    for (k = 0; k < z.decode_n; ++k)
+                    var _out_ = output.Slice(stride * j, stride);
+
+                    for (int k = 0; k < z.decode_n; ++k)
                     {
-                        ref ResampleData r = ref res_comp[k];
+                        ResampleData r = res_comp[k];
                         bool y_bot = r.ystep >= (r.vs >> 1);
 
                         coutput[k] = r.Resample(
@@ -1600,166 +1691,175 @@ namespace StbSharp
                             r.ystep = 0;
                             r.line0 = r.line1;
                             if ((++r.ypos) < z.components[k].y)
-                                r.line1 += z.components[k].w2;
+                                r.line1 = r.line1.Slice(z.components[k].w2);
                         }
                     }
 
                     if (z.ri.OutComponents >= 3)
                     {
-                        byte* y = coutput[0];
+                        var y = coutput[0];
                         if (z.ri.Components == 3)
                         {
                             if (z.is_rgb)
                             {
-                                for (i = 0; i < z.ri.Width; ++i)
+                                for (int i = 0; i < z.ri.Width; ++i)
                                 {
-                                    _out_[0] = y[i];
-                                    _out_[1] = coutput[1][i];
-                                    _out_[2] = coutput[2][i];
-                                    _out_[3] = 255;
-                                    _out_ += z.ri.OutComponents;
+                                    _out_.Span[0] = y.Span[i];
+                                    _out_.Span[1] = coutput[1].Span[i];
+                                    _out_.Span[2] = coutput[2].Span[i];
+                                    _out_.Span[3] = 255;
+                                    _out_ = _out_.Slice(z.ri.OutComponents);
                                 }
                             }
                             else
                             {
-                                z.YCbCr_to_RGB_kernel(_out_, y, coutput[1], coutput[2], z.ri.Width, z.ri.OutComponents);
+                                z.YCbCr_to_RGB_kernel(
+                                    _out_.Span, y.Span, coutput[1].Span, coutput[2].Span);
                             }
                         }
                         else if (z.ri.Components == 4)
                         {
                             if (z.app14_color_transform == 0)
                             {
-                                for (i = 0; i < z.ri.Width; ++i)
+                                for (int i = 0; i < z.ri.Width; ++i)
                                 {
-                                    byte m = coutput[3][i];
-                                    _out_[0] = Blinn8x8(coutput[0][i], m);
-                                    _out_[1] = Blinn8x8(coutput[1][i], m);
-                                    _out_[2] = Blinn8x8(coutput[2][i], m);
-                                    _out_[3] = 255;
-                                    _out_ += z.ri.OutComponents;
+                                    byte m = coutput[3].Span[i];
+                                    _out_.Span[0] = Blinn8x8(coutput[0].Span[i], m);
+                                    _out_.Span[1] = Blinn8x8(coutput[1].Span[i], m);
+                                    _out_.Span[2] = Blinn8x8(coutput[2].Span[i], m);
+                                    _out_.Span[3] = 255;
+                                    _out_ = _out_.Slice(z.ri.OutComponents);
                                 }
                             }
                             else if (z.app14_color_transform == 2)
                             {
-                                z.YCbCr_to_RGB_kernel(_out_, y, coutput[1], coutput[2], z.ri.Width, z.ri.OutComponents);
-                                for (i = 0; i < z.ri.Width; ++i)
+                                z.YCbCr_to_RGB_kernel(
+                                    _out_.Span, y.Span, coutput[1].Span, coutput[2].Span);
+
+                                for (int i = 0; i < z.ri.Width; ++i)
                                 {
-                                    byte m = coutput[3][i];
-                                    _out_[0] = Blinn8x8((byte)(255 - _out_[0]), m);
-                                    _out_[1] = Blinn8x8((byte)(255 - _out_[1]), m);
-                                    _out_[2] = Blinn8x8((byte)(255 - _out_[2]), m);
-                                    _out_ += z.ri.OutComponents;
+                                    byte m = coutput[3].Span[i];
+                                    _out_.Span[0] = Blinn8x8((byte)(255 - _out_.Span[0]), m);
+                                    _out_.Span[1] = Blinn8x8((byte)(255 - _out_.Span[1]), m);
+                                    _out_.Span[2] = Blinn8x8((byte)(255 - _out_.Span[2]), m);
+                                    _out_ = _out_.Slice(z.ri.OutComponents);
                                 }
                             }
                             else
                             {
-                                z.YCbCr_to_RGB_kernel(_out_, y, coutput[1], coutput[2], z.ri.Width, z.ri.OutComponents);
+                                z.YCbCr_to_RGB_kernel(
+                                    _out_.Span, y.Span, coutput[1].Span, coutput[2].Span);
                             }
                         }
                         else
-                            for (i = 0; i < z.ri.Width; ++i)
+                            for (int i = 0; i < z.ri.Width; ++i)
                             {
-                                _out_[0] = _out_[1] = _out_[2] = y[i];
-                                _out_[3] = 255;
-                                _out_ += z.ri.OutComponents;
+                                _out_.Span[0] = _out_.Span[1] = _out_.Span[2] = y.Span[i];
+                                _out_.Span[3] = 255;
+                                _out_ = _out_.Slice(z.ri.OutComponents);
                             }
                     }
                     else
                     {
-                        i = 0;
                         if (z.is_rgb)
                         {
                             if (z.ri.OutComponents == 1)
                             {
-                                for (; i < z.ri.Width; ++i)
-                                    *_out_++ = ComputeY8(coutput[0][i], coutput[1][i], coutput[2][i]);
+                                for (int i = 0; i < z.ri.Width; ++i)
+                                    _out_.Span[i] = ComputeY8(coutput[0].Span[i], coutput[1].Span[i], coutput[2].Span[i]);
                             }
                             else
                             {
-                                for (; i < z.ri.Width; ++i)
+                                for (int i = 0; i < z.ri.Width; ++i)
                                 {
-                                    _out_[0] = ComputeY8(coutput[0][i], coutput[1][i], coutput[2][i]);
-                                    _out_[1] = 255;
-                                    _out_ += 2;
+                                    _out_.Span[0] = ComputeY8(coutput[0].Span[i], coutput[1].Span[i], coutput[2].Span[i]);
+                                    _out_.Span[1] = 255;
+                                    _out_ = _out_.Slice(2);
                                 }
                             }
                         }
                         else if ((z.ri.Components == 4) && (z.app14_color_transform == 0))
                         {
-                            for (; i < z.ri.Width; ++i)
+                            for (int i = 0; i < z.ri.Width; ++i)
                             {
-                                byte m = coutput[3][i];
-                                byte r = Blinn8x8(coutput[0][i], m);
-                                byte g = Blinn8x8(coutput[1][i], m);
-                                byte b = Blinn8x8(coutput[2][i], m);
-                                _out_[0] = ComputeY8(r, g, b);
-                                _out_[1] = 255;
-                                _out_ += z.ri.OutComponents;
+                                byte m = coutput[3].Span[i];
+                                byte r = Blinn8x8(coutput[0].Span[i], m);
+                                byte g = Blinn8x8(coutput[1].Span[i], m);
+                                byte b = Blinn8x8(coutput[2].Span[i], m);
+                                _out_.Span[0] = ComputeY8(r, g, b);
+                                _out_.Span[1] = 255;
+                                _out_ = _out_.Slice(z.ri.OutComponents);
                             }
                         }
                         else if ((z.ri.Components == 4) && (z.app14_color_transform == 2))
                         {
-                            for (; i < z.ri.Width; ++i)
+                            for (int i = 0; i < z.ri.Width; ++i)
                             {
-                                _out_[0] = Blinn8x8((byte)(255 - coutput[0][i]), coutput[3][i]);
-                                _out_[1] = 255;
-                                _out_ += z.ri.OutComponents;
+                                _out_.Span[0] = Blinn8x8((byte)(255 - coutput[0].Span[i]), coutput[3].Span[i]);
+                                _out_.Span[1] = 255;
+                                _out_ = _out_.Slice(z.ri.OutComponents);
                             }
                         }
                         else
                         {
-                            byte* y = coutput[0];
-                            i = 0;
+                            var y = coutput[0];
                             if (z.ri.OutComponents == 1)
                             {
-                                for (; i < z.ri.Width; ++i)
-                                    _out_[i] = y[i];
+                                for (int i = 0; i < z.ri.Width; ++i)
+                                {
+                                    _out_.Span[0] = y.Span[i];
+                                    _out_ = _out_.Slice(1);
+                                }
                             }
                             else
                             {
-                                for (; i < z.ri.Width; ++i)
+                                for (int i = 0; i < z.ri.Width; ++i)
                                 {
-                                    *_out_++ = y[i];
-                                    *_out_++ = 255;
+                                    _out_.Span[0] = y.Span[i];
+                                    _out_.Span[1] = 255;
+                                    _out_ = _out_.Slice(2);
                                 }
                             }
                         }
                     }
+
+                    z.ri.OutputPixelLine(AddressingMajor.Row, j, 0, _out_.Span);
                 }
 
                 Cleanup(z);
-
-                return new HGlobalMemoryHolder(
-                    output, (z.ri.OutComponents * z.ri.Width * z.ri.Height * z.ri.OutDepth + 7) / 8);
             }
 
-            public static IMemoryHolder LoadImage(ReadContext s, ref ReadState ri)
+            public static async Task Load(BinReader s, ReadState ri)
             {
-                var j = new Context(s, ri);
-                var result = LoadImage(j);
-                ri = j.ri;
-                return result;
+                var j = new JpegState(s, ri);
+                await LoadImage(j);
             }
 
-            public static bool Test(ReadContext s)
+            public static async ValueTask InfoCore(JpegState j)
             {
-                var j = new Context(s, new ReadState());
-                return ParseHeader(j, ScanMode.Type);
+                if (!await ParseHeader(j, ScanMode.Header))
+                    throw new StbImageReadException(ErrorCode.Undefined);
             }
 
-            public static bool InfoCore(Context j)
+            public static ValueTask Info(BinReader s, out ReadState ri)
             {
-                if (!ParseHeader(j, ScanMode.Header))
+                ri = new ReadState();
+                var j = new JpegState(s, ri);
+                return InfoCore(j);
+            }
+
+            public static bool Test(ReadOnlySpan<byte> header)
+            {
+                //var j = new Context(s, new ReadState());
+                //return ParseHeader(j, ScanMode.Type);
+
+                if (header.Length < HeaderSize)
                     return false;
-                return true;
-            }
 
-            public static bool Info(ReadContext s, out ReadState ri)
-            {
-                var j = new Context(s, new ReadState());
-                var result = InfoCore(j);
-                ri = j.ri;
-                return result;
+                // TODO: improve test
+
+                return header[0] == 0xff // 255
+                    && header[1] == 0xd8; // 216
             }
         }
     }

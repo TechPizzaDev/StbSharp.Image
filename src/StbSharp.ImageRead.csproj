@@ -14,12 +14,6 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
-  <ItemGroup>
-    <Compile Remove="ImageRead.Gif.cs" />
-    <Compile Remove="ImageRead.Jpeg.cs" />
-    <Compile Remove="ImageRead.Psd.cs" />
-    <Compile Remove="ImageRead.Tga.cs" />
-  </ItemGroup>
   
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\src\StbSharp.Shared.csproj" />

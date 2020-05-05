@@ -21,12 +21,70 @@ namespace StbSharp
                 H = h;
             }
         }
-        
+
+        public readonly struct Palette
+        {
+            public ReadOnlyMemory<Rgba32> Data { get; }
+            public int Components { get; }
+
+            public Palette(ReadOnlyMemory<Rgba32> data, int components)
+            {
+                Data = data;
+                Components = components;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct Rgb24
+        {
+            public byte R;
+            public byte G;
+            public byte B;
+
+            public Rgb24(byte r, byte g, byte b)
+            {
+                R = r;
+                G = g;
+                B = b;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct Rgba32
+        {
+            public Rgb24 Rgb;
+            public byte A;
+
+            public Rgba32(Rgb24 rgb, byte a)
+            {
+                Rgb = rgb;
+                A = a;
+            }
+
+            public Rgba32(byte r, byte g, byte b, byte a) : this(new Rgb24(r, g, b), a)
+            {
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct Rgb48
+        {
+            public ushort R;
+            public ushort G;
+            public ushort B;
+
+            public Rgb48(ushort r, ushort g, ushort b)
+            {
+                R = r;
+                G = g;
+                B = b;
+            }
+        }
+
         public enum ScanMode
         {
             Load = 0,
-            Type = 1,
-            Header = 2
+            Header = 1
         }
 
         public enum AddressingMajor
@@ -51,8 +109,8 @@ namespace StbSharp
 
         public enum ErrorCode
         {
-            Ok,
             Undefined,
+            Ok,
             
             UnknownFormat,
             UnknownHeader,
