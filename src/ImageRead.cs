@@ -132,6 +132,7 @@ namespace StbSharp
             BadHuffmanCode,
             CantMergeDcAndAc, 
             ExpectedMarker,
+            NoResetMarker,
             BadDRILength,
             BadDQTType,
             BadDQTTable,

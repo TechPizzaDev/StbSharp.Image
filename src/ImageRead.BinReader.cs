@@ -21,13 +21,16 @@ namespace StbSharp
 
             public long Position => _position + _bufferOffset;
 
-            public BinReader(Stream stream, bool leaveOpen, CancellationToken cancellationToken = default)
+            public BinReader(
+                Stream stream,
+                byte[] buffer,
+                bool leaveOpen,
+                CancellationToken cancellationToken = default)
             {
                 Stream = stream ?? throw new ArgumentNullException(nameof(stream));
+                _buffer = buffer ?? throw new ArgumentNullException(nameof(buffer));
                 LeaveOpen = leaveOpen;
                 CancellationToken = cancellationToken;
-
-                _buffer = new byte[1024 * 16];
             }
 
             private Span<byte> Take(int count)
