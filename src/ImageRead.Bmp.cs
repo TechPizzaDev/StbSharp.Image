@@ -350,10 +350,10 @@ namespace StbSharp
                             v2 = info.bpp == 8 ? await s.ReadByte() : v2;
                             WriteFromPalette(ri.OutComponents, palette.AsSpan(v2 * 4));
                         }
+                        await s.Skip(pad);
 
                         int row = flipRows ? (ri.Height - y - 1) : y;
                         ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer);
-                        await s.Skip(pad);
                     }
                 }
                 else
@@ -366,7 +366,7 @@ namespace StbSharp
                     else if (info.bpp == 16)
                         width = 2 * ri.Width;
                     else
-                        width = 0;
+                        throw new StbImageReadException(ErrorCode.BadBitsPerPixel);
 
                     int pad = (-width) & 3;
                     if (easy != 0)
@@ -387,10 +387,10 @@ namespace StbSharp
                                 if (ri.OutComponents == 4)
                                     rowBuffer[x + 3] = easy == 2 ? rowBuffer[o++] : (byte)255;
                             }
+                            await s.Skip(pad);
 
                             int row = flipRows ? (ri.Height - y - 1) : y;
                             ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer);
-                            await s.Skip(pad);
                         }
                     }
                     else
@@ -424,10 +424,10 @@ namespace StbSharp
                                         ? (byte)(ShiftSigned(v & info.ma, ashift, acount) & 0xff)
                                         : (byte)255;
                             }
+                            await s.Skip(pad);
 
                             int row = flipRows ? (ri.Height - y - 1) : y;
                             ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer);
-                            await s.Skip(pad);
                         }
                     }
                 }

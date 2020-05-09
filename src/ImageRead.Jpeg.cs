@@ -22,6 +22,13 @@ namespace StbSharp
                 0, -1, -3, -7, -15, -31, -63, -127, -255, -511, -1023, -2047, -4095, -8191, -16383, -32767
             };
 
+            private static byte[] RGB_Sequence { get; } = new byte[3]
+            {
+                (byte)'R',
+                (byte)'G',
+                (byte)'B',
+            };
+
             private static ReadOnlySpan<byte> DeZigZag => new byte[]
             {
                 0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40,
@@ -783,7 +790,7 @@ namespace StbSharp
                     }
                 }
 
-                for (int i = 0; i < 8; ++i)
+                for (int i = 0; i < 8; i++)
                 {
                     var o = _out_.Slice(i * out_stride);
                     var v = val.Slice(i * 8);
@@ -848,22 +855,23 @@ namespace StbSharp
                         var data = new short[64].AsMemory();
 
                         int n = z.order[0];
-                        int w = (z.components[n].x + 7) / 8;
-                        int h = (z.components[n].y + 7) / 8;
+                        var component = z.components[n];
+                        int w = (component.x + 7) / 8;
+                        int h = (component.y + 7) / 8;
 
                         for (int j = 0; j < h; ++j)
                         {
                             for (int i = 0; i < w; ++i)
                             {
-                                int ha = z.components[n].ha;
+                                int ha = component.ha;
 
                                 await DecodeBlock(
-                                    z, data, z.huff_dc[z.components[n].hd], z.huff_ac[ha],
-                                    z.fast_ac[ha], n, z.dequant[z.components[n].tq]);
+                                    z, data, z.huff_dc[component.hd], z.huff_ac[ha],
+                                    z.fast_ac[ha], n, z.dequant[component.tq]);
 
                                 z.idct_block_kernel(
-                                    z.components[n].data.Span.Slice(z.components[n].w2 * j * 8 + i * 8),
-                                    z.components[n].w2,
+                                    component.data.Span.Slice(component.w2 * j * 8 + i * 8),
+                                    component.w2,
                                     data.Span);
 
                                 if (--z.todo <= 0)
@@ -888,22 +896,24 @@ namespace StbSharp
                                 for (int k = 0; k < z.scan_n; ++k)
                                 {
                                     int n = z.order[k];
-                                    for (int y = 0; y < z.components[n].v; ++y)
+                                    var component = z.components[n];
+
+                                    for (int y = 0; y < component.v; ++y)
                                     {
-                                        for (int x = 0; x < z.components[n].h; ++x)
+                                        for (int x = 0; x < component.h; ++x)
                                         {
-                                            int x2 = (i * z.components[n].h + x) * 8;
-                                            int y2 = (j * z.components[n].v + y) * 8;
-                                            int ha = z.components[n].ha;
+                                            int x2 = (i * component.h + x) * 8;
+                                            int y2 = (j * component.v + y) * 8;
+                                            int ha = component.ha;
 
                                             await DecodeBlock(z, data,
-                                                z.huff_dc[z.components[n].hd],
+                                                z.huff_dc[component.hd],
                                                 z.huff_ac[ha], z.fast_ac[ha], n,
-                                                z.dequant[z.components[n].tq]);
+                                                z.dequant[component.tq]);
 
                                             z.idct_block_kernel(
-                                                z.components[n].data.Span.Slice(z.components[n].w2 * y2 + x2),
-                                                z.components[n].w2,
+                                                component.data.Span.Slice(component.w2 * y2 + x2),
+                                                component.w2,
                                                 data.Span);
                                         }
                                     }
@@ -926,22 +936,23 @@ namespace StbSharp
                     if (z.scan_n == 1)
                     {
                         int n = z.order[0];
-                        int w = (z.components[n].x + 7) / 8;
-                        int h = (z.components[n].y + 7) / 8;
+                        var component = z.components[n];
+                        int w = (component.x + 7) / 8;
+                        int h = (component.y + 7) / 8;
 
                         for (int j = 0; j < h; ++j)
                         {
                             for (int i = 0; i < w; ++i)
                             {
-                                var data = z.components[n].coeff.Slice(64 * (i + j * z.components[n].coeff_w), 64);
+                                var data = component.coeff.Slice(64 * (i + j * component.coeff_w), 64);
 
                                 if (z.spec_start == 0)
                                 {
-                                    await DecodeBlockProgressiveDc(z, data, z.huff_dc[z.components[n].hd], n);
+                                    await DecodeBlockProgressiveDc(z, data, z.huff_dc[component.hd], n);
                                 }
                                 else
                                 {
-                                    int ha = z.components[n].ha;
+                                    int ha = component.ha;
                                     await DecodeBlockProggressiveAc(z, data, z.huff_ac[ha], z.fast_ac[ha]);
                                 }
 
@@ -965,14 +976,16 @@ namespace StbSharp
                                 for (int k = 0; k < z.scan_n; ++k)
                                 {
                                     int n = z.order[k];
-                                    for (int y = 0; y < z.components[n].v; ++y)
+                                    var component = z.components[n];
+
+                                    for (int y = 0; y < component.v; ++y)
                                     {
-                                        for (int x = 0; x < z.components[n].h; ++x)
+                                        for (int x = 0; x < component.h; ++x)
                                         {
-                                            int x2 = i * z.components[n].h + x;
-                                            int y2 = j * z.components[n].v + y;
-                                            var data = z.components[n].coeff.Slice(64 * (x2 + y2 * z.components[n].coeff_w), 64);
-                                            await DecodeBlockProgressiveDc(z, data, z.huff_dc[z.components[n].hd], n);
+                                            int x2 = i * component.h + x;
+                                            int y2 = j * component.v + y;
+                                            var data = component.coeff.Slice(64 * (x2 + y2 * component.coeff_w), 64);
+                                            await DecodeBlockProgressiveDc(z, data, z.huff_dc[component.hd], n);
                                         }
                                     }
                                 }
@@ -1005,22 +1018,22 @@ namespace StbSharp
                 if (!z.progressive)
                     return;
 
-                int i;
-                int j;
                 for (int n = 0; n < z.ri.Components; ++n)
                 {
-                    int w = (z.components[n].x + 7) / 8;
-                    int h = (z.components[n].y + 7) / 8;
-                    for (j = 0; j < h; ++j)
+                    var component = z.components[n];
+                    int w = (component.x + 7) / 8;
+                    int h = (component.y + 7) / 8;
+
+                    for (int j = 0; j < h; ++j)
                     {
-                        for (i = 0; i < w; ++i)
+                        for (int i = 0; i < w; ++i)
                         {
-                            var data = z.components[n].coeff.Slice(64 * (i + j * z.components[n].coeff_w), 64);
-                            Dequantize(data.Span, z.dequant[z.components[n].tq]);
+                            var data = component.coeff.Slice(64 * (i + j * component.coeff_w), 64);
+                            Dequantize(data.Span, z.dequant[component.tq]);
 
                             z.idct_block_kernel(
-                                z.components[n].data.Span.Slice(z.components[n].w2 * j * 8 + i * 8),
-                                z.components[n].w2,
+                                component.data.Span.Slice(component.w2 * j * 8 + i * 8),
+                                component.w2,
                                 data.Span);
                         }
                     }
@@ -1195,6 +1208,7 @@ namespace StbSharp
                 {
                     int id = await s.ReadByte();
                     int q = await s.ReadByte();
+
                     int which;
                     for (which = 0; which < z.ri.Components; ++which)
                     {
@@ -1217,12 +1231,12 @@ namespace StbSharp
                 }
 
                 {
-                    int aa;
                     z.spec_start = await s.ReadByte();
                     z.spec_end = await s.ReadByte();
-                    aa = await s.ReadByte();
+                    int aa = await s.ReadByte();
                     z.succ_high = aa >> 4;
                     z.succ_low = aa & 15;
+
                     if (z.progressive)
                     {
                         if ((z.spec_start > 63) ||
@@ -1274,17 +1288,12 @@ namespace StbSharp
             public static async ValueTask ProcessFrameHeader(JpegState z, ScanMode scan)
             {
                 var s = z.s;
-                int Lf;
-                int p;
-                int i;
-                int q;
-                int h_max = 1;
-                int v_max = 1;
-                Lf = await s.ReadInt16BE();
+
+                int Lf = await s.ReadInt16BE();
                 if (Lf < 11)
                     throw new StbImageReadException(ErrorCode.BadSOFLength);
 
-                p = await s.ReadByte();
+                int p = await s.ReadByte();
                 if (p != 8)
                     throw new StbImageReadException(ErrorCode.UnsupportedBitDepth);
 
@@ -1302,7 +1311,7 @@ namespace StbSharp
                     (z.ri.Components != 4))
                     throw new StbImageReadException(ErrorCode.BadComponentCount);
 
-                for (i = 0; i < z.ri.Components; ++i)
+                for (int i = 0; i < z.ri.Components; ++i)
                 {
                     z.components[i].data = null;
                     z.components[i].linebuf = null;
@@ -1313,17 +1322,13 @@ namespace StbSharp
 
                 z.rgb = 0;
 
-                var rgb = new byte[3];
-                rgb[0] = (byte)'R';
-                rgb[1] = (byte)'G';
-                rgb[2] = (byte)'B';
-
-                for (i = 0; i < z.ri.Components; i++)
+                for (int i = 0; i < z.ri.Components; i++)
                 {
                     z.components[i].id = await s.ReadByte();
-                    if ((z.ri.Components == 3) && (z.components[i].id == rgb[i]))
-                        ++z.rgb;
-                    q = await s.ReadByte();
+                    if ((z.ri.Components == 3) && (z.components[i].id == RGB_Sequence[i]))
+                        z.rgb++;
+
+                    int q = await s.ReadByte();
                     z.components[i].h = q >> 4;
                     if ((z.components[i].h == 0) || (z.components[i].h > 4))
                         throw new StbImageReadException(ErrorCode.BadH);
@@ -1340,7 +1345,10 @@ namespace StbSharp
                 if (scan != ScanMode.Load)
                     return;
 
-                for (i = 0; i < z.ri.Components; ++i)
+                int h_max = 1;
+                int v_max = 1;
+
+                for (int i = 0; i < z.ri.Components; ++i)
                 {
                     if (z.components[i].h > h_max)
                         h_max = z.components[i].h;
@@ -1354,7 +1362,8 @@ namespace StbSharp
                 z.img_mcu_h = v_max * 8;
                 z.img_mcu_x = (z.ri.Width + z.img_mcu_w - 1) / z.img_mcu_w;
                 z.img_mcu_y = (z.ri.Height + z.img_mcu_h - 1) / z.img_mcu_h;
-                for (i = 0; i < z.ri.Components; ++i)
+
+                for (int i = 0; i < z.ri.Components; ++i)
                 {
                     z.components[i].x = (z.ri.Width * z.components[i].h + h_max - 1) / h_max;
                     z.components[i].y = (z.ri.Height * z.components[i].v + v_max - 1) / v_max;
@@ -1671,10 +1680,11 @@ namespace StbSharp
                     for (int k = 0; k < z.decode_n; ++k)
                     {
                         ResampleData r = res_comp[k];
+                        var component = z.components[k];
                         bool y_bot = r.ystep >= (r.vs >> 1);
 
                         coutput[k] = r.Resample(
-                            z.components[k].linebuf,
+                            component.linebuf,
                             y_bot ? r.line1 : r.line0,
                             y_bot ? r.line0 : r.line1,
                             r.w_lores,
@@ -1684,8 +1694,8 @@ namespace StbSharp
                         {
                             r.ystep = 0;
                             r.line0 = r.line1;
-                            if ((++r.ypos) < z.components[k].y)
-                                r.line1 = r.line1.Slice(z.components[k].w2);
+                            if ((++r.ypos) < component.y)
+                                r.line1 = r.line1.Slice(component.w2);
                         }
                     }
 
