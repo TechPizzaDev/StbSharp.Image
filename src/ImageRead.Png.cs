@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
@@ -161,7 +162,8 @@ namespace StbSharp
                 return Load(s, ri, ScanMode.Header);
             }
 
-            public static async Task Load(BinReader s, ReadState ri, ScanMode scan)
+            public static async Task Load(
+                BinReader s, ReadState ri, ScanMode scan, ArrayPool<byte> bytePool = null)
             {
                 var tmp = new byte[HeaderSize];
                 if (!await s.TryReadBytes(tmp))
@@ -204,8 +206,8 @@ namespace StbSharp
                 }
 
                 var seenChunkTypes = new HashSet<ChunkType>();
-
                 Stream decompressedStream = null;
+                bytePool ??= ArrayPool<byte>.Shared;
 
                 // TODO: add state object and make this method static?
                 async ValueTask<HandleChunkResult> HandleChunk(ChunkHeader chunk, ChunkStream stream)
@@ -458,9 +460,8 @@ namespace StbSharp
                     }
                 }
 
-                //uint bpl = (uint)((ri.Width * ri.Depth + 7) / 8);
-                //int raw_len = (int)(bpl * ri.Height * ri.Components + ri.Height);
-
+                // TODO: Consider another stream class that contains this method
+                //       so we don't have to use a delegate. It's not such a big deal though.
                 using (var chunkStream = new ChunkStream(s, HandleChunk))
                 {
                     await chunkStream.ReadAsync(Memory<byte>.Empty, s.CancellationToken);
@@ -495,7 +496,7 @@ namespace StbSharp
                         ? new Transparency(tc8, tc16)
                         : (Transparency?)null;
 
-                    await CreateImage(s, ri, decompressedStream, header, transparency, palette);
+                    await CreateImage(s, ri, decompressedStream, bytePool, header, transparency, palette);
                 }
             }
 
@@ -579,7 +580,7 @@ namespace StbSharp
             }
 
             public static async Task CreateImage(
-                BinReader s, ReadState ri, Stream decompressedStream,
+                BinReader s, ReadState ri, Stream decompressedStream, ArrayPool<byte> bytePool,
                 Header header, Transparency? transparency, Palette? palette)
             {
                 int depth = header.Depth;
@@ -593,77 +594,90 @@ namespace StbSharp
                 int img_width_bytes = (width * rawComp * depth + 7) / 8;
                 int raw_width_bytes = img_width_bytes + 1;
 
-                var dataBuffer = new byte[raw_width_bytes].AsMemory();
-                var previousRowBuffer = new byte[row_bytes].AsMemory();
-                var rowBuffer = new byte[row_bytes].AsMemory();
+                var aDataBuffer = bytePool.Rent(raw_width_bytes);
+                var aPreviousRowBuffer = bytePool.Rent(row_bytes);
+                var aRowBuffer = bytePool.Rent(row_bytes);
 
-                if (header.Interlace == 0)
+                var dataBuffer = aDataBuffer.AsMemory(0, raw_width_bytes);
+                var previousRowBuffer = aPreviousRowBuffer.AsMemory(0, row_bytes);
+                var rowBuffer = aRowBuffer.AsMemory(0, row_bytes);
+
+                try
                 {
-                    await CreateImageRaw(
-                        ri, decompressedStream, dataBuffer, previousRowBuffer, rowBuffer,
-                        width, height, outComp,
-                        originX: 0, originY: 0, spacingX: 1, spacingY: 1,
-                        header, transparency, palette, s.CancellationToken);
-                }
-                else if (header.Interlace == 1)
-                {
-                    //var ww = new System.Diagnostics.Stopwatch();
-                    for (int p = 0; p < 7; p++)
+                    if (header.Interlace == 0)
                     {
-                        //ww.Restart();
-                        int originX = Interlace_OriginX[p];
-                        int originY = Interlace_OriginY[p];
-                        int spacingX = Interlace_SpacingX[p];
-                        int spacingY = Interlace_SpacingY[p];
-
-                        int interlace_width = (width - originX + spacingX - 1) / spacingX;
-                        int interlace_height = (height - originY + spacingY - 1) / spacingY;
-
-                        if (interlace_width != 0 && interlace_height != 0)
+                        await CreateImageRaw(
+                            ri, decompressedStream, dataBuffer, previousRowBuffer, rowBuffer,
+                            width, height, outComp,
+                            originX: 0, originY: 0, spacingX: 1, spacingY: 1,
+                            header, transparency, palette, s.CancellationToken);
+                    }
+                    else if (header.Interlace == 1)
+                    {
+                        //var ww = new System.Diagnostics.Stopwatch();
+                        for (int p = 0; p < 7; p++)
                         {
-                            int interlace_row_bytes = interlace_width * outComp * bytes_per_comp;
-                            int interlace_img_width_bytes = (interlace_width * rawComp * depth + 7) / 8;
-                            int interlace_raw_width_bytes = interlace_img_width_bytes + 1;
+                            //ww.Restart();
+                            int originX = Interlace_OriginX[p];
+                            int originY = Interlace_OriginY[p];
+                            int spacingX = Interlace_SpacingX[p];
+                            int spacingY = Interlace_SpacingY[p];
 
-                            var dataSlice = dataBuffer.Slice(0, interlace_raw_width_bytes);
-                            await CreateImageRaw(
-                                ri, decompressedStream, dataSlice,
-                                previousRowBuffer.Slice(0, interlace_row_bytes),
-                                rowBuffer.Slice(0, interlace_row_bytes),
-                                interlace_width, interlace_height, outComp,
-                                originX, originY, spacingX, spacingY,
-                                header, transparency, palette, s.CancellationToken);
+                            int interlace_width = (width - originX + spacingX - 1) / spacingX;
+                            int interlace_height = (height - originY + spacingY - 1) / spacingY;
 
-                            //Console.Write("Interlace step: " + p);
+                            if (interlace_width != 0 && interlace_height != 0)
+                            {
+                                int interlace_row_bytes = interlace_width * outComp * bytes_per_comp;
+                                int interlace_img_width_bytes = (interlace_width * rawComp * depth + 7) / 8;
+                                int interlace_raw_width_bytes = interlace_img_width_bytes + 1;
 
-                            //if (!ProcessRow(s, ri, buffer, w, h, color))
-                            //    return false;
+                                var dataSlice = dataBuffer.Slice(0, interlace_raw_width_bytes);
+                                await CreateImageRaw(
+                                    ri, decompressedStream, dataSlice,
+                                    previousRowBuffer.Slice(0, interlace_row_bytes),
+                                    rowBuffer.Slice(0, interlace_row_bytes),
+                                    interlace_width, interlace_height, outComp,
+                                    originX, originY, spacingX, spacingY,
+                                    header, transparency, palette, s.CancellationToken);
 
-                            // TODO: read row by row instead of buffering the whole file
+                                //Console.Write("Interlace step: " + p);
 
-                            //for (int y = 0; y < h; y++)
-                            //{
-                            //    int stride = w * bytes_per_pixel;
-                            //    var pixels = primaryRowSpan.Slice(0, stride);
-                            //
-                            //    var src = row.Slice(y * stride);
-                            //    new Span<byte>(src, stride).CopyTo(pixels);
-                            //
-                            //    int out_y = y * spc_y + orig_y;
-                            //    ri.OutputInterleaved(AddressingMajor.Row, out_y, orig_x, spc_x, pixels);
-                            //}
-                            //
-                            //int img_len = ((((ri.Components * w * ri.Depth) + 7) / 8) + 1) * h;
-                            //data = data.Slice(img_len);
+                                //if (!ProcessRow(s, ri, buffer, w, h, color))
+                                //    return false;
+
+                                // TODO: read row by row instead of buffering the whole file
+
+                                //for (int y = 0; y < h; y++)
+                                //{
+                                //    int stride = w * bytes_per_pixel;
+                                //    var pixels = primaryRowSpan.Slice(0, stride);
+                                //
+                                //    var src = row.Slice(y * stride);
+                                //    new Span<byte>(src, stride).CopyTo(pixels);
+                                //
+                                //    int out_y = y * spc_y + orig_y;
+                                //    ri.OutputInterleaved(AddressingMajor.Row, out_y, orig_x, spc_x, pixels);
+                                //}
+                                //
+                                //int img_len = ((((ri.Components * w * ri.Depth) + 7) / 8) + 1) * h;
+                                //data = data.Slice(img_len);
+                            }
+
+                            //ww.Stop();
+                            //Console.WriteLine(", took " + ww.ElapsedMilliseconds + "ms");
                         }
-
-                        //ww.Stop();
-                        //Console.WriteLine(", took " + ww.ElapsedMilliseconds + "ms");
+                    }
+                    else
+                    {
+                        throw new StbImageReadException(ErrorCode.BadInterlaceMethod);
                     }
                 }
-                else
+                finally
                 {
-                    throw new StbImageReadException(ErrorCode.BadInterlaceMethod);
+                    bytePool.Return(aDataBuffer);
+                    bytePool.Return(aPreviousRowBuffer);
+                    bytePool.Return(aRowBuffer);
                 }
             }
 

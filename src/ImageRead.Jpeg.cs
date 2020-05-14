@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
@@ -22,11 +23,28 @@ namespace StbSharp
                 0, -1, -3, -7, -15, -31, -63, -127, -255, -511, -1023, -2047, -4095, -8191, -16383, -32767
             };
 
-            private static byte[] RGB_Sequence { get; } = new byte[3]
+            private static byte[] RGB_Sequence { get; } = new byte[]
             {
                 (byte)'R',
                 (byte)'G',
                 (byte)'B',
+            };
+
+            private static ReadOnlySpan<byte> JfifTag => new byte[] {
+                (byte)'J',
+                (byte)'F',
+                (byte)'I',
+                (byte)'F',
+                (byte)'\0'
+            };
+
+            private static ReadOnlySpan<byte> AdobeTag => new byte[] {
+                (byte)'A',
+                (byte)'d',
+                (byte)'o',
+                (byte)'b',
+                (byte)'e',
+                (byte)'\0'
             };
 
             private static ReadOnlySpan<byte> DeZigZag => new byte[]
@@ -69,12 +87,12 @@ namespace StbSharp
                 public byte[] raw_linebuf;
                 public Memory<byte> linebuf;
 
-                public short[] raw_coeff;
-                public Memory<short> coeff; // progressive only
+                public byte[] raw_coeff;
+                public Memory<byte> coeff; // progressive only
                 public int coeff_w, coeff_h; // number of 8x8 coefficient blocks
             }
 
-            public class Huffman
+            public class Huffman : IDisposable
             {
                 public const int FastLength = 512;
                 public const int CodeLength = 256;
@@ -83,15 +101,15 @@ namespace StbSharp
                 public const int MaxcodeLength = 18;
                 public const int DeltaLength = 17;
 
-                // TODO: arraypool
+                private ArrayPool<byte> _pool;
                 private byte[] _buffer;
 
-                public Memory<byte> MFast { get; }
-                public Memory<byte> MCode { get; }
-                public Memory<byte> MValues { get; }
-                public Memory<byte> MSize { get; }
-                public Memory<byte> MMaxcode { get; }
-                public Memory<byte> MDelta { get; }
+                public Memory<byte> MFast { get; private set; }
+                public Memory<byte> MCode { get; private set; }
+                public Memory<byte> MValues { get; private set; }
+                public Memory<byte> MSize { get; private set; }
+                public Memory<byte> MMaxcode { get; private set; }
+                public Memory<byte> MDelta { get; private set; }
 
                 public Span<byte> Fast => MFast.Span;
                 public Span<ushort> Code => MemoryMarshal.Cast<byte, ushort>(MCode.Span);
@@ -100,17 +118,20 @@ namespace StbSharp
                 public Span<uint> Maxcode => MemoryMarshal.Cast<byte, uint>(MMaxcode.Span);
                 public Span<int> Delta => MemoryMarshal.Cast<byte, int>(MDelta.Span);
 
-                public Huffman()
+                public Huffman(ArrayPool<byte> pool)
                 {
-                    _buffer = new byte[
+                    int size =
                         FastLength * sizeof(byte) +
                         CodeLength * sizeof(ushort) +
                         ValuesLength * sizeof(byte) +
                         SizeLength * sizeof(byte) +
                         MaxcodeLength * sizeof(uint) +
-                        DeltaLength * sizeof(int)];
+                        DeltaLength * sizeof(int);
 
-                    var m = _buffer.AsMemory();
+                    _pool = pool;
+                    _buffer = _pool.Rent(size);
+
+                    var m = _buffer.AsMemory(0, size);
                     int o = 0;
 
                     MFast = m.Slice(o, FastLength * sizeof(byte));
@@ -130,17 +151,35 @@ namespace StbSharp
 
                     MDelta = m.Slice(o, DeltaLength * sizeof(int));
                 }
+
+                public void Dispose()
+                {
+                    if (_buffer != null)
+                    {
+                        MFast = default;
+                        MCode = default;
+                        MValues = default;
+                        MSize = default;
+                        MMaxcode = default;
+                        MDelta = default;
+
+                        _pool.Return(_buffer);
+                        _buffer = null;
+                    }
+                }
             }
 
-            public class JpegState
+            public class JpegState : IDisposable
             {
                 public BinReader s;
                 public readonly Huffman[] huff_dc = new Huffman[4];
                 public readonly Huffman[] huff_ac = new Huffman[4];
                 public readonly ushort[][] dequant;
 
+                public readonly ArrayPool<byte> bytePool;
+
                 public readonly short[][] fast_ac;
-                public bool[] bitbuffer = new bool[64];
+                public readonly bool[] bitbuffer = new bool[64];
 
                 // sizes for components, interleaved MCUs
                 public int img_h_max, img_v_max;
@@ -177,19 +216,20 @@ namespace StbSharp
                 public bool is_rgb;
                 public ReadState ri;
 
-                public JpegState(BinReader reader, ReadState readState)
+                public JpegState(BinReader reader, ReadState readState, ArrayPool<byte> arrayPool = null)
                 {
                     s = reader;
                     ri = readState;
+                    bytePool = arrayPool ?? ArrayPool<byte>.Shared;
 
                     idct_block_kernel = IdctBlock;
                     YCbCr_to_RGB_kernel = YCbCrToRGB;
                     resample_row_hv_2_kernel = ResampleRowHV2;
 
-                    for (var i = 0; i < 4; ++i)
+                    for (int i = 0; i < 4; i++)
                     {
-                        huff_ac[i] = new Huffman();
-                        huff_dc[i] = new Huffman();
+                        huff_ac[i] = new Huffman(bytePool);
+                        huff_dc[i] = new Huffman(bytePool);
                     }
 
                     for (var i = 0; i < components.Length; ++i)
@@ -203,7 +243,18 @@ namespace StbSharp
                     for (var i = 0; i < dequant.Length; ++i)
                         dequant[i] = new ushort[64];
                 }
-            };
+
+                public void Dispose()
+                {
+                    for (int i = 0; i < 4; i++)
+                    {
+                        huff_ac[i]?.Dispose();
+                        huff_dc[i]?.Dispose();
+                    }
+                    huff_ac.AsSpan().Clear();
+                    huff_dc.AsSpan().Clear();
+                }
+            }
 
             public class ResampleData
             {
@@ -465,8 +516,13 @@ namespace StbSharp
                 } while (k < 64);
             }
 
+            public static Span<short> ByteToInt16(Memory<byte> bytes)
+            {
+                return MemoryMarshal.Cast<byte, short>(bytes.Span);
+            }
+
             public static async ValueTask DecodeBlockProgressiveDc(
-                JpegState j, Memory<short> data, Huffman hdc, int b)
+                JpegState j, Memory<byte> data, Huffman hdc, int b)
             {
                 if (j.spec_end != 0)
                     throw new StbImageReadException(ErrorCode.CantMergeDcAndAc);
@@ -481,17 +537,17 @@ namespace StbSharp
                     int diff = t != 0 ? await ExtendReceive(j, t) : 0;
                     int dc = j.components[b].dc_pred + diff;
                     j.components[b].dc_pred = dc;
-                    data.Span[0] = (short)(dc << j.succ_low);
+                    ByteToInt16(data)[0] = (short)(dc << j.succ_low);
                 }
                 else
                 {
                     if (await ReadBit(j))
-                        data.Span[0] += (short)(1 << j.succ_low);
+                        ByteToInt16(data)[0] += (short)(1 << j.succ_low);
                 }
             }
 
             public static async ValueTask DecodeBlockProggressiveAc(
-                JpegState j, Memory<short> data, Huffman hac, short[] fac)
+                JpegState j, Memory<byte> data, Huffman hac, short[] fac)
             {
                 if (j.spec_start == 0)
                     throw new StbImageReadException(ErrorCode.CantMergeDcAndAc);
@@ -521,7 +577,7 @@ namespace StbSharp
                             j.code_buffer <<= s;
                             j.code_bits -= s;
                             var zig = DeZigZag[k++];
-                            data.Span[zig] = (short)((r >> 8) << shift);
+                            ByteToInt16(data)[zig] = (short)((r >> 8) << shift);
                         }
                         else
                         {
@@ -549,7 +605,7 @@ namespace StbSharp
                                 k += r;
                                 var zig = DeZigZag[k++];
                                 int extended = await ExtendReceive(j, s);
-                                data.Span[zig] = (short)(extended << shift);
+                                ByteToInt16(data)[zig] = (short)(extended << shift);
                             }
                         }
                     } while (k <= j.spec_end);
@@ -598,11 +654,16 @@ namespace StbSharp
                             }
                         }
 
-                        int bitCount = CountBits(data.Span, j.spec_start, j.spec_end);
+                        int bitCount = CountBits(
+                            ByteToInt16(data), j.spec_start, j.spec_end);
+
                         for (int i = 0; i < bitCount; i++)
                             j.bitbuffer[i] = await ReadBit(j);
 
-                        DecodeAssignBit(j.bitbuffer, data.Span, bit, j.spec_start, j.spec_end);
+                        DecodeAssignBit(
+                            j.bitbuffer,
+                            ByteToInt16(data),
+                            bit, j.spec_start, j.spec_end);
                     }
                     else
                     {
@@ -691,11 +752,16 @@ namespace StbSharp
                                 }
                             }
 
-                            int bitCount = CountBits(data.Span, r, k, j.spec_end);
+                            int bitCount = CountBits(
+                                ByteToInt16(data), r, k, j.spec_end);
+
                             for (int i = 0; i < bitCount; i++)
                                 j.bitbuffer[i] = await ReadBit(j);
 
-                            DecodeDecrementAssignBit(j.bitbuffer, data.Span, (short)s, r, bit, ref k, j.spec_end);
+                            DecodeDecrementAssignBit(
+                                j.bitbuffer,
+                                ByteToInt16(data),
+                                (short)s, r, bit, ref k, j.spec_end);
 
                         } while (k <= j.spec_end);
                     }
@@ -944,7 +1010,9 @@ namespace StbSharp
                         {
                             for (int i = 0; i < w; ++i)
                             {
-                                var data = component.coeff.Slice(64 * (i + j * component.coeff_w), 64);
+                                var data = component.coeff.Slice(
+                                    sizeof(short) * 64 * (i + j * component.coeff_w),
+                                    sizeof(short) * 64);
 
                                 if (z.spec_start == 0)
                                 {
@@ -984,7 +1052,10 @@ namespace StbSharp
                                         {
                                             int x2 = i * component.h + x;
                                             int y2 = j * component.v + y;
-                                            var data = component.coeff.Slice(64 * (x2 + y2 * component.coeff_w), 64);
+                                            var data = component.coeff.Slice(
+                                                sizeof(short) * 64 * (x2 + y2 * component.coeff_w),
+                                                sizeof(short) * 64);
+
                                             await DecodeBlockProgressiveDc(z, data, z.huff_dc[component.hd], n);
                                         }
                                     }
@@ -1028,13 +1099,15 @@ namespace StbSharp
                     {
                         for (int i = 0; i < w; ++i)
                         {
-                            var data = component.coeff.Slice(64 * (i + j * component.coeff_w), 64);
-                            Dequantize(data.Span, z.dequant[component.tq]);
+                            var data16 = ByteToInt16(component.coeff);
+                            var data = data16.Slice(64 * (i + j * component.coeff_w), 64);
+
+                            Dequantize(data, z.dequant[component.tq]);
 
                             z.idct_block_kernel(
                                 component.data.Span.Slice(component.w2 * j * 8 + i * 8),
                                 component.w2,
-                                data.Span);
+                                data);
                         }
                     }
                 }
@@ -1136,18 +1209,11 @@ namespace StbSharp
                     L -= 2;
                     if ((m == 0xE0) && (L >= 5))
                     {
-                        var tag = new byte[5];
-                        tag[0] = (byte)'J';
-                        tag[1] = (byte)'F';
-                        tag[2] = (byte)'I';
-                        tag[3] = (byte)'F';
-                        tag[4] = (byte)'\0';
-
                         int ok = 1;
                         int i;
                         for (i = 0; i < 5; ++i)
                         {
-                            if (await s.ReadByte() != tag[i])
+                            if (await s.ReadByte() != JfifTag[i])
                                 ok = 0;
                         }
 
@@ -1157,18 +1223,10 @@ namespace StbSharp
                     }
                     else if ((m == 0xEE) && (L >= 12))
                     {
-                        var tag = new byte[6];
-                        tag[0] = (byte)'A';
-                        tag[1] = (byte)'d';
-                        tag[2] = (byte)'o';
-                        tag[3] = (byte)'b';
-                        tag[4] = (byte)'e';
-                        tag[5] = (byte)'\0';
-
                         bool ok = true;
                         for (int i = 0; i < 6; ++i)
                         {
-                            if (await s.ReadByte() != tag[i])
+                            if (await s.ReadByte() != AdobeTag[i])
                             {
                                 ok = false;
                                 break;
@@ -1265,22 +1323,27 @@ namespace StbSharp
             {
                 for (int i = 0; i < ncomp; i++)
                 {
-                    if (z.components[i].raw_data != null)
+                    ref ImageComponent comp = ref z.components[i];
+
+                    if (comp.raw_data != null)
                     {
-                        z.components[i].raw_data = null;
-                        z.components[i].data = null;
+                        z.bytePool.Return(comp.raw_data);
+                        comp.raw_data = null;
+                        comp.data = null;
                     }
 
-                    if (z.components[i].raw_coeff != null)
+                    if (comp.raw_coeff != null)
                     {
-                        z.components[i].raw_coeff = null;
-                        z.components[i].coeff = null;
+                        z.bytePool.Return(comp.raw_coeff);
+                        comp.raw_coeff = null;
+                        comp.coeff = null;
                     }
 
-                    if (z.components[i].raw_linebuf != null)
+                    if (comp.raw_linebuf != null)
                     {
-                        z.components[i].raw_linebuf = null;
-                        z.components[i].linebuf = null;
+                        z.bytePool.Return(comp.raw_linebuf);
+                        comp.raw_linebuf = null;
+                        comp.linebuf = null;
                     }
                 }
             }
@@ -1363,6 +1426,8 @@ namespace StbSharp
                 z.img_mcu_x = (z.ri.Width + z.img_mcu_w - 1) / z.img_mcu_w;
                 z.img_mcu_y = (z.ri.Height + z.img_mcu_h - 1) / z.img_mcu_h;
 
+                FreeComponents(z, z.ri.Components);
+
                 for (int i = 0; i < z.ri.Components; ++i)
                 {
                     z.components[i].x = (z.ri.Width * z.components[i].h + h_max - 1) / h_max;
@@ -1370,22 +1435,19 @@ namespace StbSharp
                     z.components[i].w2 = z.img_mcu_x * z.components[i].h * 8;
                     z.components[i].h2 = z.img_mcu_y * z.components[i].v * 8;
 
-                    z.components[i].raw_coeff = null;
-                    z.components[i].coeff = null;
+                    int elementCount = z.components[i].w2 * z.components[i].h2;
 
-                    z.components[i].raw_linebuf = null;
-                    z.components[i].linebuf = null;
-
-                    z.components[i].raw_data = new byte[z.components[i].w2 * z.components[i].h2];
-                    z.components[i].data = z.components[i].raw_data.AsMemory();
+                    z.components[i].raw_data = z.bytePool.Rent(elementCount);
+                    z.components[i].data = z.components[i].raw_data.AsMemory(0, elementCount);
 
                     if (z.progressive)
                     {
                         z.components[i].coeff_w = z.components[i].w2 / 8;
                         z.components[i].coeff_h = z.components[i].h2 / 8;
 
-                        z.components[i].raw_coeff = new short[z.components[i].w2 * z.components[i].h2];
-                        z.components[i].coeff = z.components[i].raw_coeff.AsMemory();
+                        int coeffBytes = elementCount * sizeof(short);
+                        z.components[i].raw_coeff = z.bytePool.Rent(coeffBytes);
+                        z.components[i].coeff = z.components[i].raw_coeff.AsMemory(0, coeffBytes);
                     }
                 }
             }
@@ -1414,6 +1476,7 @@ namespace StbSharp
                 }
 
                 z.progressive = m == 0xc2;
+
                 await ProcessFrameHeader(z, scan);
 
                 return true;
@@ -1421,12 +1484,7 @@ namespace StbSharp
 
             public static async ValueTask<bool> ParseData(JpegState j)
             {
-                for (int i = 0; i < 4; i++)
-                {
-                    j.components[i].raw_data = null;
-                    j.components[i].raw_coeff = null;
-                }
-
+                FreeComponents(j, 4);
                 j.restart_interval = 0;
 
                 if (!await ParseHeader(j, (int)ScanMode.Load))
@@ -1628,29 +1686,36 @@ namespace StbSharp
 
             public static async Task LoadImage(JpegState z)
             {
-                if (!await ParseData(z))
+                try
+                {
+                    if (!await ParseData(z))
+                        return;
+
+                    z.ri.OutComponents = z.ri.Components >= 3 ? 3 : 1;
+                    z.ri.OutDepth = z.ri.Depth;
+
+                    z.ri.StateReady();
+
+                    ProcessData(z);
+                }
+                finally
                 {
                     Cleanup(z);
-                    return;
                 }
+            }
 
-                z.ri.OutComponents = z.ri.Components >= 3 ? 3 : 1;
-                z.ri.OutDepth = z.ri.Depth;
-
-                z.ri.StateReady();
-
+            public static void ProcessData(JpegState z)
+            {
                 var coutput = new Memory<byte>[4];
-                var res_comp = new ResampleData[4];
-
-                for (int i = 0; i < res_comp.Length; i++)
-                    res_comp[i] = new ResampleData();
+                var res_comp = new ResampleData[z.decode_n];
 
                 for (int k = 0; k < z.decode_n; k++)
                 {
-                    z.components[k].raw_linebuf = new byte[z.ri.Width + 3];
-                    z.components[k].linebuf = z.components[k].raw_linebuf.AsMemory();
+                    int lineBufLen = z.ri.Width + 3;
+                    z.components[k].raw_linebuf = z.bytePool.Rent(lineBufLen);
+                    z.components[k].linebuf = z.components[k].raw_linebuf.AsMemory(0, lineBufLen);
 
-                    ResampleData r = res_comp[k];
+                    var r = new ResampleData();
                     r.hs = z.img_h_max / z.components[k].h;
                     r.vs = z.img_v_max / z.components[k].v;
                     r.ystep = r.vs >> 1;
@@ -1668,175 +1733,182 @@ namespace StbSharp
                         r.Resample = z.resample_row_hv_2_kernel;
                     else
                         r.Resample = ResampleRowGeneric;
+
+                    res_comp[k] = r;
                 }
 
                 int stride = z.ri.OutComponents * z.ri.Width;
-                var output = new byte[stride * z.ri.Height].AsMemory();
-
-                for (int j = 0; j < z.ri.Height; ++j)
+                var rowBufferArray = z.bytePool.Rent(stride);
+                var rowBuffer = rowBufferArray.AsMemory(0, stride);
+                try
                 {
-                    var _out_ = output.Slice(stride * j, stride);
-
-                    for (int k = 0; k < z.decode_n; ++k)
+                    for (int j = 0; j < z.ri.Height; ++j)
                     {
-                        ResampleData r = res_comp[k];
-                        var component = z.components[k];
-                        bool y_bot = r.ystep >= (r.vs >> 1);
-
-                        coutput[k] = r.Resample(
-                            component.linebuf,
-                            y_bot ? r.line1 : r.line0,
-                            y_bot ? r.line0 : r.line1,
-                            r.w_lores,
-                            r.hs);
-
-                        if ((++r.ystep) >= r.vs)
+                        for (int k = 0; k < z.decode_n; ++k)
                         {
-                            r.ystep = 0;
-                            r.line0 = r.line1;
-                            if ((++r.ypos) < component.y)
-                                r.line1 = r.line1.Slice(component.w2);
-                        }
-                    }
+                            ResampleData r = res_comp[k];
+                            var component = z.components[k];
+                            bool y_bot = r.ystep >= (r.vs >> 1);
 
-                    if (z.ri.OutComponents >= 3)
-                    {
-                        var y = coutput[0];
-                        if (z.ri.Components == 3)
+                            coutput[k] = r.Resample(
+                                component.linebuf,
+                                y_bot ? r.line1 : r.line0,
+                                y_bot ? r.line0 : r.line1,
+                                r.w_lores,
+                                r.hs);
+
+                            if ((++r.ystep) >= r.vs)
+                            {
+                                r.ystep = 0;
+                                r.line0 = r.line1;
+                                if ((++r.ypos) < component.y)
+                                    r.line1 = r.line1.Slice(component.w2);
+                            }
+                        }
+
+                        if (z.ri.OutComponents >= 3)
+                        {
+                            var y = coutput[0];
+                            if (z.ri.Components == 3)
+                            {
+                                if (z.is_rgb)
+                                {
+                                    for (int i = 0; i < z.ri.Width; ++i)
+                                    {
+                                        rowBuffer.Span[0] = y.Span[i];
+                                        rowBuffer.Span[1] = coutput[1].Span[i];
+                                        rowBuffer.Span[2] = coutput[2].Span[i];
+                                        rowBuffer.Span[3] = 255;
+                                        rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
+                                    }
+                                }
+                                else
+                                {
+                                    z.YCbCr_to_RGB_kernel(
+                                        rowBuffer.Span, y.Span, coutput[1].Span, coutput[2].Span);
+                                }
+                            }
+                            else if (z.ri.Components == 4)
+                            {
+                                if (z.app14_color_transform == 0)
+                                {
+                                    for (int i = 0; i < z.ri.Width; ++i)
+                                    {
+                                        byte m = coutput[3].Span[i];
+                                        rowBuffer.Span[0] = Blinn8x8(coutput[0].Span[i], m);
+                                        rowBuffer.Span[1] = Blinn8x8(coutput[1].Span[i], m);
+                                        rowBuffer.Span[2] = Blinn8x8(coutput[2].Span[i], m);
+                                        rowBuffer.Span[3] = 255;
+                                        rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
+                                    }
+                                }
+                                else if (z.app14_color_transform == 2)
+                                {
+                                    z.YCbCr_to_RGB_kernel(
+                                        rowBuffer.Span, y.Span, coutput[1].Span, coutput[2].Span);
+
+                                    for (int i = 0; i < z.ri.Width; ++i)
+                                    {
+                                        byte m = coutput[3].Span[i];
+                                        rowBuffer.Span[0] = Blinn8x8((byte)(255 - rowBuffer.Span[0]), m);
+                                        rowBuffer.Span[1] = Blinn8x8((byte)(255 - rowBuffer.Span[1]), m);
+                                        rowBuffer.Span[2] = Blinn8x8((byte)(255 - rowBuffer.Span[2]), m);
+                                        rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
+                                    }
+                                }
+                                else
+                                {
+                                    z.YCbCr_to_RGB_kernel(
+                                        rowBuffer.Span, y.Span, coutput[1].Span, coutput[2].Span);
+                                }
+                            }
+                            else
+                                for (int i = 0; i < z.ri.Width; ++i)
+                                {
+                                    rowBuffer.Span[0] = rowBuffer.Span[1] = rowBuffer.Span[2] = y.Span[i];
+                                    rowBuffer.Span[3] = 255;
+                                    rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
+                                }
+                        }
+                        else
                         {
                             if (z.is_rgb)
                             {
-                                for (int i = 0; i < z.ri.Width; ++i)
+                                if (z.ri.OutComponents == 1)
                                 {
-                                    _out_.Span[0] = y.Span[i];
-                                    _out_.Span[1] = coutput[1].Span[i];
-                                    _out_.Span[2] = coutput[2].Span[i];
-                                    _out_.Span[3] = 255;
-                                    _out_ = _out_.Slice(z.ri.OutComponents);
+                                    for (int i = 0; i < z.ri.Width; ++i)
+                                        rowBuffer.Span[i] = ComputeY8(
+                                            coutput[0].Span[i], coutput[1].Span[i], coutput[2].Span[i]);
+                                }
+                                else
+                                {
+                                    for (int i = 0; i < z.ri.Width; ++i)
+                                    {
+                                        rowBuffer.Span[0] = ComputeY8(
+                                            coutput[0].Span[i], coutput[1].Span[i], coutput[2].Span[i]);
+                                        rowBuffer.Span[1] = 255;
+                                        rowBuffer = rowBuffer.Slice(2);
+                                    }
                                 }
                             }
-                            else
+                            else if ((z.ri.Components == 4) && (z.app14_color_transform == 0))
                             {
-                                z.YCbCr_to_RGB_kernel(
-                                    _out_.Span, y.Span, coutput[1].Span, coutput[2].Span);
-                            }
-                        }
-                        else if (z.ri.Components == 4)
-                        {
-                            if (z.app14_color_transform == 0)
-                            {
-                                for (int i = 0; i < z.ri.Width; ++i)
-                                {
-                                    byte m = coutput[3].Span[i];
-                                    _out_.Span[0] = Blinn8x8(coutput[0].Span[i], m);
-                                    _out_.Span[1] = Blinn8x8(coutput[1].Span[i], m);
-                                    _out_.Span[2] = Blinn8x8(coutput[2].Span[i], m);
-                                    _out_.Span[3] = 255;
-                                    _out_ = _out_.Slice(z.ri.OutComponents);
-                                }
-                            }
-                            else if (z.app14_color_transform == 2)
-                            {
-                                z.YCbCr_to_RGB_kernel(
-                                    _out_.Span, y.Span, coutput[1].Span, coutput[2].Span);
-
                                 for (int i = 0; i < z.ri.Width; ++i)
                                 {
                                     byte m = coutput[3].Span[i];
-                                    _out_.Span[0] = Blinn8x8((byte)(255 - _out_.Span[0]), m);
-                                    _out_.Span[1] = Blinn8x8((byte)(255 - _out_.Span[1]), m);
-                                    _out_.Span[2] = Blinn8x8((byte)(255 - _out_.Span[2]), m);
-                                    _out_ = _out_.Slice(z.ri.OutComponents);
+                                    byte r = Blinn8x8(coutput[0].Span[i], m);
+                                    byte g = Blinn8x8(coutput[1].Span[i], m);
+                                    byte b = Blinn8x8(coutput[2].Span[i], m);
+                                    rowBuffer.Span[0] = ComputeY8(r, g, b);
+                                    rowBuffer.Span[1] = 255;
+                                    rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
+                                }
+                            }
+                            else if ((z.ri.Components == 4) && (z.app14_color_transform == 2))
+                            {
+                                for (int i = 0; i < z.ri.Width; ++i)
+                                {
+                                    rowBuffer.Span[0] = Blinn8x8((byte)(255 - coutput[0].Span[i]), coutput[3].Span[i]);
+                                    rowBuffer.Span[1] = 255;
+                                    rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
                                 }
                             }
                             else
                             {
-                                z.YCbCr_to_RGB_kernel(
-                                    _out_.Span, y.Span, coutput[1].Span, coutput[2].Span);
-                            }
-                        }
-                        else
-                            for (int i = 0; i < z.ri.Width; ++i)
-                            {
-                                _out_.Span[0] = _out_.Span[1] = _out_.Span[2] = y.Span[i];
-                                _out_.Span[3] = 255;
-                                _out_ = _out_.Slice(z.ri.OutComponents);
-                            }
-                    }
-                    else
-                    {
-                        if (z.is_rgb)
-                        {
-                            if (z.ri.OutComponents == 1)
-                            {
-                                for (int i = 0; i < z.ri.Width; ++i)
-                                    _out_.Span[i] = ComputeY8(coutput[0].Span[i], coutput[1].Span[i], coutput[2].Span[i]);
-                            }
-                            else
-                            {
-                                for (int i = 0; i < z.ri.Width; ++i)
+                                var y = coutput[0];
+                                if (z.ri.OutComponents == 1)
                                 {
-                                    _out_.Span[0] = ComputeY8(coutput[0].Span[i], coutput[1].Span[i], coutput[2].Span[i]);
-                                    _out_.Span[1] = 255;
-                                    _out_ = _out_.Slice(2);
+                                    for (int i = 0; i < z.ri.Width; ++i)
+                                    {
+                                        rowBuffer.Span[0] = y.Span[i];
+                                        rowBuffer = rowBuffer.Slice(1);
+                                    }
+                                }
+                                else
+                                {
+                                    for (int i = 0; i < z.ri.Width; ++i)
+                                    {
+                                        rowBuffer.Span[0] = y.Span[i];
+                                        rowBuffer.Span[1] = 255;
+                                        rowBuffer = rowBuffer.Slice(2);
+                                    }
                                 }
                             }
                         }
-                        else if ((z.ri.Components == 4) && (z.app14_color_transform == 0))
-                        {
-                            for (int i = 0; i < z.ri.Width; ++i)
-                            {
-                                byte m = coutput[3].Span[i];
-                                byte r = Blinn8x8(coutput[0].Span[i], m);
-                                byte g = Blinn8x8(coutput[1].Span[i], m);
-                                byte b = Blinn8x8(coutput[2].Span[i], m);
-                                _out_.Span[0] = ComputeY8(r, g, b);
-                                _out_.Span[1] = 255;
-                                _out_ = _out_.Slice(z.ri.OutComponents);
-                            }
-                        }
-                        else if ((z.ri.Components == 4) && (z.app14_color_transform == 2))
-                        {
-                            for (int i = 0; i < z.ri.Width; ++i)
-                            {
-                                _out_.Span[0] = Blinn8x8((byte)(255 - coutput[0].Span[i]), coutput[3].Span[i]);
-                                _out_.Span[1] = 255;
-                                _out_ = _out_.Slice(z.ri.OutComponents);
-                            }
-                        }
-                        else
-                        {
-                            var y = coutput[0];
-                            if (z.ri.OutComponents == 1)
-                            {
-                                for (int i = 0; i < z.ri.Width; ++i)
-                                {
-                                    _out_.Span[0] = y.Span[i];
-                                    _out_ = _out_.Slice(1);
-                                }
-                            }
-                            else
-                            {
-                                for (int i = 0; i < z.ri.Width; ++i)
-                                {
-                                    _out_.Span[0] = y.Span[i];
-                                    _out_.Span[1] = 255;
-                                    _out_ = _out_.Slice(2);
-                                }
-                            }
-                        }
-                    }
 
-                    z.ri.OutputPixelLine(AddressingMajor.Row, j, 0, _out_.Span);
+                        z.ri.OutputPixelLine(AddressingMajor.Row, j, 0, rowBuffer.Span);
+                    }
                 }
-
-                Cleanup(z);
+                finally
+                {
+                    z.bytePool.Return(rowBufferArray);
+                }
             }
 
-            public static async Task Load(BinReader s, ReadState ri)
+            public static async Task Load(BinReader s, ReadState ri, ArrayPool<byte> arrayPool = null)
             {
-                var j = new JpegState(s, ri);
-                await LoadImage(j);
+                using (var j = new JpegState(s, ri, arrayPool))
+                    await LoadImage(j);
             }
 
             public static async ValueTask InfoCore(JpegState j)
@@ -1848,8 +1920,8 @@ namespace StbSharp
             public static ValueTask Info(BinReader s, out ReadState ri)
             {
                 ri = new ReadState();
-                var j = new JpegState(s, ri);
-                return InfoCore(j);
+                using (var j = new JpegState(s, ri))
+                    return InfoCore(j);
             }
 
             public static bool Test(ReadOnlySpan<byte> header)

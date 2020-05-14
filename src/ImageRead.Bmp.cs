@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Threading.Tasks;
 
 namespace StbSharp
@@ -248,7 +249,8 @@ namespace StbSharp
                 return info;
             }
 
-            public static async Task<BmpInfo> Load(BinReader s, ReadState ri)
+            public static async Task<BmpInfo> Load(
+                BinReader s, ReadState ri, ArrayPool<byte> bytePool = null)
             {
                 var info = await ParseHeader(s, ri);
                 if (info == null)
@@ -258,6 +260,8 @@ namespace StbSharp
                 ri.OutDepth = Math.Max(ri.Depth, 8);
 
                 ri.StateReady();
+
+                bytePool ??= ArrayPool<byte>.Shared;
 
                 int psize = 0;
                 if (info.headerSize == 12)
@@ -288,150 +292,156 @@ namespace StbSharp
                 }
 
                 bool flipRows = (ri.Orientation & ImageOrientation.BottomToTop) == ImageOrientation.BottomToTop;
+
                 int rowByteSize = ri.Width * ri.OutComponents;
-                var rowBuffer = new byte[rowByteSize];
-
-                if (info.bpp < 16)
+                var rowBuffer = bytePool.Rent(rowByteSize);
+                try
                 {
-                    if ((psize == 0) || (psize > 256))
-                        throw new StbImageReadException(ErrorCode.InvalidPLTE);
-
-                    var palette = new byte[256 * 4];
-                    for (int x = 0; x < psize; ++x)
+                    if (info.bpp < 16)
                     {
-                        palette[x * 4 + 2] = await s.ReadByte();
-                        palette[x * 4 + 1] = await s.ReadByte();
-                        palette[x * 4 + 0] = await s.ReadByte();
+                        if ((psize == 0) || (psize > 256))
+                            throw new StbImageReadException(ErrorCode.InvalidPLTE);
 
-                        palette[x * 4 + 3] = info.headerSize == 12 
-                            ? (byte)255 
-                            : await s.ReadByte();
-                    }
-
-                    await s.Skip(
-                        info.offset - 14 - info.headerSize -
-                        psize * (info.headerSize == 12 ? 3 : 4));
-
-                    int width;
-                    if (info.bpp == 4)
-                        width = (ri.Width + 1) / 2;
-                    else if (info.bpp == 8)
-                        width = ri.Width;
-                    else
-                        throw new StbImageReadException(ErrorCode.BadBitsPerPixel);
-
-                    int pad = (-width) & 3;
-                    for (int y = 0; y < ri.Height; ++y)
-                    {
-                        for (int x = 0, z = 0; x < ri.Width; x += 2)
+                        var palette = new byte[256 * 4];
+                        for (int x = 0; x < psize; ++x)
                         {
-                            void WriteFromPalette(int comp, Span<byte> palette)
-                            {
-                                rowBuffer[z + 0] = palette[0];
-                                rowBuffer[z + 1] = palette[1];
-                                rowBuffer[z + 2] = palette[2];
+                            palette[x * 4 + 2] = await s.ReadByte();
+                            palette[x * 4 + 1] = await s.ReadByte();
+                            palette[x * 4 + 0] = await s.ReadByte();
 
-                                if (comp == 4)
-                                    rowBuffer[z + 3] = palette[3];
-                                z += comp;
-                            }
-
-                            int v2 = 0;
-                            int v1 = await s.ReadByte();
-                            if (info.bpp == 4)
-                            {
-                                v2 = v1 & 15;
-                                v1 >>= 4;
-                            }
-                            WriteFromPalette(ri.OutComponents, palette.AsSpan(v1 * 4));
-
-                            if ((x + 1) == ri.Width)
-                                break;
-                            v2 = info.bpp == 8 ? await s.ReadByte() : v2;
-                            WriteFromPalette(ri.OutComponents, palette.AsSpan(v2 * 4));
+                            palette[x * 4 + 3] = info.headerSize == 12
+                                ? (byte)255
+                                : await s.ReadByte();
                         }
-                        await s.Skip(pad);
 
-                        int row = flipRows ? (ri.Height - y - 1) : y;
-                        ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer);
-                    }
-                }
-                else
-                {
-                    await s.Skip(info.offset - 14 - info.headerSize);
+                        await s.Skip(
+                            info.offset - 14 - info.headerSize -
+                            psize * (info.headerSize == 12 ? 3 : 4));
 
-                    int width;
-                    if (info.bpp == 24)
-                        width = 3 * ri.Width;
-                    else if (info.bpp == 16)
-                        width = 2 * ri.Width;
-                    else
-                        throw new StbImageReadException(ErrorCode.BadBitsPerPixel);
+                        int width;
+                        if (info.bpp == 4)
+                            width = (ri.Width + 1) / 2;
+                        else if (info.bpp == 8)
+                            width = ri.Width;
+                        else
+                            throw new StbImageReadException(ErrorCode.BadBitsPerPixel);
 
-                    int pad = (-width) & 3;
-                    if (easy != 0)
-                    {
+                        int pad = (-width) & 3;
                         for (int y = 0; y < ri.Height; ++y)
                         {
-                            await s.ReadBytes(rowBuffer);
-
-                            for (int x = 0, o = 0; x < rowByteSize; x += ri.OutComponents)
+                            for (int x = 0, z = 0; x < ri.Width; x += 2)
                             {
-                                byte b = rowBuffer[o++];
-                                byte g = rowBuffer[o++];
-                                byte r = rowBuffer[o++];
-                                rowBuffer[x + 0] = r;
-                                rowBuffer[x + 1] = g;
-                                rowBuffer[x + 2] = b;
+                                void WriteFromPalette(int comp, Span<byte> palette)
+                                {
+                                    rowBuffer[z + 0] = palette[0];
+                                    rowBuffer[z + 1] = palette[1];
+                                    rowBuffer[z + 2] = palette[2];
 
-                                if (ri.OutComponents == 4)
-                                    rowBuffer[x + 3] = easy == 2 ? rowBuffer[o++] : (byte)255;
+                                    if (comp == 4)
+                                        rowBuffer[z + 3] = palette[3];
+                                    z += comp;
+                                }
+
+                                int v2 = 0;
+                                int v1 = await s.ReadByte();
+                                if (info.bpp == 4)
+                                {
+                                    v2 = v1 & 15;
+                                    v1 >>= 4;
+                                }
+                                WriteFromPalette(ri.OutComponents, palette.AsSpan(v1 * 4));
+
+                                if ((x + 1) == ri.Width)
+                                    break;
+                                v2 = info.bpp == 8 ? await s.ReadByte() : v2;
+                                WriteFromPalette(ri.OutComponents, palette.AsSpan(v2 * 4));
                             }
                             await s.Skip(pad);
 
                             int row = flipRows ? (ri.Height - y - 1) : y;
-                            ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer);
+                            ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer.AsSpan(0, rowByteSize));
                         }
                     }
                     else
                     {
-                        if (info.mr == 0 || info.mg == 0 || info.mb == 0)
-                            throw new StbImageReadException(ErrorCode.BadMasks);
+                        await s.Skip(info.offset - 14 - info.headerSize);
 
-                        int rshift = HighBit(info.mr) - 7;
-                        int gshift = HighBit(info.mg) - 7;
-                        int bshift = HighBit(info.mb) - 7;
-                        int ashift = HighBit(info.ma) - 7;
-                        int rcount = BitCount(info.mr);
-                        int gcount = BitCount(info.mg);
-                        int bcount = BitCount(info.mb);
-                        int acount = BitCount(info.ma);
+                        int width;
+                        if (info.bpp == 24)
+                            width = 3 * ri.Width;
+                        else if (info.bpp == 16)
+                            width = 2 * ri.Width;
+                        else
+                            throw new StbImageReadException(ErrorCode.BadBitsPerPixel);
 
-                        for (int y = 0; y < ri.Height; ++y)
+                        int pad = (-width) & 3;
+                        if (easy != 0)
                         {
-                            for (int x = 0; x < rowByteSize; x += ri.OutComponents)
+                            for (int y = 0; y < ri.Height; ++y)
                             {
-                                int v = info.bpp == 16 
-                                    ? await s.ReadInt16LE() 
-                                    : await s.ReadInt32LE();
-                                
-                                rowBuffer[x + 0] = (byte)(ShiftSigned(v & info.mr, rshift, rcount) & 0xff);
-                                rowBuffer[x + 1] = (byte)(ShiftSigned(v & info.mg, gshift, gcount) & 0xff);
-                                rowBuffer[x + 2] = (byte)(ShiftSigned(v & info.mb, bshift, bcount) & 0xff);
+                                await s.ReadBytes(rowBuffer.AsMemory(0, rowByteSize));
 
-                                if (ri.OutComponents == 4)
-                                    rowBuffer[x + 3] = info.ma != 0
-                                        ? (byte)(ShiftSigned(v & info.ma, ashift, acount) & 0xff)
-                                        : (byte)255;
+                                for (int x = 0, o = 0; x < rowByteSize; x += ri.OutComponents)
+                                {
+                                    byte b = rowBuffer[o++];
+                                    byte g = rowBuffer[o++];
+                                    byte r = rowBuffer[o++];
+                                    rowBuffer[x + 0] = r;
+                                    rowBuffer[x + 1] = g;
+                                    rowBuffer[x + 2] = b;
+
+                                    if (ri.OutComponents == 4)
+                                        rowBuffer[x + 3] = easy == 2 ? rowBuffer[o++] : (byte)255;
+                                }
+                                await s.Skip(pad);
+
+                                int row = flipRows ? (ri.Height - y - 1) : y;
+                                ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer.AsSpan(0, rowByteSize));
                             }
-                            await s.Skip(pad);
+                        }
+                        else
+                        {
+                            if (info.mr == 0 || info.mg == 0 || info.mb == 0)
+                                throw new StbImageReadException(ErrorCode.BadMasks);
 
-                            int row = flipRows ? (ri.Height - y - 1) : y;
-                            ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer);
+                            int rshift = HighBit(info.mr) - 7;
+                            int gshift = HighBit(info.mg) - 7;
+                            int bshift = HighBit(info.mb) - 7;
+                            int ashift = HighBit(info.ma) - 7;
+                            int rcount = BitCount(info.mr);
+                            int gcount = BitCount(info.mg);
+                            int bcount = BitCount(info.mb);
+                            int acount = BitCount(info.ma);
+
+                            for (int y = 0; y < ri.Height; ++y)
+                            {
+                                for (int x = 0; x < rowByteSize; x += ri.OutComponents)
+                                {
+                                    int v = info.bpp == 16
+                                        ? await s.ReadInt16LE()
+                                        : await s.ReadInt32LE();
+
+                                    rowBuffer[x + 0] = (byte)(ShiftSigned(v & info.mr, rshift, rcount) & 0xff);
+                                    rowBuffer[x + 1] = (byte)(ShiftSigned(v & info.mg, gshift, gcount) & 0xff);
+                                    rowBuffer[x + 2] = (byte)(ShiftSigned(v & info.mb, bshift, bcount) & 0xff);
+
+                                    if (ri.OutComponents == 4)
+                                        rowBuffer[x + 3] = info.ma != 0
+                                            ? (byte)(ShiftSigned(v & info.ma, ashift, acount) & 0xff)
+                                            : (byte)255;
+                                }
+                                await s.Skip(pad);
+
+                                int row = flipRows ? (ri.Height - y - 1) : y;
+                                ri.OutputPixelLine(AddressingMajor.Row, row, 0, rowBuffer.AsSpan(0, rowByteSize));
+                            }
                         }
                     }
                 }
-
+                finally
+                {
+                    bytePool.Return(rowBuffer);
+                }
                 return info;
             }
         }
