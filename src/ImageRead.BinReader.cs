@@ -8,7 +8,7 @@ namespace StbSharp
 {
     public static partial class ImageRead
     {
-        public class BinReader : IAsyncDisposable
+        public class BinReader : IDisposable
         {
             private byte[] _buffer;
             private int _bufferOffset;
@@ -35,7 +35,7 @@ namespace StbSharp
 
             private Span<byte> Take(int count)
             {
-                if (count > _bufferLength)
+                if (_bufferLength < count)
                     throw new EndOfStreamException();
 
                 var slice = _buffer.AsSpan(_bufferOffset, count);
@@ -44,7 +44,7 @@ namespace StbSharp
                 return slice;
             }
 
-            private async ValueTask FillBuffer()
+            private void FillBuffer()
             {
                 _buffer.AsSpan(_bufferOffset, _bufferLength).CopyTo(_buffer);
 
@@ -53,8 +53,10 @@ namespace StbSharp
 
                 while (_bufferLength < _buffer.Length)
                 {
-                    var slice = _buffer.AsMemory(_bufferLength);
-                    int read = await Stream.ReadAsync(slice, CancellationToken);
+                    CancellationToken.ThrowIfCancellationRequested();
+
+                    var slice = _buffer.AsSpan(_bufferLength);
+                    int read = Stream.Read(slice);
                     if (read == 0)
                         break;
 
@@ -62,18 +64,18 @@ namespace StbSharp
                 }
             }
 
-            private async ValueTask FillBufferAndCheck(int requiredCount)
+            private void FillBufferAndCheck(int count)
             {
-                await FillBuffer();
+                FillBuffer();
 
-                if (requiredCount > _bufferLength)
+                if (_bufferLength < count)
                     throw new EndOfStreamException();
             }
 
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
-            public async ValueTask Skip(long count)
+            public void Skip(long count)
             {
                 if (count < 0)
                     throw new ArgumentOutOfRangeException(nameof(count));
@@ -91,9 +93,11 @@ namespace StbSharp
 
                 while (count > 0)
                 {
+                    CancellationToken.ThrowIfCancellationRequested();
+
                     int toRead = (int)Math.Min(count, _buffer.Length);
-                    var slice = _buffer.AsMemory(0, toRead);
-                    int read = await Stream.ReadAsync(slice, CancellationToken);
+                    var slice = _buffer.AsSpan(0, toRead);
+                    int read = Stream.Read(slice);
                     if (read == 0)
                         break;
 
@@ -105,7 +109,7 @@ namespace StbSharp
                     throw new EndOfStreamException();
             }
 
-            public async ValueTask<bool> TryReadBytes(Memory<byte> destination)
+            public bool TryReadBytes(Span<byte> destination)
             {
                 if (destination.IsEmpty)
                     return true;
@@ -115,13 +119,15 @@ namespace StbSharp
                 if (_bufferLength > 0)
                 {
                     int toRead = Math.Min(destination.Length, _bufferLength);
-                    Take(toRead).CopyTo(destination.Span);
+                    Take(toRead).CopyTo(destination);
                     destination = destination.Slice(toRead);
                 }
 
                 while (destination.Length > 0)
                 {
-                    int read = await Stream.ReadAsync(destination, CancellationToken);
+                    CancellationToken.ThrowIfCancellationRequested();
+
+                    int read = Stream.Read(destination);
                     if (read == 0)
                         break;
 
@@ -135,31 +141,21 @@ namespace StbSharp
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
-            public async ValueTask ReadBytes(Memory<byte> destination)
+            public void ReadBytes(Span<byte> destination)
             {
-                if (!await TryReadBytes(destination))
+                if (!TryReadBytes(destination))
                     throw new EndOfStreamException();
             }
 
-            public async ValueTask<int> TryReadByte()
+            public int TryReadByte()
             {
                 if (_bufferLength < sizeof(byte))
                 {
-                    await FillBuffer();
+                    FillBuffer();
 
                     if (_bufferLength < sizeof(byte))
                         return -1;
                 }
-                return Take(sizeof(byte))[0];
-            }
-
-            /// <summary>
-            /// </summary>
-            /// <exception cref="EndOfStreamException"/>
-            public async ValueTask<byte> ReadByte()
-            {
-                if (_bufferLength < sizeof(byte))
-                    await FillBufferAndCheck(sizeof(byte));
 
                 byte value = _buffer[_bufferOffset];
                 _bufferOffset += sizeof(byte);
@@ -170,87 +166,101 @@ namespace StbSharp
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
-            public async ValueTask<short> ReadInt16LE()
+            public byte ReadByte()
+            {
+                if (_bufferLength < sizeof(byte))
+                    FillBufferAndCheck(sizeof(byte));
+
+                byte value = _buffer[_bufferOffset];
+                _bufferOffset += sizeof(byte);
+                _bufferLength -= sizeof(byte);
+                return value;
+            }
+
+            /// <summary>
+            /// </summary>
+            /// <exception cref="EndOfStreamException"/>
+            public short ReadInt16LE()
             {
                 if (_bufferLength < sizeof(short))
-                    await FillBufferAndCheck(sizeof(short));
+                    FillBufferAndCheck(sizeof(short));
                 return BinaryPrimitives.ReadInt16LittleEndian(Take(sizeof(short)));
             }
 
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
-            public async ValueTask<short> ReadInt16BE()
+            public short ReadInt16BE()
             {
                 if (_bufferLength < sizeof(short))
-                    await FillBufferAndCheck(sizeof(short));
+                    FillBufferAndCheck(sizeof(short));
                 return BinaryPrimitives.ReadInt16BigEndian(Take(sizeof(short)));
             }
 
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
-            public async ValueTask<ushort> ReadUInt16LE()
+            public ushort ReadUInt16LE()
             {
                 if (_bufferLength < sizeof(ushort))
-                    await FillBufferAndCheck(sizeof(ushort));
+                    FillBufferAndCheck(sizeof(ushort));
                 return BinaryPrimitives.ReadUInt16LittleEndian(Take(sizeof(ushort)));
             }
 
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
-            public async ValueTask<ushort> ReadUInt16BE()
+            public ushort ReadUInt16BE()
             {
                 if (_bufferLength < sizeof(ushort))
-                    await FillBufferAndCheck(sizeof(ushort));
+                    FillBufferAndCheck(sizeof(ushort));
                 return BinaryPrimitives.ReadUInt16BigEndian(Take(sizeof(ushort)));
             }
 
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
-            public async ValueTask<int> ReadInt32LE()
+            public int ReadInt32LE()
             {
                 if (_bufferLength < sizeof(int))
-                    await FillBufferAndCheck(sizeof(int));
+                    FillBufferAndCheck(sizeof(int));
                 return BinaryPrimitives.ReadInt32LittleEndian(Take(sizeof(int)));
             }
 
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
-            public async ValueTask<int> ReadInt32BE()
+            public int ReadInt32BE()
             {
                 if (_bufferLength < sizeof(int))
-                    await FillBufferAndCheck(sizeof(int));
+                    FillBufferAndCheck(sizeof(int));
                 return BinaryPrimitives.ReadInt32BigEndian(Take(sizeof(int)));
             }
 
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
-            public async ValueTask<uint> ReadUInt32BE()
+            public uint ReadUInt32BE()
             {
                 if (_bufferLength < sizeof(uint))
-                    await FillBufferAndCheck(sizeof(uint));
+                    FillBufferAndCheck(sizeof(uint));
                 return BinaryPrimitives.ReadUInt32BigEndian(Take(sizeof(uint)));
             }
 
-            #region IAsyncDisposable
+            #region IDisposable
 
-            protected virtual async ValueTask DisposeAsync(bool disposing)
+            protected virtual void Dispose(bool disposing)
             {
                 if (disposing)
                 {
                     if (!LeaveOpen)
-                        await Stream.DisposeAsync();
+                        Stream.Dispose();
                 }
             }
 
-            public ValueTask DisposeAsync()
+            public void Dispose()
             {
-                return DisposeAsync(true);
+                Dispose(true);
             }
 
             #endregion
