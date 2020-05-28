@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
@@ -1524,6 +1525,7 @@ namespace StbSharp
                 return _out_;
             }
 
+            [SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "Required for delegate.")]
             public static Memory<byte> ResampleRowHV2(
                 Memory<byte> _out_, Memory<byte> in_near, Memory<byte> in_far, int w, int hs)
             {
@@ -1707,128 +1709,63 @@ namespace StbSharp
                         var co2 = coutput[2].Span;
                         var co3 = coutput[3].Span;
 
-                        if (z.ri.OutComponents >= 3)
-                        {
-                            if (z.ri.Components == 3)
-                            {
-                                if (z.is_rgb)
-                                {
-                                    for (int i = 0; i < z.ri.Width; ++i)
-                                    {
-                                        rowBuffer[0] = co0[i];
-                                        rowBuffer[1] = co1[i];
-                                        rowBuffer[2] = co2[i];
-                                        rowBuffer[3] = 255;
-                                        rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
-                                    }
-                                }
-                                else
-                                {
-                                    z.YCbCr_to_RGB_kernel(rowBuffer, co0, co1, co2);
-                                }
-                            }
-                            else if (z.ri.Components == 4)
-                            {
-                                if (z.app14_color_transform == 0)
-                                {
-                                    for (int i = 0; i < z.ri.Width; ++i)
-                                    {
-                                        byte m = co3[i];
-                                        rowBuffer[0] = Blinn8x8(co0[i], m);
-                                        rowBuffer[1] = Blinn8x8(co1[i], m);
-                                        rowBuffer[2] = Blinn8x8(co2[i], m);
-                                        rowBuffer[3] = 255;
-                                        rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
-                                    }
-                                }
-                                else if (z.app14_color_transform == 2)
-                                {
-                                    z.YCbCr_to_RGB_kernel(rowBuffer, co0, co1, co2);
-
-                                    for (int i = 0; i < z.ri.Width; ++i)
-                                    {
-                                        byte m = co3[i];
-                                        rowBuffer[0] = Blinn8x8((byte)(255 - rowBuffer[0]), m);
-                                        rowBuffer[1] = Blinn8x8((byte)(255 - rowBuffer[1]), m);
-                                        rowBuffer[2] = Blinn8x8((byte)(255 - rowBuffer[2]), m);
-                                        rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
-                                    }
-                                }
-                                else
-                                {
-                                    z.YCbCr_to_RGB_kernel(rowBuffer, co0, co1, co2);
-                                }
-                            }
-                            else
-                                for (int i = 0; i < z.ri.Width; ++i)
-                                {
-                                    rowBuffer[0] = rowBuffer[1] = rowBuffer[2] = co0[i];
-                                    rowBuffer[3] = 255;
-                                    rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
-                                }
-                        }
-                        else
+                        if (z.ri.Components == 3)
                         {
                             if (z.is_rgb)
                             {
-                                if (z.ri.OutComponents == 1)
+                                for (int i = 0; i < z.ri.Width; ++i)
                                 {
-                                    for (int i = 0; i < z.ri.Width; ++i)
-                                        rowBuffer[i] = ComputeY8(
-                                            co0[i], co1[i], co2[i]);
-                                }
-                                else
-                                {
-                                    for (int i = 0; i < z.ri.Width; ++i)
-                                    {
-                                        rowBuffer[0] = ComputeY8(
-                                            co0[i], co1[i], co2[i]);
-                                        rowBuffer[1] = 255;
-                                        rowBuffer = rowBuffer.Slice(2);
-                                    }
+                                    rowBuffer[0] = co0[i];
+                                    rowBuffer[1] = co1[i];
+                                    rowBuffer[2] = co2[i];
+                                    rowBuffer[3] = 255;
+                                    rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
                                 }
                             }
-                            else if ((z.ri.Components == 4) && (z.app14_color_transform == 0))
+                            else
+                            {
+                                z.YCbCr_to_RGB_kernel(rowBuffer, co0, co1, co2);
+                            }
+                        }
+                        else if (z.ri.Components == 4)
+                        {
+                            if (z.app14_color_transform == 0)
                             {
                                 for (int i = 0; i < z.ri.Width; ++i)
                                 {
                                     byte m = co3[i];
-                                    byte r = Blinn8x8(co0[i], m);
-                                    byte g = Blinn8x8(co1[i], m);
-                                    byte b = Blinn8x8(co2[i], m);
-                                    rowBuffer[0] = ComputeY8(r, g, b);
-                                    rowBuffer[1] = 255;
+                                    rowBuffer[0] = Blinn8x8(co0[i], m);
+                                    rowBuffer[1] = Blinn8x8(co1[i], m);
+                                    rowBuffer[2] = Blinn8x8(co2[i], m);
+                                    rowBuffer[3] = 255;
                                     rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
                                 }
                             }
-                            else if ((z.ri.Components == 4) && (z.app14_color_transform == 2))
+                            else if (z.app14_color_transform == 2)
                             {
+                                z.YCbCr_to_RGB_kernel(rowBuffer, co0, co1, co2);
+
                                 for (int i = 0; i < z.ri.Width; ++i)
                                 {
-                                    rowBuffer[0] = Blinn8x8((byte)(255 - co0[i]), co3[i]);
-                                    rowBuffer[1] = 255;
+                                    byte m = co3[i];
+                                    rowBuffer[0] = Blinn8x8((byte)(255 - rowBuffer[0]), m);
+                                    rowBuffer[1] = Blinn8x8((byte)(255 - rowBuffer[1]), m);
+                                    rowBuffer[2] = Blinn8x8((byte)(255 - rowBuffer[2]), m);
                                     rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
                                 }
                             }
                             else
                             {
-                                if (z.ri.OutComponents == 1)
-                                {
-                                    for (int i = 0; i < z.ri.Width; ++i)
-                                    {
-                                        rowBuffer[0] = co0[i];
-                                        rowBuffer = rowBuffer.Slice(1);
-                                    }
-                                }
-                                else
-                                {
-                                    for (int i = 0; i < z.ri.Width; ++i)
-                                    {
-                                        rowBuffer[0] = co0[i];
-                                        rowBuffer[1] = 255;
-                                        rowBuffer = rowBuffer.Slice(2);
-                                    }
-                                }
+                                z.YCbCr_to_RGB_kernel(rowBuffer, co0, co1, co2);
+                            }
+                        }
+                        else
+                        {
+                            for (int i = 0; i < z.ri.Width; ++i)
+                            {
+                                rowBuffer[0] = rowBuffer[1] = rowBuffer[2] = co0[i];
+                                rowBuffer[3] = 255;
+                                rowBuffer = rowBuffer.Slice(z.ri.OutComponents);
                             }
                         }
 

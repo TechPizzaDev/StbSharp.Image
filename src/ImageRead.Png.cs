@@ -477,9 +477,8 @@ namespace StbSharp
                     // and we just skip it for normal streams.
                     if (!header.HasCgbi)
                     {
-                        Span<byte> byteTmp = stackalloc byte[1];
                         for (int i = 0; i < 2; i++)
-                            if (chunkStream.Read(byteTmp) == -1)
+                            if (chunkStream.ReadByte() == -1)
                                 throw new StbImageReadException(new EndOfStreamException());
                     }
 
@@ -491,7 +490,7 @@ namespace StbSharp
                         ? new Transparency(tc8, tc16)
                         : (Transparency?)null;
 
-                    CreateImage(s, ri, decompressedStream, bytePool, header, transparency, palette);
+                    CreateImage(ri, decompressedStream, bytePool, header, transparency, palette);
                 }
             }
 
@@ -572,7 +571,7 @@ namespace StbSharp
             }
 
             public static void CreateImage(
-                BinReader s, ReadState ri, Stream decompressedStream, ArrayPool<byte> bytePool,
+                ReadState ri, Stream decompressedStream, ArrayPool<byte> bytePool,
                 in Header header, in Transparency? transparency, in Palette? palette)
             {
                 int depth = header.Depth;
@@ -606,10 +605,8 @@ namespace StbSharp
                     }
                     else if (header.Interlace == 1)
                     {
-                        //var ww = new System.Diagnostics.Stopwatch();
                         for (int p = 0; p < 7; p++)
                         {
-                            //ww.Restart();
                             int originX = Interlace_OriginX[p];
                             int originY = Interlace_OriginY[p];
                             int spacingX = Interlace_SpacingX[p];
@@ -632,32 +629,7 @@ namespace StbSharp
                                     interlace_width, interlace_height, outComp,
                                     originX, originY, spacingX, spacingY,
                                     header, transparency, palette);
-
-                                //Console.Write("Interlace step: " + p);
-
-                                //if (!ProcessRow(s, ri, buffer, w, h, color))
-                                //    return false;
-
-                                // TODO: read row by row instead of buffering the whole file
-
-                                //for (int y = 0; y < h; y++)
-                                //{
-                                //    int stride = w * bytes_per_pixel;
-                                //    var pixels = primaryRowSpan.Slice(0, stride);
-                                //
-                                //    var src = row.Slice(y * stride);
-                                //    new Span<byte>(src, stride).CopyTo(pixels);
-                                //
-                                //    int out_y = y * spc_y + orig_y;
-                                //    ri.OutputInterleaved(AddressingMajor.Row, out_y, orig_x, spc_x, pixels);
-                                //}
-                                //
-                                //int img_len = ((((ri.Components * w * ri.Depth) + 7) / 8) + 1) * h;
-                                //data = data.Slice(img_len);
                             }
-
-                            //ww.Stop();
-                            //Console.WriteLine(", took " + ww.ElapsedMilliseconds + "ms");
                         }
                     }
                     else
@@ -1330,6 +1302,14 @@ namespace StbSharp
                 public override int Read(byte[] buffer, int offset, int count)
                 {
                     return Read(buffer.AsSpan(offset, count));
+                }
+
+                public override int ReadByte()
+                {
+                    Span<byte> tmp = stackalloc byte[1];
+                    if (Read(tmp) == 0)
+                        return -1;
+                    return tmp[0];
                 }
 
                 public override long Seek(long offset, SeekOrigin origin)
