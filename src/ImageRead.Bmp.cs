@@ -147,7 +147,7 @@ namespace StbSharp
                     ? ImageOrientation.BottomLeftOrigin
                     : ImageOrientation.TopLeftOrigin;
 
-                ri.Height = CRuntime.FastAbs(ri.Height);
+                ri.Height = MathHelper.FastAbs(ri.Height);
 
                 if (s.ReadInt16LE() != 1)
                     throw new StbImageReadException(ErrorCode.BadColorPlane);

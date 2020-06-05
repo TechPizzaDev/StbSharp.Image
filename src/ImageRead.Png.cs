@@ -707,7 +707,7 @@ namespace StbSharp
 
                         case FilterType.Paeth:
                             cur[k] = (byte)(
-                                (rawslice[k] + CRuntime.Paeth32(0, previousRow[priorOff + k], 0)) & 255);
+                                (rawslice[k] + MathHelper.Paeth32(0, previousRow[priorOff + k], 0)) & 255);
                             break;
                     }
                 }
@@ -786,7 +786,7 @@ namespace StbSharp
                             {
                                 int p = priorOff + k;
                                 cur[k] = (byte)(
-                                    (raws[k] + CRuntime.Paeth32(
+                                    (raws[k] + MathHelper.Paeth32(
                                         curf[k], previousRow[p], previousRow[p - filter_bytes])) & 255);
                             }
                             break;
@@ -802,7 +802,7 @@ namespace StbSharp
                             for (k = 0; k < raws.Length; k++)
                             {
                                 cur[k] = (byte)(
-                                    (raws[k] + CRuntime.Paeth32(curf[k], 0, 0)) & 255);
+                                    (raws[k] + MathHelper.Paeth32(curf[k], 0, 0)) & 255);
                             }
                             break;
                     }
@@ -883,7 +883,7 @@ namespace StbSharp
                                 for (k = 0; k < filter_bytes; k++)
                                 {
                                     cur[k] = (byte)(
-                                        (filteredData[rawOff + k] + CRuntime.Paeth32(
+                                        (filteredData[rawOff + k] + MathHelper.Paeth32(
                                             curo[k], prior[k], prioro[k])) & 255);
                                 }
                                 cur[filter_bytes] = 255;
@@ -914,7 +914,7 @@ namespace StbSharp
                                 for (k = 0; k < filter_bytes; k++)
                                 {
                                     cur[k] = (byte)(
-                                        (filteredData[rawOff + k] + CRuntime.Paeth32(curo[k], 0, 0)) & 255);
+                                        (filteredData[rawOff + k] + MathHelper.Paeth32(curo[k], 0, 0)) & 255);
                                 }
                                 cur[filter_bytes] = 255;
                             }

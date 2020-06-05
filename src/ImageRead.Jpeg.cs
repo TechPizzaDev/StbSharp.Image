@@ -424,7 +424,7 @@ namespace StbSharp
                     GrowBufferUnsafe(j);
 
                 int sgn = (int)j.code_buffer >> 31;
-                uint k = CRuntime.RotateBits(j.code_buffer, n);
+                uint k = MathHelper.RotateBits(j.code_buffer, n);
                 uint mask = BMask[n];
                 j.code_buffer = k & ~mask;
                 k &= mask;
@@ -437,7 +437,7 @@ namespace StbSharp
                 if (j.code_bits < n)
                     GrowBufferUnsafe(j);
 
-                uint k = CRuntime.RotateBits(j.code_buffer, n);
+                uint k = MathHelper.RotateBits(j.code_buffer, n);
                 uint mask = BMask[n];
                 j.code_buffer = k & ~mask;
                 k &= mask;

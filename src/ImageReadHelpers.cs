@@ -44,7 +44,7 @@ namespace StbSharp
                 return null;
 
             int length = a * b + add;
-            return CRuntime.MAlloc(length);
+            return null; // Helper.MAlloc(length);
         }
 
         public static void* MAllocMad3(int a, int b, int c, int add)
@@ -53,7 +53,7 @@ namespace StbSharp
                 return null;
 
             int length = a * b * c + add;
-            return CRuntime.MAlloc(length);
+            return null; // Helper.MAlloc(length);
         }
 
         /*
