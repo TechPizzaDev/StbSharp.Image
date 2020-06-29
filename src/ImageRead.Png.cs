@@ -88,6 +88,9 @@ namespace StbSharp
 
                 public static ChunkHeader Read(BinReader s)
                 {
+                    if (s == null)
+                        throw new ArgumentNullException(nameof(s));
+
                     uint length = s.ReadUInt32BE();
                     uint type = s.ReadUInt32BE();
                     return new ChunkHeader(length, (ChunkType)type);
@@ -160,8 +163,13 @@ namespace StbSharp
             }
 
             public static void Load(
-                BinReader s, ReadState ri, ScanMode scan, ArrayPool<byte> bytePool = null)
+                BinReader s, ReadState ri, ScanMode scan, ArrayPool<byte>? bytePool = null)
             {
+                if (s == null)
+                    throw new ArgumentNullException(nameof(s));
+                if (ri == null)
+                    throw new ArgumentNullException(nameof(ri));
+
                 Span<byte> tmp = stackalloc byte[HeaderSize];
                 if (!s.TryReadBytes(tmp))
                     throw new StbImageReadException(ErrorCode.UnknownHeader);
@@ -171,7 +179,7 @@ namespace StbSharp
 
                 Header header = default;
 
-                Rgba32[] paletteData = null;
+                Rgba32[]? paletteData = null;
                 int paletteLength = 0;
 
                 bool has_transparency = false;
@@ -202,9 +210,8 @@ namespace StbSharp
                 }
 
                 var seenChunkTypes = new HashSet<ChunkType>();
-                Stream decompressedStream = null;
-                bytePool ??= ArrayPool<byte>.Shared;
-
+                Stream? decompressedStream = null;
+                
                 // TODO: add state object and make this method static?
                 HandleChunkResult HandleChunk(ChunkHeader chunk, ChunkStream stream)
                 {
@@ -342,7 +349,7 @@ namespace StbSharp
 
                                     header.PaletteComp = 4;
                                     for (int i = 0; i < chunk.Length; i++)
-                                        paletteData[i].A = s.ReadByte();
+                                        paletteData![i].A = s.ReadByte();
                                 }
                                 else
                                 {
@@ -490,7 +497,7 @@ namespace StbSharp
                         ? new Transparency(tc8, tc16)
                         : (Transparency?)null;
 
-                    CreateImage(ri, decompressedStream, bytePool, header, transparency, palette);
+                    CreateImage(ri, decompressedStream!, bytePool, header, transparency, palette);
                 }
             }
 
@@ -520,6 +527,9 @@ namespace StbSharp
                 in Transparency? transparency,
                 in Palette? palette)
             {
+                if (decompressedStream == null)
+                    throw new ArgumentNullException(nameof(decompressedStream));
+
                 void ReadFilteredData(int count)
                 {
                     var buffer = dataBuffer.Slice(0, count);
@@ -571,9 +581,15 @@ namespace StbSharp
             }
 
             public static void CreateImage(
-                ReadState ri, Stream decompressedStream, ArrayPool<byte> bytePool,
+                ReadState ri, Stream decompressedStream, ArrayPool<byte>? bytePool,
                 in Header header, in Transparency? transparency, in Palette? palette)
             {
+                if (ri == null)
+                    throw new ArgumentNullException(nameof(ri));
+                if (decompressedStream == null)
+                    throw new ArgumentNullException(nameof(decompressedStream));
+                bytePool ??= ArrayPool<byte>.Shared;
+
                 int depth = header.Depth;
                 int rawComp = header.RawComp;
                 int bytes_per_comp = depth == 16 ? 2 : 1;
@@ -1041,6 +1057,9 @@ namespace StbSharp
                 in Transparency? transparency,
                 in Palette? palette)
             {
+                if (ri == null)
+                    throw new ArgumentNullException(nameof(ri));
+
                 if (transparency.HasValue)
                 {
                     if (header.Depth == 16)
