@@ -1078,7 +1078,7 @@ namespace StbSharp
                     var paletteData = palette.Value.Data.Span;
                     int comp = palette.Value.Components;
 
-                    Span<byte> buffer = stackalloc byte[2048];
+                    Span<byte> buffer = stackalloc byte[4096];
                     int offset = 0;
                     int left = width;
                     while (left > 0)
