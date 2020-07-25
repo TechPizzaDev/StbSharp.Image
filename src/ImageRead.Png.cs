@@ -541,9 +541,9 @@ namespace StbSharp
 
                         buffer = buffer.Slice(read);
                     }
-                    while (buffer.Length > 0);
+                    while (!buffer.IsEmpty);
 
-                    if (buffer.Length != 0)
+                    if (!buffer.IsEmpty)
                         throw new StbImageReadException(ErrorCode.NotEnoughPixels);
                 }
 

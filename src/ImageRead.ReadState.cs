@@ -16,10 +16,9 @@ namespace StbSharp
 
         public class ReadState
         {
-            public StateReadyDelegate StateReadyCallback;
-
-            public OutputPixelLineDelegate OutputPixelLineCallback;
-            public OutputPixelDelegate OutputPixelCallback;
+            public StateReadyDelegate? StateReadyCallback;
+            public OutputPixelLineDelegate? OutputPixelLineCallback;
+            public OutputPixelDelegate? OutputPixelCallback;
 
             public int Width;
             public int Height;

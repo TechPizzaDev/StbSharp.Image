@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Buffers;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 namespace StbSharp
 {
@@ -32,7 +34,7 @@ namespace StbSharp
                 return true;
             }
 
-            public static BmpInfo Info(BinReader s, out ReadState ri)
+            public static BmpInfo? Info(BinReader s, out ReadState ri)
             {
                 ri = new ReadState();
                 return ParseHeader(s, ri);
@@ -106,8 +108,13 @@ namespace StbSharp
                 return result;
             }
 
-            public static BmpInfo ParseHeader(BinReader s, ReadState ri)
+            public static BmpInfo? ParseHeader(BinReader s, ReadState ri)
             {
+                if (s == null)
+                    throw new ArgumentNullException(nameof(s));
+                if (ri == null)
+                    throw new ArgumentNullException(nameof(ri));
+
                 Span<byte> tmp = stackalloc byte[HeaderSize];
                 if (!s.TryReadBytes(tmp))
                     return null;
@@ -249,7 +256,7 @@ namespace StbSharp
             }
 
             public static BmpInfo Load(
-                BinReader s, ReadState ri, ArrayPool<byte> bytePool = null)
+                BinReader s, ReadState ri, ArrayPool<byte>? bytePool = null)
             {
                 var info = ParseHeader(s, ri);
                 if (info == null)

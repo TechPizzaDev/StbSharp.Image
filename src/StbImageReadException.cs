@@ -19,15 +19,15 @@ namespace StbSharp
                 ErrorCode = errorCode;
             }
 
-            public StbImageReadException(Exception innerException) : this(null, innerException)
+            public StbImageReadException(Exception? innerException) : this(null, innerException)
             {
             }
 
-            public StbImageReadException(string message) : base(message)
+            public StbImageReadException(string? message) : base(message)
             {
             }
 
-            public StbImageReadException(string message, Exception innerException) : base(message, innerException)
+            public StbImageReadException(string? message, Exception? innerException) : base(message, innerException)
             {
             }
 

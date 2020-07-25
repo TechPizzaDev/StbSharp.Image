@@ -15,7 +15,7 @@ namespace StbSharp
             /// <summary>
             /// Custom zlib deflate (RFC 1951) decompressor that replaces the default.
             /// </summary>
-            public static DeflateDecompressorDelegate CustomDeflateDecompressor { get; set; }
+            public static DeflateDecompressorDelegate? CustomDeflateDecompressor { get; set; }
 
             /// <summary>
             /// Decompresses data using a <see cref="DeflateStream"/>.

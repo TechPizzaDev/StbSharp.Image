@@ -1,8 +1,8 @@
 using System;
 using System.Buffers.Binary;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace StbSharp
 {
@@ -64,6 +64,7 @@ namespace StbSharp
                 }
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void FillBufferAndCheck(int count)
             {
                 FillBuffer();
@@ -123,7 +124,7 @@ namespace StbSharp
                     destination = destination.Slice(toRead);
                 }
 
-                while (destination.Length > 0)
+                while (!destination.IsEmpty)
                 {
                     CancellationToken.ThrowIfCancellationRequested();
 
