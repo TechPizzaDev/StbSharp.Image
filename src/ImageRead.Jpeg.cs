@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Buffers;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
@@ -367,7 +366,7 @@ namespace StbSharp
                 var Fast = h.Fast;
 
                 fastAc.Clear();
-                for (int i = 0; i < Huffman.FastLength; ++i)
+                for (int i = 0; i < Fast.Length; ++i)
                 {
                     byte fast = Fast[i];
                     if (fast < 255)
@@ -802,6 +801,7 @@ namespace StbSharp
                 idct.t0 += idct.p1 + idct.p3;
             }
 
+            /*
             public static void IdctBlock(Span<byte> dst, int dstStride, ReadOnlySpan<short> data)
             {
                 // TODO: vectorize
@@ -864,6 +864,69 @@ namespace StbSharp
                     o[2] = Clamp((idct.x2 + idct.t1) >> 17);
                     o[1] = Clamp((idct.x1 + idct.t2) >> 17);
                     o[0] = Clamp((idct.x0 + idct.t3) >> 17);
+                }
+            }
+            */
+
+            public static void IdctBlock(Span<byte> dst, int dstStride, ReadOnlySpan<short> data)
+            {
+                Span<int> val = stackalloc int[64];
+
+                for (int i = 0; i < val.Length / 8; ++i)
+                {
+                    var d = data.Slice(i);
+                    var v = val.Slice(i);
+
+                    if ((d[56] == 0) &&
+                        (d[08] == 0) &&
+                        (d[16] == 0) &&
+                        (d[24] == 0) &&
+                        (d[32] == 0) &&
+                        (d[40] == 0) &&
+                        (d[48] == 0))
+                    {
+                        int dcterm = d[0] << 2;
+                        v[0] = v[8] = v[16] = v[24] = v[32] = v[40] = v[48] = v[56] = dcterm;
+                    }
+                    else
+                    {
+                        Idct1D(d[0], d[8], d[16], d[24], d[32], d[40], d[48], d[56], out var idct);
+
+                        idct.x0 += 512;
+                        idct.x1 += 512;
+                        idct.x2 += 512;
+                        idct.x3 += 512;
+
+                        v[56] = (idct.x0 - idct.t3) >> 10;
+                        v[0] = (idct.x0 + idct.t3) >> 10;
+                        v[8] = (idct.x1 + idct.t2) >> 10;
+                        v[16] = (idct.x2 + idct.t1) >> 10;
+                        v[24] = (idct.x3 + idct.t0) >> 10;
+                        v[32] = (idct.x3 - idct.t0) >> 10;
+                        v[40] = (idct.x2 - idct.t1) >> 10;
+                        v[48] = (idct.x1 - idct.t2) >> 10;
+                    }
+                }
+
+                for (int i = 0; i < val.Length / 8; i++)
+                {
+                    var v = val.Slice(i * 8);
+                    Idct1D(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], out var idct);
+
+                    idct.x0 += 65536 + (128 << 17);
+                    idct.x1 += 65536 + (128 << 17);
+                    idct.x2 += 65536 + (128 << 17);
+                    idct.x3 += 65536 + (128 << 17);
+
+                    var o = dst.Slice(i * dstStride);
+                    o[7] = Clamp((idct.x0 - idct.t3) >> 17);
+                    o[0] = Clamp((idct.x0 + idct.t3) >> 17);
+                    o[1] = Clamp((idct.x1 + idct.t2) >> 17);
+                    o[2] = Clamp((idct.x2 + idct.t1) >> 17);
+                    o[3] = Clamp((idct.x3 + idct.t0) >> 17);
+                    o[4] = Clamp((idct.x3 - idct.t0) >> 17);
+                    o[5] = Clamp((idct.x2 - idct.t1) >> 17);
+                    o[6] = Clamp((idct.x1 - idct.t2) >> 17);
                 }
             }
 
