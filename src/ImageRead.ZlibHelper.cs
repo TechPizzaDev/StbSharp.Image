@@ -3,9 +3,9 @@ using System.IO.Compression;
 
 namespace StbSharp
 {
-    public static unsafe partial class ImageRead
+    public static partial class ImageRead
     {
-        public static unsafe class ZlibHelper
+        public static class ZlibHelper
         {
             /// <summary>
             /// Delegate for a wrapping a <see cref="Stream"/> in a zlib deflate (RFC 1951) decompressor.
@@ -26,7 +26,7 @@ namespace StbSharp
                 if (CustomDeflateDecompressor != null)
                     return CustomDeflateDecompressor.Invoke(input);
 
-                return new DeflateStream(input, CompressionMode.Decompress, false);
+                return new DeflateStream(input, CompressionMode.Decompress, leaveOpen: false);
             }
         }
     }
