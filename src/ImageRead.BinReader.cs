@@ -201,6 +201,7 @@ namespace StbSharp
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
+            [CLSCompliant(false)]
             public ushort ReadUInt16LE()
             {
                 if (_bufferLength < sizeof(ushort))
@@ -211,6 +212,7 @@ namespace StbSharp
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
+            [CLSCompliant(false)]
             public ushort ReadUInt16BE()
             {
                 if (_bufferLength < sizeof(ushort))
@@ -241,6 +243,7 @@ namespace StbSharp
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
+            [CLSCompliant(false)]
             public uint ReadUInt32BE()
             {
                 if (_bufferLength < sizeof(uint))
@@ -262,6 +265,7 @@ namespace StbSharp
             public void Dispose()
             {
                 Dispose(true);
+                GC.SuppressFinalize(this);
             }
 
             #endregion

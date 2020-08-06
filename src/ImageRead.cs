@@ -69,10 +69,16 @@ namespace StbSharp
         [StructLayout(LayoutKind.Sequential)]
         public struct Rgb48
         {
+            [CLSCompliant(false)]
             public ushort R;
+
+            [CLSCompliant(false)]
             public ushort G;
+
+            [CLSCompliant(false)]
             public ushort B;
 
+            [CLSCompliant(false)]
             public Rgb48(ushort r, ushort g, ushort b)
             {
                 R = r;

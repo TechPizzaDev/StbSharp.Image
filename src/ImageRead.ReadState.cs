@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace StbSharp
 {
-    public static unsafe partial class ImageRead
+    public static partial class ImageRead
     {
         public delegate void StateReadyDelegate(ReadState state);
 
