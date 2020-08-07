@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Buffers;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 
 namespace StbSharp
 {
@@ -13,13 +12,13 @@ namespace StbSharp
 
             public class BmpInfo
             {
-                public int bpp;
+                public int bitsPerPixel;
                 public int offset;
                 public int headerSize;
-                public int mr;
-                public int mg;
-                public int mb;
-                public int ma;
+                public uint mr;
+                public uint mg;
+                public uint mb;
+                public uint ma;
             }
 
             public static bool Test(ReadOnlySpan<byte> header)
@@ -38,74 +37,6 @@ namespace StbSharp
             {
                 ri = new ReadState();
                 return ParseHeader(s, ri);
-            }
-
-            public static int HighBit(int z)
-            {
-                if (z == 0)
-                    return -1;
-
-                int n = 0;
-
-                if (z >= 0x10000)
-                {
-                    n += 16;
-                    z >>= 16;
-                }
-
-                if (z >= 0x00100)
-                {
-                    n += 8;
-                    z >>= 8;
-                }
-
-                if (z >= 0x00010)
-                {
-                    n += 4;
-                    z >>= 4;
-                }
-
-                if (z >= 0x00004)
-                {
-                    n += 2;
-                    z >>= 2;
-                }
-
-                if (z >= 0x00002)
-                {
-                    n += 1;
-                    //z >>= 1; redundant assignment
-                }
-
-                return n;
-            }
-
-            public static int BitCount(int a)
-            {
-                a = (a & 0x55555555) + ((a >> 1) & 0x55555555);
-                a = (a & 0x33333333) + ((a >> 2) & 0x33333333);
-                a = (a + (a >> 4)) & 0x0f0f0f0f;
-                a += a >> 8;
-                a += a >> 16;
-                return a & 0xff;
-            }
-
-            public static int ShiftSigned(int v, int shift, int bits)
-            {
-                if (shift < 0)
-                    v <<= -shift;
-                else
-                    v >>= shift;
-
-                int result = v;
-                int z = bits;
-                while (z < 8)
-                {
-                    result += v >> z;
-                    z += bits;
-                }
-
-                return result;
             }
 
             public static BmpInfo? ParseHeader(BinReader s, ReadState ri)
@@ -159,8 +90,8 @@ namespace StbSharp
                 if (s.ReadInt16LE() != 1)
                     throw new StbImageReadException(ErrorCode.BadColorPlane);
 
-                info.bpp = s.ReadInt16LE();
-                if (info.bpp == 1)
+                info.bitsPerPixel = s.ReadInt16LE();
+                if (info.bitsPerPixel == 1)
                     throw new StbImageReadException(ErrorCode.MonochromeNotSupported);
 
                 if (info.headerSize != 12)
@@ -186,16 +117,16 @@ namespace StbSharp
                             s.ReadInt32LE();
                         }
 
-                        if ((info.bpp == 16) || (info.bpp == 32))
+                        if ((info.bitsPerPixel == 16) || (info.bitsPerPixel == 32))
                         {
                             if (compress == 0)
                             {
-                                if (info.bpp == 32)
+                                if (info.bitsPerPixel == 32)
                                 {
-                                    info.mr = 0xff << 16;
-                                    info.mg = 0xff << 8;
-                                    info.mb = 0xff << 0;
-                                    info.ma = 0xff << 24;
+                                    info.mr = 0xffu << 16;
+                                    info.mg = 0xffu << 8;
+                                    info.mb = 0xffu << 0;
+                                    info.ma = 0xffu << 24;
                                 }
                                 else
                                 {
@@ -206,9 +137,9 @@ namespace StbSharp
                             }
                             else if (compress == 3)
                             {
-                                info.mr = s.ReadInt32LE();
-                                info.mg = s.ReadInt32LE();
-                                info.mb = s.ReadInt32LE();
+                                info.mr = s.ReadUInt32LE();
+                                info.mg = s.ReadUInt32LE();
+                                info.mb = s.ReadUInt32LE();
 
                                 if ((info.mr == info.mg) && (info.mg == info.mb))
                                     throw new StbImageReadException(ErrorCode.BadMasks);
@@ -227,10 +158,10 @@ namespace StbSharp
                             throw new StbImageReadException(ErrorCode.UnknownHeader);
                         }
 
-                        info.mr = s.ReadInt32LE();
-                        info.mg = s.ReadInt32LE();
-                        info.mb = s.ReadInt32LE();
-                        info.ma = s.ReadInt32LE();
+                        info.mr = s.ReadUInt32LE();
+                        info.mg = s.ReadUInt32LE();
+                        info.mb = s.ReadUInt32LE();
+                        info.ma = s.ReadUInt32LE();
 
                         s.ReadInt32LE();
 
@@ -244,13 +175,13 @@ namespace StbSharp
                 }
 
 
-                if (info.bpp == 24 &&
+                if (info.bitsPerPixel == 24 &&
                     info.ma == 0xff << 24)
                     ri.Components = 3;
                 else
                     ri.Components = info.ma != 0 ? 4 : 3;
 
-                ri.Depth = info.bpp / ri.Components;
+                ri.Depth = info.bitsPerPixel / ri.Components;
 
                 return info;
             }
@@ -258,6 +189,10 @@ namespace StbSharp
             public static BmpInfo Load(
                 BinReader s, ReadState ri, ArrayPool<byte>? bytePool = null)
             {
+                // TODO: optimize by pulling out some branching from loops
+
+                bytePool ??= ArrayPool<byte>.Shared;
+
                 var info = ParseHeader(s, ri);
                 if (info == null)
                     throw new StbImageReadException(ErrorCode.UnknownHeader);
@@ -267,32 +202,30 @@ namespace StbSharp
 
                 ri.StateReady();
 
-                bytePool ??= ArrayPool<byte>.Shared;
-
                 int psize = 0;
                 if (info.headerSize == 12)
                 {
-                    if (info.bpp < 24)
+                    if (info.bitsPerPixel < 24)
                         psize = (info.offset - 14 - 24) / 3;
                 }
                 else
                 {
-                    if (info.bpp < 16)
+                    if (info.bitsPerPixel < 16)
                         psize = (info.offset - 14 - info.headerSize) >> 2;
                 }
 
                 int easy = 0;
-                if (info.bpp == 32)
+                if (info.bitsPerPixel == 32)
                 {
-                    if (info.mb == 0xff << 0 &&
-                        info.mg == 0xff << 8 &&
-                        info.mr == 0xff << 16 &&
-                        info.ma == 0xff << 24)
+                    if (info.mb == 0xffu << 0 &&
+                        info.mg == 0xffu << 8 &&
+                        info.mr == 0xffu << 16 &&
+                        info.ma == 0xffu << 24)
                     {
                         easy = 2;
                     }
                 }
-                else if (info.bpp == 24)
+                else if (info.bitsPerPixel == 24)
                 {
                     easy = 1;
                 }
@@ -303,10 +236,12 @@ namespace StbSharp
                 var rowBuffer = bytePool.Rent(rowByteSize);
                 try
                 {
-                    if (info.bpp < 16)
+                    if (info.bitsPerPixel < 16)
                     {
                         if ((psize == 0) || (psize > 256))
                             throw new StbImageReadException(ErrorCode.InvalidPLTE);
+
+                        // TODO: output palette
 
                         Span<byte> palette = stackalloc byte[256 * 4];
                         for (int x = 0; x < psize; ++x)
@@ -325,9 +260,9 @@ namespace StbSharp
                            psize * (info.headerSize == 12 ? 3 : 4));
 
                         int width;
-                        if (info.bpp == 4)
+                        if (info.bitsPerPixel == 4)
                             width = (ri.Width + 1) / 2;
-                        else if (info.bpp == 8)
+                        else if (info.bitsPerPixel == 8)
                             width = ri.Width;
                         else
                             throw new StbImageReadException(ErrorCode.BadBitsPerPixel);
@@ -350,7 +285,7 @@ namespace StbSharp
 
                                 int v2 = 0;
                                 int v1 = s.ReadByte();
-                                if (info.bpp == 4)
+                                if (info.bitsPerPixel == 4)
                                 {
                                     v2 = v1 & 15;
                                     v1 >>= 4;
@@ -359,7 +294,7 @@ namespace StbSharp
 
                                 if ((x + 1) == ri.Width)
                                     break;
-                                v2 = info.bpp == 8 ? s.ReadByte() : v2;
+                                v2 = info.bitsPerPixel == 8 ? s.ReadByte() : v2;
                                 WriteFromPalette(ri.OutComponents, palette.Slice(v2 * 4));
                             }
                             s.Skip(pad);
@@ -373,9 +308,11 @@ namespace StbSharp
                         s.Skip(info.offset - 14 - info.headerSize);
 
                         int width;
-                        if (info.bpp == 24)
+                        if (info.bitsPerPixel == 32)
+                            width = 4 * ri.Width;
+                        else if (info.bitsPerPixel == 24)
                             width = 3 * ri.Width;
-                        else if (info.bpp == 16)
+                        else if (info.bitsPerPixel == 16)
                             width = 2 * ri.Width;
                         else
                             throw new StbImageReadException(ErrorCode.BadBitsPerPixel);
@@ -392,9 +329,9 @@ namespace StbSharp
                                     byte b = rowBuffer[o++];
                                     byte g = rowBuffer[o++];
                                     byte r = rowBuffer[o++];
-                                    rowBuffer[x + 0] = r;
-                                    rowBuffer[x + 1] = g;
                                     rowBuffer[x + 2] = b;
+                                    rowBuffer[x + 1] = g;
+                                    rowBuffer[x + 0] = r;
 
                                     if (ri.OutComponents == 4)
                                         rowBuffer[x + 3] = easy == 2 ? rowBuffer[o++] : (byte)255;
@@ -410,31 +347,54 @@ namespace StbSharp
                             if (info.mr == 0 || info.mg == 0 || info.mb == 0)
                                 throw new StbImageReadException(ErrorCode.BadMasks);
 
-                            int rshift = HighBit(info.mr) - 7;
-                            int gshift = HighBit(info.mg) - 7;
-                            int bshift = HighBit(info.mb) - 7;
-                            int ashift = HighBit(info.ma) - 7;
-                            int rcount = BitCount(info.mr);
-                            int gcount = BitCount(info.mg);
-                            int bcount = BitCount(info.mb);
-                            int acount = BitCount(info.ma);
+                            int rBits = BitOperations.PopCount(info.mr);
+                            int gBits = BitOperations.PopCount(info.mg);
+                            int bBits = BitOperations.PopCount(info.mb);
+                            int aBits = BitOperations.PopCount(info.ma);
+                            int rShift = 32 - BitOperations.LeadingZeroCount(info.mr) - rBits;
+                            int gShift = 32 - BitOperations.LeadingZeroCount(info.mg) - gBits;
+                            int bShift = 32 - BitOperations.LeadingZeroCount(info.mb) - bBits;
+                            int aShift = 32 - BitOperations.LeadingZeroCount(info.ma) - aBits;
 
-                            for (int y = 0; y < ri.Height; ++y)
+                            bool is8Bpc = rBits == 8 && gBits == 8 && bBits == 8 && aBits == 8;
+
+                            for (int y = 0; y < ri.Height; y++)
                             {
-                                for (int x = 0; x < rowByteSize; x += ri.OutComponents)
+                                if (is8Bpc)
                                 {
-                                    int v = info.bpp == 16
-                                        ? s.ReadInt16LE()
-                                        : s.ReadInt32LE();
+                                    for (int x = 0; x < rowByteSize; x += ri.OutComponents)
+                                    {
+                                        uint v = info.bitsPerPixel == 16
+                                            ? s.ReadUInt16LE()
+                                            : s.ReadUInt32LE();
 
-                                    rowBuffer[x + 0] = (byte)(ShiftSigned(v & info.mr, rshift, rcount) & 0xff);
-                                    rowBuffer[x + 1] = (byte)(ShiftSigned(v & info.mg, gshift, gcount) & 0xff);
-                                    rowBuffer[x + 2] = (byte)(ShiftSigned(v & info.mb, bshift, bcount) & 0xff);
+                                        if (ri.OutComponents == 4)
+                                            rowBuffer[x + 3] = info.ma != 0
+                                                ? (byte)((v & info.ma) >> aShift)
+                                                : (byte)255;
 
-                                    if (ri.OutComponents == 4)
-                                        rowBuffer[x + 3] = info.ma != 0
-                                            ? (byte)(ShiftSigned(v & info.ma, ashift, acount) & 0xff)
-                                            : (byte)255;
+                                        rowBuffer[x + 2] = (byte)((v & info.mb) >> bShift);
+                                        rowBuffer[x + 1] = (byte)((v & info.mg) >> gShift);
+                                        rowBuffer[x + 0] = (byte)((v & info.mr) >> rShift);
+                                    }
+                                }
+                                else
+                                {
+                                    for (int x = 0; x < rowByteSize; x += ri.OutComponents)
+                                    {
+                                        uint v = info.bitsPerPixel == 16
+                                            ? s.ReadUInt16LE()
+                                            : s.ReadUInt32LE();
+
+                                        if (ri.OutComponents == 4)
+                                            rowBuffer[x + 3] = info.ma != 0
+                                                ? (byte)(((v & info.ma) >> aShift) & 0xff)
+                                                : (byte)255;
+
+                                        rowBuffer[x + 2] = (byte)(((v & info.mb) >> bShift) & 0xff);
+                                        rowBuffer[x + 1] = (byte)(((v & info.mg) >> gShift) & 0xff);
+                                        rowBuffer[x + 0] = (byte)(((v & info.mr) >> rShift) & 0xff);
+                                    }
                                 }
                                 s.Skip(pad);
 
