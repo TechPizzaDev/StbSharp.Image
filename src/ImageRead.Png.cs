@@ -477,7 +477,10 @@ namespace StbSharp
             }
 
             public static void ProcessDefilteredRow(
-                ReadState ri, Span<byte> data, int width, int row, int outComp, int originX, int spacingX,
+                ReadState state,
+                Span<byte> data,
+                int width, int row, int outComp,
+                int originX, int spacingX,
                 in Header header,
                 in Transparency? transparency,
                 in Palette? palette)
@@ -485,16 +488,17 @@ namespace StbSharp
                 DecodeDefilteredRow(data, width, outComp, header);
 
                 PostDefilteredRow(
-                    ri, data, width, row, outComp, originX, spacingX,
+                    state, data,
+                    width, row, outComp,
+                    originX, spacingX,
                     header, transparency, palette);
             }
 
-            public static void CreateImageRaw(
-                ReadState ri,
-                Stream decompressedFilteredData,
-                Span<byte> filteredData,
-                Span<byte> previousRow,
-                Span<byte> currentRow,
+            public static void DecodeImage(
+                ReadState state, Stream filteredData,
+                Span<byte> filteredDataBuffer,
+                Span<byte> previousRowBuffer,
+                Span<byte> currentRowBuffer,
                 int width, int height, int comp,
                 int originX, int originY,
                 int spacingX, int spacingY,
@@ -502,48 +506,48 @@ namespace StbSharp
                 in Transparency? transparency,
                 in Palette? palette)
             {
-                if (decompressedFilteredData == null)
-                    throw new ArgumentNullException(nameof(decompressedFilteredData));
+                if (filteredData == null)
+                    throw new ArgumentNullException(nameof(filteredData));
 
                 for (int y = 0; y < height; y++)
                 {
-                    if (!ImageReadHelpers.FullRead(decompressedFilteredData, filteredData))
+                    if (!ImageReadHelpers.FullRead(filteredData, filteredDataBuffer))
                         throw new StbImageReadException(ErrorCode.BadCompression);
 
                     DefilterRow(
-                        previousRow, filteredData,
-                        width, y, comp, header, currentRow);
+                        previousRowBuffer, filteredDataBuffer, currentRowBuffer,
+                        width, y, comp, header);
 
                     if (y > 0)
                     {
                         int row = originY + (y - 1) * spacingY;
                         ProcessDefilteredRow(
-                            ri, previousRow,
+                            state, previousRowBuffer,
                             width, row, comp,
                             originX, spacingX,
                             header, transparency, palette);
                     }
 
                     // Swap buffers.
-                    var nextRow = previousRow;
-                    previousRow = currentRow;
-                    currentRow = nextRow;
+                    var nextRowBuffer = previousRowBuffer;
+                    previousRowBuffer = currentRowBuffer;
+                    currentRowBuffer = nextRowBuffer;
                 }
 
                 int lastRow = originY + (height - 1) * spacingY;
                 ProcessDefilteredRow(
-                    ri, previousRow,
+                    state, previousRowBuffer,
                     width, lastRow, comp,
                     originX, spacingX,
                     header, transparency, palette);
             }
 
             public static void CreateImage(
-                ReadState ri, Stream decompressedStream, ArrayPool<byte>? bytePool,
+                ReadState state, Stream decompressedStream, ArrayPool<byte>? bytePool,
                 in Header header, in Transparency? transparency, in Palette? palette)
             {
-                if (ri == null)
-                    throw new ArgumentNullException(nameof(ri));
+                if (state == null)
+                    throw new ArgumentNullException(nameof(state));
                 if (decompressedStream == null)
                     throw new ArgumentNullException(nameof(decompressedStream));
                 bytePool ??= ArrayPool<byte>.Shared;
@@ -571,8 +575,9 @@ namespace StbSharp
                 {
                     if (header.Interlace == 0)
                     {
-                        CreateImageRaw(
-                            ri, decompressedStream, filteredData, previousRow, currentRow,
+                        DecodeImage(
+                            state, decompressedStream,
+                            filteredData, previousRow, currentRow,
                             width, height, comp,
                             originX: 0, originY: 0, spacingX: 1, spacingY: 1,
                             header, transparency, palette);
@@ -598,8 +603,9 @@ namespace StbSharp
                                 var filteredDataSlice = filteredData.Slice(0, interlace_full_width_bytes);
                                 var previousRowSlice = previousRow.Slice(0, interlace_row_bytes);
                                 var currentRowSlice = currentRow.Slice(0, interlace_row_bytes);
-                                CreateImageRaw(
-                                    ri, decompressedStream, filteredDataSlice, previousRowSlice, currentRowSlice,
+                                DecodeImage(
+                                    state, decompressedStream,
+                                    filteredDataSlice, previousRowSlice, currentRowSlice,
                                     interlace_width, interlace_height, comp,
                                     originX, originY, spacingX, spacingY,
                                     header, transparency, palette);
@@ -620,23 +626,15 @@ namespace StbSharp
             }
 
             [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-            public static unsafe void DefilterRow(
+            public static void DefilterRow(
                 ReadOnlySpan<byte> previousFilteredRow,
                 ReadOnlySpan<byte> currentFilteredRow,
+                Span<byte> destination,
                 int width,
                 int y,
                 int dstComp,
-                in Header header,
-                Span<byte> destination)
+                in Header header)
             {
-                int w = width;
-                int bitDepth = header.Depth;
-                int srcComp = header.Components;
-                int byte_depth = bitDepth == 16 ? 2 : 1;
-                int dst_bpc = dstComp * byte_depth;
-                int filtered_bpc = srcComp * byte_depth;
-                int img_width_bytes = ((width * srcComp * bitDepth) + 7) / 8;
-
                 int rawOff = 0;
                 int curOff = 0;
                 int priorOff = 0;
@@ -645,7 +643,18 @@ namespace StbSharp
                 if ((int)filter > 4)
                     throw new StbImageReadException(ErrorCode.InvalidFilter);
 
-                if (bitDepth < 8)
+                if (y == 0)
+                    filter = FirstRowFilter[(int)filter];
+
+                int w = width;
+                int depth = header.Depth;
+                int srcComp = header.Components;
+                int byte_depth = depth == 16 ? 2 : 1;
+                int dst_bpc = dstComp * byte_depth;
+                int filtered_bpc = srcComp * byte_depth;
+                int img_width_bytes = ((width * srcComp * depth) + 7) / 8;
+
+                if (depth < 8)
                 {
                     int o = width * dstComp - img_width_bytes;
                     curOff += o;
@@ -653,9 +662,6 @@ namespace StbSharp
                     filtered_bpc = 1;
                     w = img_width_bytes;
                 }
-
-                if (y == 0)
-                    filter = FirstRowFilter[(int)filter];
 
                 destination.Clear();
 
@@ -688,7 +694,7 @@ namespace StbSharp
                     }
                 }
 
-                if (bitDepth == 8)
+                if (depth == 8)
                 {
                     if (srcComp != dstComp)
                         destination[curOff + srcComp] = 255;
@@ -696,7 +702,7 @@ namespace StbSharp
                     curOff += dstComp;
                     priorOff += dstComp;
                 }
-                else if (bitDepth == 16)
+                else if (depth == 16)
                 {
                     if (srcComp != dstComp)
                     {
@@ -715,9 +721,9 @@ namespace StbSharp
                 }
 
                 // TODO: Vectorize this;
-                // Can be tricky as it needs to process values dependent on previous value
+                // Can be tricky/impossible as it needs to process values dependent on previous value
 
-                if ((bitDepth < 8) || (srcComp == dstComp))
+                if ((depth < 8) || (srcComp == dstComp))
                 {
                     int nk = (w - 1) * filtered_bpc;
                     var filtered = currentFilteredRow.Slice(rawOff, nk);
@@ -891,7 +897,7 @@ namespace StbSharp
                             break;
                     }
 
-                    if (bitDepth == 16)
+                    if (depth == 16)
                     {
                         var cur = destination.Slice(filtered_bpc + 1);
                         for (int i = 0; i < cur.Length; i += dst_bpc)
@@ -1004,8 +1010,10 @@ namespace StbSharp
             }
 
             public static void PostDefilteredRow(
-                ReadState state, Span<byte> data,
-                int width, int row, int outComp, int originX, int spacingX,
+                ReadState state,
+                Span<byte> data,
+                int width, int row, int outComp,
+                int originX, int spacingX,
                 in Header header,
                 in Transparency? transparency,
                 in Palette? palette)
@@ -1032,11 +1040,12 @@ namespace StbSharp
                     int comp = palette.Value.Components;
 
                     Span<byte> buffer = stackalloc byte[4096];
+                    int bufferCapacity = buffer.Length / comp;
+
                     int offset = 0;
-                    int left = width;
-                    while (left > 0)
+                    while (offset < width)
                     {
-                        int count = Math.Min(left, buffer.Length / comp);
+                        int count = Math.Min(width - offset, bufferCapacity);
                         var rowSlice = data.Slice(offset, count);
                         var bufferSlice = buffer.Slice(0, count * comp);
 
@@ -1045,7 +1054,6 @@ namespace StbSharp
                         int start = originX + offset;
                         state.OutputPixelLine(AddressingMajor.Row, row, start, spacingX, bufferSlice);
 
-                        left -= count;
                         offset += count;
                     }
                 }
