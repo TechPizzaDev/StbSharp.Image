@@ -5,6 +5,8 @@ namespace StbSharp
 {
     public static partial class ImageRead
     {
+        public delegate void ReadProgressCallback(float progress, Rect? rectangle);
+
         public delegate void StateReadyDelegate(ReadState state);
 
         public delegate void OutputPixelLineDelegate(
@@ -17,6 +19,7 @@ namespace StbSharp
         public class ReadState
         {
             public StateReadyDelegate? StateReadyCallback;
+            public ReadProgressCallback? ProgressCallback;
             public OutputPixelLineDelegate? OutputPixelLineCallback;
             public OutputPixelDelegate? OutputPixelCallback;
 
