@@ -174,9 +174,8 @@ namespace StbSharp
                     }
                 }
 
-
                 if (info.bitsPerPixel == 24 &&
-                    info.ma == 0xff << 24)
+                    info.ma == 0xffu << 24)
                     ri.Components = 3;
                 else
                     ri.Components = info.ma != 0 ? 4 : 3;
