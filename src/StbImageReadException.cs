@@ -14,7 +14,11 @@ namespace StbSharp
             {
             }
 
-            public StbImageReadException(ErrorCode errorCode) : this(errorCode.ToString())
+            public StbImageReadException(ErrorCode errorCode) : this(errorCode, null)
+            {
+            }
+
+            public StbImageReadException(ErrorCode errorCode, Exception? innerException) : this(errorCode.ToString(), innerException)
             {
                 ErrorCode = errorCode;
             }

@@ -30,6 +30,7 @@ namespace StbSharp
 
             public bool Progressive;
             public ImageOrientation Orientation;
+            public ImageComponentOrder ComponentOrder;
 
             public int OutDepth;
             public int OutComponents;

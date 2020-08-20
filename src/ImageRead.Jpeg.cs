@@ -1685,7 +1685,7 @@ namespace StbSharp
                 var o = dst.Span;
                 var n = inNear.Span;
 
-                for (int i = 0; i < w; ++i)
+                for (int i = 0; i < w; i++)
                 {
                     var oslice = o.Slice(i * hs);
                     byte near = n[i];
@@ -1705,10 +1705,10 @@ namespace StbSharp
                 int i = 0;
                 int x = 0;
 
-                const int crFactor = ((int)(1.40200f * 4096.0f + 0.5f)) << 8;
-                const int cgFactor = -(((int)(0.71414f * 4096.0f + 0.5f)) << 8);
-                const int cgbFactor = -(((int)(0.34414f * 4096.0f + 0.5f)) << 8);
-                const int bFactor = ((int)(1.77200f * 4096.0f + 0.5f)) << 8;
+                const int crFactor = ((int)(1.40200f * 4096f + 0.5f)) << 8;
+                const int cgFactor = -(((int)(0.71414f * 4096f + 0.5f)) << 8);
+                const int cgbFactor = -(((int)(0.34414f * 4096f + 0.5f)) << 8);
+                const int bFactor = ((int)(1.77200f * 4096f + 0.5f)) << 8;
 
                 //if (Sse2.IsSupported)
                 //{

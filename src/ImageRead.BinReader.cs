@@ -229,9 +229,11 @@ namespace StbSharp
                     FillBufferAndCheck(sizeof(int));
                 return BinaryPrimitives.ReadInt32LittleEndian(Take(sizeof(int)));
             }
+
             /// <summary>
             /// </summary>
             /// <exception cref="EndOfStreamException"/>
+            [CLSCompliant(false)]
             public uint ReadUInt32LE()
             {
                 if (_bufferLength < sizeof(uint))
