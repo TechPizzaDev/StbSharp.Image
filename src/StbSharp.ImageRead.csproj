@@ -3,7 +3,8 @@
     <Authors>StbImageSharpTeam</Authors>
     <Product>StbImageSharp</Product>
     <PackageId>StbImageSharp</PackageId>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <Nullable>enable</Nullable>
     <Description>C# port of the stb_image.h</Description>
     <PackageLicenseUrl>Public Domain</PackageLicenseUrl>
     <PackageProjectUrl>https://github.com/StbSharp/StbImageSharp</PackageProjectUrl>

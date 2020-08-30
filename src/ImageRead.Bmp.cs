@@ -10,14 +10,19 @@ namespace StbSharp
         {
             public const int HeaderSize = 2;
 
-            public class BmpInfo
+            public struct BmpInfo
             {
                 public int bitsPerPixel;
                 public int offset;
                 public int headerSize;
+
+                [CLSCompliant(false)]
                 public uint mr;
+                [CLSCompliant(false)]
                 public uint mg;
+                [CLSCompliant(false)]
                 public uint mb;
+                [CLSCompliant(false)]
                 public uint ma;
             }
 
@@ -33,10 +38,11 @@ namespace StbSharp
                 return true;
             }
 
-            public static BmpInfo? Info(BinReader s, out ReadState ri)
+            public static BmpInfo Info(BinReader reader, out ReadState state)
             {
-                ri = new ReadState();
-                return ParseHeader(s, ri);
+                state = new ReadState();
+                var header = ParseHeader(reader, state);
+                return header ?? throw new StbImageReadException(ErrorCode.UnknownHeader);
             }
 
             public static BmpInfo? ParseHeader(BinReader s, ReadState ri)
@@ -192,8 +198,7 @@ namespace StbSharp
 
                 bytePool ??= ArrayPool<byte>.Shared;
 
-                var info = ParseHeader(s, ri);
-                if (info == null)
+                var info = ParseHeader(s, ri) ??
                     throw new StbImageReadException(ErrorCode.UnknownHeader);
 
                 ri.OutComponents = ri.Components;
