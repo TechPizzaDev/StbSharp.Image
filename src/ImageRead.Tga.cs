@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Buffers;
+using System.Diagnostics;
 using System.IO;
 
 namespace StbSharp
@@ -52,19 +54,19 @@ namespace StbSharp
 
             public static bool Test(ReadOnlySpan<byte> header)
             {
-                var info = new TgaInfo();
-                return TestCore(header, ref info);
+                return TestCore(header, out _);
             }
 
-            public static bool Info(BinReader s, out ReadState ri)
+            public static bool Info(BinReader s, out ReadState state)
             {
-                ri = new ReadState();
-                var info = new TgaInfo();
-                return ParseHeader(s, ri, ref info);
+                state = new ReadState();
+                return ParseHeader(s, state, out _);
             }
 
-            public static bool TestCore(ReadOnlySpan<byte> header, ref TgaInfo info)
+            public static bool TestCore(ReadOnlySpan<byte> header, out TgaInfo info)
             {
+                info = default;
+
                 if (header.Length < HeaderSize)
                     return false;
 
@@ -97,13 +99,21 @@ namespace StbSharp
                 return true;
             }
 
-            public static bool ParseHeader(BinReader s, ReadState ri, ref TgaInfo info)
+            public static bool ParseHeader(BinReader s, ReadState ri, out TgaInfo info)
             {
+                if (s == null)
+                    throw new ArgumentNullException(nameof(s));
+                if (ri == null)
+                    throw new ArgumentNullException(nameof(ri));
+
                 Span<byte> tmp = stackalloc byte[HeaderSize];
                 if (!s.TryReadBytes(tmp))
+                {
+                    info = default;
                     return false;
+                }
 
-                if (!TestCore(tmp, ref info))
+                if (!TestCore(tmp, out info))
                     throw new StbImageReadException(ErrorCode.UnknownFormat);
 
                 info.palette_start = s.ReadInt16LE();
@@ -157,10 +167,12 @@ namespace StbSharp
                 return true;
             }
 
-            public static void ReadRgb16(BinReader s, Span<byte> destination)
+            public static void ReadRgb16(BinReader reader, Span<byte> destination)
             {
+                Debug.Assert(reader != null);
+
                 const ushort fiveBitMask = 31;
-                ushort px = (ushort)s.ReadInt16LE();
+                ushort px = (ushort)reader.ReadInt16LE();
                 int r = (px >> 10) & fiveBitMask;
                 int g = (px >> 5) & fiveBitMask;
                 int b = px & fiveBitMask;
@@ -169,7 +181,7 @@ namespace StbSharp
                 destination[2] = (byte)(b * 255 / 31);
             }
 
-            public static IMemoryHolder Load(BinReader s, ReadState ri)
+            public static IMemoryHolder Load(BinReader s, ReadState ri, ArrayPool<byte>? pool = null)
             {
                 var info = new TgaInfo();
                 if (!ParseHeader(s, ri, ref info))
