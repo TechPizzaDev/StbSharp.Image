@@ -12,7 +12,12 @@ namespace StbSharp
     {
         public static class Jpeg
         {
+            // TODO: optimize YCbCr with intrinsics
+            // TODO: optimize IdctBlock with intrinsics
+
             #region Constants
+
+            public const byte NoneMarker = 0xff;
 
             public const int HeaderSize = 2;
 
@@ -65,14 +70,12 @@ namespace StbSharp
                 public int t0, t1, t2, t3, p1, p2, p3, p4, p5, x0, x1, x2, x3;
             }
 
-            public delegate void IdctBlockKernel(
-                Span<byte> dst, int dstStride, ReadOnlySpan<short> data);
-
-            public delegate void YCbCrToRgbKernel(
-                Span<byte> dst, Span<byte> y, Span<byte> pcb, Span<byte> pcr);
-
             public delegate Memory<byte> ResamplerMethod(
-                Memory<byte> dst, Memory<byte> inNear, Memory<byte> inFar, int w, int hs);
+                Memory<byte> destination,
+                Memory<byte> inputNear,
+                Memory<byte> inputFar,
+                int w,
+                int hs);
 
             [StructLayout(LayoutKind.Sequential)]
             public struct ImageComponent
@@ -116,7 +119,7 @@ namespace StbSharp
                 public Memory<byte> MDelta { get; private set; }
 
                 public Span<byte> Fast => MFast.Span;
-                
+
                 [CLSCompliant(false)]
                 public Span<ushort> Code => MemoryMarshal.Cast<byte, ushort>(MCode.Span);
 
@@ -240,19 +243,11 @@ namespace StbSharp
                 public int todo;
                 public int[] order = new int[CompCount];
 
-                public IdctBlockKernel idct_block_kernel;
-                public YCbCrToRgbKernel YCbCr_to_RGB_kernel;
-                public ResamplerMethod resample_row_hv_2_kernel;
-
                 public JpegState(BinReader reader, ReadState readState, ArrayPool<byte>? arrayPool)
                 {
                     Reader = reader ?? throw new ArgumentNullException(nameof(reader));
                     State = readState ?? throw new ArgumentNullException(nameof(readState));
                     BytePool = arrayPool ?? ArrayPool<byte>.Shared;
-
-                    idct_block_kernel = IdctBlock;
-                    YCbCr_to_RGB_kernel = YCbCrToRGB;
-                    resample_row_hv_2_kernel = ResampleRowHV2;
 
                     for (int i = 0; i < CompCount; i++)
                     {
@@ -309,14 +304,20 @@ namespace StbSharp
                 public int ypos;
             }
 
-            public static bool IsRestart(byte x)
+            /// <summary>
+            /// In each scan, we'll have scan_n components, and the order
+            /// of the components is specified by order[].
+            /// </summary>
+            /// <param name="marker">The marker value to check.</param>
+            /// <returns>Whether <paramref name="marker"/> is a restart marker.</returns>
+            public static bool IsRestart(byte marker)
             {
-                return x >= 0xd0 && x <= 0xd7;
+                return marker >= 0xd0 && marker <= 0xd7;
             }
 
-            public static void AssertIsRestart(byte x)
+            public static void ThrowIfNotRestart(byte marker)
             {
-                if (!IsRestart(x))
+                if (!IsRestart(marker))
                     throw new StbImageReadException(ErrorCode.NoResetMarker);
             }
 
@@ -412,11 +413,11 @@ namespace StbSharp
                 do
                 {
                     int b = j.Reader.ReadByte();
-                    if (b == 0xff)
+                    if (b == NoneMarker)
                     {
                         int c = j.Reader.ReadByte();
-                        while (c == 0xff)
-                            c = j.Reader.ReadByte();
+                        while (c == NoneMarker)
+                            c = j.Reader.ReadByte(); // consume fill bytes
 
                         if (c != 0)
                         {
@@ -523,8 +524,8 @@ namespace StbSharp
 
             [CLSCompliant(false)]
             public static void DecodeBlock(
-                    JpegState j, Span<short> data, Huffman hdc, Huffman hac,
-                    ReadOnlySpan<short> fac, int b, ReadOnlySpan<ushort> dequant)
+                JpegState j, Span<short> data, Huffman hdc, Huffman hac,
+                ReadOnlySpan<short> fac, int b, ReadOnlySpan<ushort> dequant)
             {
                 Debug.Assert(j != null);
 
@@ -853,7 +854,8 @@ namespace StbSharp
                 idct.x3 += 65536 + (128 << 17);
             }
 
-            public static void IdctBlock(Span<byte> dst, int dstStride, ReadOnlySpan<short> data)
+            public static void IdctBlock(
+                Span<byte> destination, int destinationStride, ReadOnlySpan<short> data)
             {
                 Span<int> val = stackalloc int[64];
 
@@ -862,13 +864,13 @@ namespace StbSharp
                     var d = data.Slice(i);
                     var v = val.Slice(i);
 
-                    if ((d[56] == 0) &&
-                        (d[08] == 0) &&
+                    if ((d[08] == 0) &&
                         (d[16] == 0) &&
                         (d[24] == 0) &&
                         (d[32] == 0) &&
                         (d[40] == 0) &&
-                        (d[48] == 0))
+                        (d[48] == 0) &&
+                        (d[56] == 0))
                     {
                         int dcterm = d[0] << 2;
                         v[0] = v[8] = v[16] = v[24] = v[32] = v[40] = v[48] = v[56] = dcterm;
@@ -882,7 +884,6 @@ namespace StbSharp
                         idct.x2 += 512;
                         idct.x3 += 512;
 
-                        v[56] = (idct.x0 - idct.t3) >> 10;
                         v[0] = (idct.x0 + idct.t3) >> 10;
                         v[8] = (idct.x1 + idct.t2) >> 10;
                         v[16] = (idct.x2 + idct.t1) >> 10;
@@ -890,6 +891,7 @@ namespace StbSharp
                         v[32] = (idct.x3 - idct.t0) >> 10;
                         v[40] = (idct.x2 - idct.t1) >> 10;
                         v[48] = (idct.x1 - idct.t2) >> 10;
+                        v[56] = (idct.x0 - idct.t3) >> 10;
                     }
                 }
 
@@ -897,40 +899,49 @@ namespace StbSharp
                 {
                     CalcIdct(val.Slice(i * 8), out var idct);
 
-                    var o = dst.Slice(i * dstStride);
-                    o[7] = Clamp((idct.x0 - idct.t3) >> 17);
-                    o[0] = Clamp((idct.x0 + idct.t3) >> 17);
-                    o[1] = Clamp((idct.x1 + idct.t2) >> 17);
-                    o[2] = Clamp((idct.x2 + idct.t1) >> 17);
-                    o[3] = Clamp((idct.x3 + idct.t0) >> 17);
-                    o[4] = Clamp((idct.x3 - idct.t0) >> 17);
-                    o[5] = Clamp((idct.x2 - idct.t1) >> 17);
-                    o[6] = Clamp((idct.x1 - idct.t2) >> 17);
+                    var dstSlice = destination.Slice(i * destinationStride);
+                    dstSlice[0] = Clamp((idct.x0 + idct.t3) >> 17);
+                    dstSlice[1] = Clamp((idct.x1 + idct.t2) >> 17);
+                    dstSlice[2] = Clamp((idct.x2 + idct.t1) >> 17);
+                    dstSlice[3] = Clamp((idct.x3 + idct.t0) >> 17);
+                    dstSlice[4] = Clamp((idct.x3 - idct.t0) >> 17);
+                    dstSlice[5] = Clamp((idct.x2 - idct.t1) >> 17);
+                    dstSlice[6] = Clamp((idct.x1 - idct.t2) >> 17);
+                    dstSlice[7] = Clamp((idct.x0 - idct.t3) >> 17);
                 }
             }
 
+            /// <summary>
+            /// If there's a pending marker from the entropy stream, return that
+            /// otherwise, fetch from the stream and get a marker. if there's no
+            /// marker, return <see cref="NoneMarker"/>, which is never a valid marker value.
+            /// </summary>
+            /// <returns></returns>
             public static byte ReadMarker(JpegState j)
             {
                 Debug.Assert(j != null);
 
                 byte x;
-                if (j.marker != 0xff)
+                if (j.marker != NoneMarker)
                 {
                     x = j.marker;
-                    j.marker = 0xff;
+                    j.marker = NoneMarker;
                     return x;
                 }
 
                 x = j.Reader.ReadByte();
-                if (x != 0xff)
-                    return 0xff;
+                if (x != NoneMarker)
+                    return NoneMarker;
 
-                while (x == 0xff)
-                    x = j.Reader.ReadByte();
+                while (x == NoneMarker)
+                    x = j.Reader.ReadByte(); // consume repeated fill bytes
 
                 return x;
             }
 
+            /// <summary>
+            /// Reset the entropy decoder and the dc prediction after a restart interval.
+            /// </summary>
             public static void Reset(JpegState j)
             {
                 Debug.Assert(j != null);
@@ -940,9 +951,12 @@ namespace StbSharp
                 j.nomore = false;
                 for (int i = 0; i < j.components.Length; i++)
                     j.components[i].dc_pred = 0;
-                j.marker = 0xff;
+                j.marker = NoneMarker;
                 j.todo = j.restart_interval != 0 ? j.restart_interval : 0x7fffffff;
                 j.eob_run = 0;
+
+                // no more than 1<<31 MCUs if no restart_interal? that's plenty safe,
+                // since we don't even allow 1<<30 pixels
             }
 
             public static void ParseEntropyCodedData(JpegState state)
@@ -950,12 +964,18 @@ namespace StbSharp
                 Debug.Assert(state != null);
 
                 Reset(state);
+
                 if (!state.progressive)
                 {
                     Span<short> data = stackalloc short[64];
 
                     if (state.scan_n == 1)
                     {
+                        // non-interleaved data, we just need to process one block at a time,
+                        // in trivial scanline order
+                        // number of blocks to do just depends on how many actual "pixels" this
+                        // component has, independent of interleaved MCU blocking and such
+
                         int n = state.order[0];
                         var component = state.components[n];
                         int w = (component.x + 7) / 8;
@@ -972,17 +992,20 @@ namespace StbSharp
                                     state, data, state.huff_dc[component.hd], state.huff_ac[ha],
                                     state.fast_ac[ha], n, state.dequant[component.tq]);
 
-                                state.idct_block_kernel(
+                                IdctBlock(
                                     cdata.Slice(component.w2 * j * 8 + i * 8),
                                     component.w2,
                                     data);
 
+                                // every data block is an MCU, so countdown the restart interval
                                 if (--state.todo <= 0)
                                 {
                                     if (state.code_bits < 24)
                                         GrowBufferUnsafe(state);
 
-                                    AssertIsRestart(state.marker);
+                                    // if it's NOT a restart, then just bail, so we get corrupt data
+                                    // rather than no data
+                                    ThrowIfNotRestart(state.marker);
                                     Reset(state);
                                 }
                             }
@@ -990,44 +1013,56 @@ namespace StbSharp
                     }
                     else
                     {
+                        // interleaved
+
                         for (int j = 0; j < state.img_mcu_y; ++j)
                         {
                             for (int i = 0; i < state.img_mcu_x; ++i)
                             {
+                                // scan an interleaved mcu... process scan_n components in order
+
                                 for (int k = 0; k < state.scan_n; ++k)
                                 {
+                                    // scan out an mcu's worth of this component; that's just determined
+                                    // by the basic H and V specified for the component
+
                                     int n = state.order[k];
                                     var component = state.components[n];
-                                    var cdata = component.data.Span;
+                                    var componentData = component.data.Span;
 
                                     for (int y = 0; y < component.v; ++y)
                                     {
                                         for (int x = 0; x < component.h; ++x)
                                         {
-                                            int x2 = (i * component.h + x) * 8;
-                                            int y2 = (j * component.v + y) * 8;
+                                            int bx = (i * component.h + x) * 8;
+                                            int by = (j * component.v + y) * 8;
                                             int ha = component.ha;
 
                                             DecodeBlock(
-                                                state, data,
+                                                state,
+                                                data,
                                                 state.huff_dc[component.hd],
-                                                state.huff_ac[ha], state.fast_ac[ha], n,
+                                                state.huff_ac[ha],
+                                                state.fast_ac[ha],
+                                                n,
                                                 state.dequant[component.tq]);
 
-                                            state.idct_block_kernel(
-                                                cdata.Slice(component.w2 * y2 + x2),
+                                            IdctBlock(
+                                                componentData.Slice(component.w2 * by + bx),
                                                 component.w2,
                                                 data);
                                         }
                                     }
                                 }
 
+                                // after all interleaved components, that's an interleaved MCU,
+                                // so now count down the restart interval
                                 if (--state.todo <= 0)
                                 {
                                     if (state.code_bits < 24)
                                         GrowBufferUnsafe(state);
 
-                                    AssertIsRestart(state.marker);
+                                    ThrowIfNotRestart(state.marker);
                                     Reset(state);
                                 }
                             }
@@ -1038,6 +1073,11 @@ namespace StbSharp
                 {
                     if (state.scan_n == 1)
                     {
+                        // non-interleaved data, we just need to process one block at a time,
+                        // in trivial scanline order
+                        // number of blocks to do just depends on how many actual "pixels" this
+                        // component has, independent of interleaved MCU blocking and such
+
                         int n = state.order[0];
                         var component = state.components[n];
                         int w = (component.x + 7) / 8;
@@ -1062,12 +1102,13 @@ namespace StbSharp
                                     DecodeBlockProggressiveAc(state, data, state.huff_ac[ha], state.fast_ac[ha]);
                                 }
 
+                                // every data block is an MCU, so countdown the restart interval
                                 if (--state.todo <= 0)
                                 {
                                     if (state.code_bits < 24)
                                         GrowBufferUnsafe(state);
 
-                                    AssertIsRestart(state.marker);
+                                    ThrowIfNotRestart(state.marker);
                                     Reset(state);
                                 }
                             }
@@ -1075,12 +1116,19 @@ namespace StbSharp
                     }
                     else
                     {
+                        // interleaved
+
                         for (int j = 0; j < state.img_mcu_y; ++j)
                         {
                             for (int i = 0; i < state.img_mcu_x; ++i)
                             {
+                                // scan an interleaved mcu... process scan_n components in order
+
                                 for (int k = 0; k < state.scan_n; ++k)
                                 {
+                                    // scan out an mcu's worth of this component; that's just determined
+                                    // by the basic H and V specified for the component
+
                                     int n = state.order[k];
                                     var component = state.components[n];
                                     var coeff16 = MemoryMarshal.Cast<byte, short>(component.coeff.Span);
@@ -1100,12 +1148,14 @@ namespace StbSharp
                                     }
                                 }
 
+                                // after all interleaved components, that's an interleaved MCU,
+                                // so now count down the restart interval
                                 if (--state.todo <= 0)
                                 {
                                     if (state.code_bits < 24)
                                         GrowBufferUnsafe(state);
 
-                                    AssertIsRestart(state.marker);
+                                    ThrowIfNotRestart(state.marker);
                                     Reset(state);
                                 }
                             }
@@ -1125,7 +1175,7 @@ namespace StbSharp
                     data[i] *= (short)dequant[i];
             }
 
-            public static void Finish(JpegState z)
+            public static void FinishProgresive(JpegState z)
             {
                 Debug.Assert(z != null);
 
@@ -1147,7 +1197,7 @@ namespace StbSharp
 
                             Dequantize(data, z.dequant[component.tq]);
 
-                            z.idct_block_kernel(
+                            IdctBlock(
                                 component.data.Span.Slice(component.w2 * j * 8 + i * 8),
                                 component.w2,
                                 data);
@@ -1164,7 +1214,7 @@ namespace StbSharp
                 int L;
                 switch (m)
                 {
-                    case 0xff:
+                    case NoneMarker:
                         throw new StbImageReadException(ErrorCode.ExpectedMarker);
 
                     case 0xDD:
@@ -1512,7 +1562,7 @@ namespace StbSharp
 
                 z.jfif = 0;
                 z.app14_color_transform = -1;
-                z.marker = 0xff;
+                z.marker = NoneMarker; // initialize cached marker to empty
 
                 int m = ReadMarker(z);
                 if (!(m == 0xd8))
@@ -1526,9 +1576,10 @@ namespace StbSharp
 
                     do
                     {
+                        // some files have extra padding after their blocks, so ok, we'll scan
                         m = ReadMarker(z);
                     }
-                    while (m == 0xff);
+                    while (m == NoneMarker);
                 }
 
                 z.progressive = m == 0xc2;
@@ -1545,6 +1596,11 @@ namespace StbSharp
                 return true;
             }
 
+            /// <summary>
+            /// Decode image to YCbCr format.
+            /// </summary>
+            /// <param name="j"></param>
+            /// <returns></returns>
             public static bool ParseData(JpegState j)
             {
                 Debug.Assert(j != null);
@@ -1566,11 +1622,16 @@ namespace StbSharp
 
                         ParseEntropyCodedData(j);
 
-                        if (j.marker == 0xff)
+                        if (j.marker == NoneMarker)
                         {
-                            while (s.ReadByte() != 0xff)
+                            // handle 0s at the end of image data from IP Kamera 9060
+
+                            while (s.ReadByte() != NoneMarker)
                                 ;
+
                             j.marker = s.ReadByte();
+                            // if we reach eof without hitting a marker, 
+                            // ReadMarker() below will fail and we'll eventually return 0
                         }
                     }
                     else if (m == 0xdc)
@@ -1594,7 +1655,7 @@ namespace StbSharp
                 }
 
                 if (j.progressive)
-                    Finish(j);
+                    FinishProgresive(j);
 
                 j.is_rgb = j.State.Components == 3 && (j.rgb == 3 || (j.app14_color_transform == 0 && j.jfif == 0));
                 j.decode_n = (j.State.Components < 3 && !j.is_rgb) ? 1 : j.State.Components;
@@ -1653,48 +1714,157 @@ namespace StbSharp
             }
 
             public static Memory<byte> ResampleRowHV2(
-                Memory<byte> dst, Memory<byte> inNear, Memory<byte> inFar, int w, int hs)
+                Memory<byte> destination, Memory<byte> inputNear, Memory<byte> inputFar, int w, int hs)
             {
-                var o = dst.Span;
-                var n = inNear.Span;
-                var f = inFar.Span;
+                var dst = destination.Span;
+                var near = inputNear.Span;
+                var far = inputFar.Span;
 
+                // need to generate 2x2 samples for every one in input
                 if (w == 1)
                 {
-                    o[0] = o[1] = (byte)((3 * n[0] + f[0] + 2) >> 2);
-                    return dst;
+                    dst[0] = dst[1] = (byte)((3 * near[0] + far[0] + 2) / 4);
+                    return destination;
                 }
 
-                int t1 = 3 * n[0] + f[0];
-                o[0] = (byte)((t1 + 2) >> 2);
-                for (int i = 1; i < w; ++i)
+                int i = 0, t0;
+                int t1 = 3 * near[0] + far[0];
+
+                // Intrinsics process groups of 8 pixels for as long as they can.
+                // Note they can't handle the last pixel in a row in this loop
+                // because they need to handle the filter boundary conditions.
+                if (false && Sse2.IsSupported) // TODO: implement
                 {
-                    int t0 = t1;
-                    t1 = 3 * n[i] + n[i];
-                    o[i * 2 - 1] = (byte)((3 * t0 + t1 + 8) >> 4);
-                    o[i * 2] = (byte)((3 * t1 + t0 + 8) >> 4);
+                    for (; i < ((w - 1) & ~7); i += 8)
+                    {
+#if definedSTBI_SSE2
+      // load and perform the vertical filtering pass
+      // this uses 3*x + y = 4*x + (y - x)
+      __m128i zero  = _mm_setzero_si128();
+      __m128i farb  = _mm_loadl_epi64((__m128i *) (f + i));
+      __m128i nearb = _mm_loadl_epi64((__m128i *) (n + i));
+      __m128i farw  = _mm_unpacklo_epi8(farb, zero);
+      __m128i nearw = _mm_unpacklo_epi8(nearb, zero);
+      __m128i diff  = _mm_sub_epi16(farw, nearw);
+      __m128i nears = _mm_slli_epi16(nearw, 2);
+      __m128i curr  = _mm_add_epi16(nears, diff); // current row
+
+      // horizontal filter works the same based on shifted vers of current
+      // row. "prev" is current row shifted right by 1 pixel; we need to
+      // insert the previous pixel value (from t1).
+      // "next" is current row shifted left by 1 pixel, with first pixel
+      // of next block of 8 pixels added in.
+      __m128i prv0 = _mm_slli_si128(curr, 2);
+      __m128i nxt0 = _mm_srli_si128(curr, 2);
+      __m128i prev = _mm_insert_epi16(prv0, t1, 0);
+      __m128i next = _mm_insert_epi16(nxt0, 3*n[i+8] + f[i+8], 7);
+
+      // horizontal filter, polyphase implementation since it's convenient:
+      // even pixels = 3*cur + prev = cur*4 + (prev - cur)
+      // odd  pixels = 3*cur + next = cur*4 + (next - cur)
+      // note the shared term.
+      __m128i bias  = _mm_set1_epi16(8);
+      __m128i curs = _mm_slli_epi16(curr, 2);
+      __m128i prvd = _mm_sub_epi16(prev, curr);
+      __m128i nxtd = _mm_sub_epi16(next, curr);
+      __m128i curb = _mm_add_epi16(curs, bias);
+      __m128i even = _mm_add_epi16(prvd, curb);
+      __m128i odd  = _mm_add_epi16(nxtd, curb);
+
+      // interleave even and odd pixels, then undo scaling.
+      __m128i int0 = _mm_unpacklo_epi16(even, odd);
+      __m128i int1 = _mm_unpackhi_epi16(even, odd);
+      __m128i de0  = _mm_srli_epi16(int0, 4);
+      __m128i de1  = _mm_srli_epi16(int1, 4);
+
+      // pack and write output
+      __m128i outv = _mm_packus_epi16(de0, de1);
+      _mm_storeu_si128((__m128i *) (out + i*2), outv);
+#endif
+
+                        // "previous" value for next iter
+                        t1 = 3 * near[i + 7] + far[i + 7];
+                    }
+                }
+                else if (false) //(Neon.IsSupported) // TODO: Net5 NEON intrinsics
+                {
+                    throw new PlatformNotSupportedException();
+
+                    for (; i < ((w - 1) & ~7); i += 8)
+                    {
+#if definedSTBI_NEON
+      // load and perform the vertical filtering pass
+      // this uses 3*x + y = 4*x + (y - x)
+      uint8x8_t farb  = vld1_u8(f + i);
+      uint8x8_t nearb = vld1_u8(n + i);
+      int16x8_t diff  = vreinterpretq_s16_u16(vsubl_u8(farb, nearb));
+      int16x8_t nears = vreinterpretq_s16_u16(vshll_n_u8(nearb, 2));
+      int16x8_t curr  = vaddq_s16(nears, diff); // current row
+
+      // horizontal filter works the same based on shifted vers of current
+      // row. "prev" is current row shifted right by 1 pixel; we need to
+      // insert the previous pixel value (from t1).
+      // "next" is current row shifted left by 1 pixel, with first pixel
+      // of next block of 8 pixels added in.
+      int16x8_t prv0 = vextq_s16(curr, curr, 7);
+      int16x8_t nxt0 = vextq_s16(curr, curr, 1);
+      int16x8_t prev = vsetq_lane_s16(t1, prv0, 0);
+      int16x8_t next = vsetq_lane_s16(3*n[i+8] + f[i+8], nxt0, 7);
+
+      // horizontal filter, polyphase implementation since it's convenient:
+      // even pixels = 3*cur + prev = cur*4 + (prev - cur)
+      // odd  pixels = 3*cur + next = cur*4 + (next - cur)
+      // note the shared term.
+      int16x8_t curs = vshlq_n_s16(curr, 2);
+      int16x8_t prvd = vsubq_s16(prev, curr);
+      int16x8_t nxtd = vsubq_s16(next, curr);
+      int16x8_t even = vaddq_s16(curs, prvd);
+      int16x8_t odd  = vaddq_s16(curs, nxtd);
+
+      // undo scaling and round, then store with even/odd phases interleaved
+      uint8x8x2_t o;
+      o.val[0] = vqrshrun_n_s16(even, 4);
+      o.val[1] = vqrshrun_n_s16(odd,  4);
+      vst2_u8(out + i*2, o);
+#endif
+                        // "previous" value for next iter
+                        t1 = 3 * near[i + 7] + far[i + 7];
+                    }
+                }
+                else
+                {
+                    dst[0] = (byte)((t1 + 2) / 4);
                 }
 
-                o[w * 2 - 1] = (byte)((t1 + 2) >> 2);
-                return dst;
+                for (i = 1; i < w; i++)
+                {
+                    t0 = t1;
+                    t1 = 3 * near[i] + far[i];
+                    dst[i * 2 - 1] = (byte)((3 * t0 + t1 + 8) / 16);
+                    dst[i * 2] = (byte)((3 * t1 + t0 + 8) / 16);
+                }
+                dst[w * 2 - 1] = (byte)((t1 + 2) / 4);
+
+                return destination;
             }
 
             public static Memory<byte> ResampleRowGeneric(
-                Memory<byte> dst, Memory<byte> inNear, Memory<byte> inFar, int w, int hs)
+                Memory<byte> destination,
+                Memory<byte> inputNear,
+                Memory<byte> inputFar,
+                int w,
+                int hs)
             {
-                var o = dst.Span;
-                var n = inNear.Span;
+                var dst = destination.Span;
+                var inNear = inputNear.Span;
 
                 for (int i = 0; i < w; i++)
                 {
-                    var oslice = o.Slice(i * hs);
-                    byte near = n[i];
-
-                    for (int j = 0; j < hs; ++j)
-                        oslice[j] = near;
+                    byte near = inNear[i];
+                    dst.Slice(i * hs, hs).Fill(near);
                 }
 
-                return dst;
+                return destination;
             }
 
             #endregion
@@ -1811,7 +1981,7 @@ namespace StbSharp
                     else if ((r.hs == 2) && (r.vs == 1))
                         r.Resample = ResampleRowH2;
                     else if ((r.hs == 2) && (r.vs == 2))
-                        r.Resample = z.resample_row_hv_2_kernel;
+                        r.Resample = ResampleRowHV2;
                     else
                         r.Resample = ResampleRowGeneric;
                 }
@@ -1865,7 +2035,7 @@ namespace StbSharp
                             }
                             else
                             {
-                                z.YCbCr_to_RGB_kernel(rowBuffer, co0, co1, co2);
+                                YCbCrToRGB(rowBuffer, co0, co1, co2);
                             }
                         }
                         else if (z.State.Components == 4)
@@ -1882,7 +2052,7 @@ namespace StbSharp
                             }
                             else if (z.app14_color_transform == 2)
                             {
-                                z.YCbCr_to_RGB_kernel(rowBuffer, co0, co1, co2);
+                                YCbCrToRGB(rowBuffer, co0, co1, co2);
 
                                 for (int i = 0; i < rowBuffer.Length; i += 3)
                                 {
@@ -1894,7 +2064,7 @@ namespace StbSharp
                             }
                             else
                             {
-                                z.YCbCr_to_RGB_kernel(rowBuffer, co0, co1, co2);
+                                YCbCrToRGB(rowBuffer, co0, co1, co2);
                             }
                         }
                         else
