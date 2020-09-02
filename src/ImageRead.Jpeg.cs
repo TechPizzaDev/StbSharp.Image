@@ -580,7 +580,7 @@ namespace StbSharp
                         {
                             k += r;
                             var zig = deZigZag[k++];
-                            var value = ExtendReceive(j, s);
+                            int value = ExtendReceive(j, s);
                             data[zig] = (short)(value * dequant[zig]);
                         }
                     }
