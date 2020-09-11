@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace StbSharp
+namespace StbSharp.ImageRead
 {
     public static class ImageReadHelpers
     {

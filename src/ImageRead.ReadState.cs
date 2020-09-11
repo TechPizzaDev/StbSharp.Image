@@ -1,70 +1,67 @@
 using System;
 using System.Runtime.CompilerServices;
 
-namespace StbSharp
+namespace StbSharp.ImageRead
 {
-    public static partial class ImageRead
+    public delegate void ReadProgressCallback(float progress, Rect? rectangle);
+
+    public delegate void StateReadyDelegate(ReadState state);
+
+    public delegate void OutputPixelLineDelegate(
+        ReadState state, AddressingMajor addressing, int line, int start,
+        int spacing, ReadOnlySpan<byte> pixels);
+
+    public delegate void OutputPixelDelegate(
+        ReadState state, int x, int y, ReadOnlySpan<byte> pixel);
+
+    public class ReadState
     {
-        public delegate void ReadProgressCallback(float progress, Rect? rectangle);
+        public StateReadyDelegate? StateReadyCallback;
+        public ReadProgressCallback? ProgressCallback;
+        public OutputPixelLineDelegate? OutputPixelLineCallback;
+        public OutputPixelDelegate? OutputPixelCallback;
 
-        public delegate void StateReadyDelegate(ReadState state);
+        public int Width;
+        public int Height;
+        public int Depth;
+        public int Components;
 
-        public delegate void OutputPixelLineDelegate(
-            ReadState state, AddressingMajor addressing, int line, int start,
-            int spacing, ReadOnlySpan<byte> pixels);
+        public bool Progressive;
+        public ImageOrientation Orientation;
 
-        public delegate void OutputPixelDelegate(
-            ReadState state, int x, int y, ReadOnlySpan<byte> pixel);
+        public int OutDepth;
+        public int OutComponents;
 
-        public class ReadState
+        public bool UnpremultiplyOnLoad { get; set; } = true;
+        public bool DeIphoneFlag { get; set; } = true;
+
+        public ReadState()
         {
-            public StateReadyDelegate? StateReadyCallback;
-            public ReadProgressCallback? ProgressCallback;
-            public OutputPixelLineDelegate? OutputPixelLineCallback;
-            public OutputPixelDelegate? OutputPixelCallback;
+        }
 
-            public int Width;
-            public int Height;
-            public int Depth;
-            public int Components;
+        public void StateReady()
+        {
+            StateReadyCallback?.Invoke(this);
+        }
 
-            public bool Progressive;
-            public ImageOrientation Orientation;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OutputPixelLine(
+            AddressingMajor addressing, int line, int start, int spacing, ReadOnlySpan<byte> pixels)
+        {
+            OutputPixelLineCallback?.Invoke(this, addressing, line, start, spacing, pixels);
+        }
 
-            public int OutDepth;
-            public int OutComponents;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OutputPixelLine(
+            AddressingMajor addressing, int line, int start, ReadOnlySpan<byte> pixels)
+        {
+            OutputPixelLine(addressing, line, start, 1, pixels);
+        }
 
-            public bool UnpremultiplyOnLoad { get; set; } = true;
-            public bool DeIphoneFlag { get; set; } = true;
-
-            public ReadState()
-            {
-            }
-
-            public void StateReady()
-            {
-                StateReadyCallback?.Invoke(this);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void OutputPixelLine(
-                AddressingMajor addressing, int line, int start, int spacing, ReadOnlySpan<byte> pixels)
-            {
-                OutputPixelLineCallback?.Invoke(this, addressing, line, start, spacing, pixels);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void OutputPixelLine(
-                AddressingMajor addressing, int line, int start, ReadOnlySpan<byte> pixels)
-            {
-                OutputPixelLine(addressing, line, start, 1, pixels);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void OutputPixel(int x, int y, ReadOnlySpan<byte> pixels)
-            {
-                OutputPixelCallback?.Invoke(this, x, y, pixels);
-            }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OutputPixel(int x, int y, ReadOnlySpan<byte> pixels)
+        {
+            OutputPixelCallback?.Invoke(this, x, y, pixels);
         }
     }
 }

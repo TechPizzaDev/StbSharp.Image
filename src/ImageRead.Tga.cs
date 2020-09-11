@@ -1,327 +1,322 @@
 ﻿using System;
 using System.Buffers;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.CompilerServices;
-using Microsoft.VisualBasic.CompilerServices;
 
-namespace StbSharp
+namespace StbSharp.ImageRead
 {
-    public static partial class ImageRead
+    public static class Tga
     {
-        public static unsafe class Tga
+        public const int HeaderSize = 3;
+
+        public struct TgaInfo
         {
-            public const int HeaderSize = 3;
+            public int offset;
+            public int colormap_type;
+            public int image_type;
+            public bool is_RLE;
+            public int palette_start;
+            public int palette_len;
+            public int palette_bits;
+            public int x_origin;
+            public int y_origin;
+            public int bits_per_pixel;
+            public int inverted;
+        }
 
-            public struct TgaInfo
+        public static int GetComponentCount(int bitsPerPixel, bool isGray, out int bitsPerComp)
+        {
+            bitsPerComp = 8;
+
+            switch (bitsPerPixel)
             {
-                public int offset;
-                public int colormap_type;
-                public int image_type;
-                public bool is_RLE;
-                public int palette_start;
-                public int palette_len;
-                public int palette_bits;
-                public int x_origin;
-                public int y_origin;
-                public int bits_per_pixel;
-                public int inverted;
+                case 8:
+                    return 1;
+
+                case 15:
+                case 16:
+                    if ((bitsPerPixel == 16) && isGray)
+                        return 2;
+
+                    bitsPerComp = 16;
+                    return 3;
+
+                case 24:
+                case 32:
+                    return bitsPerPixel / 8;
+
+                default:
+                    return 0;
+            }
+        }
+
+        public static bool Test(ReadOnlySpan<byte> header)
+        {
+            return TestCore(header, out _);
+        }
+
+        public static TgaInfo Info(BinReader reader, out ReadState state)
+        {
+            state = new ReadState();
+            var header = ParseHeader(reader, state);
+            return header ?? throw new StbImageReadException(ErrorCode.UnknownHeader);
+        }
+
+        public static bool TestCore(ReadOnlySpan<byte> header, out TgaInfo info)
+        {
+            info = default;
+
+            if (header.Length < HeaderSize)
+                return false;
+
+            info.offset = header[0];
+
+            info.colormap_type = header[1];
+            if (info.colormap_type > 1)
+                return false;
+
+            info.image_type = header[2];
+            if (info.image_type >= 8)
+            {
+                info.image_type -= 8;
+                info.is_RLE = true;
             }
 
-            public static int GetComponentCount(int bitsPerPixel, bool isGray, out int bitsPerComp)
+            if (info.colormap_type == 1)
             {
-                bitsPerComp = 8;
-
-                switch (bitsPerPixel)
-                {
-                    case 8:
-                        return 1;
-
-                    case 15:
-                    case 16:
-                        if ((bitsPerPixel == 16) && isGray)
-                            return 2;
-
-                        bitsPerComp = 16;
-                        return 3;
-
-                    case 24:
-                    case 32:
-                        return bitsPerPixel / 8;
-
-                    default:
-                        return 0;
-                }
-            }
-
-            public static bool Test(ReadOnlySpan<byte> header)
-            {
-                return TestCore(header, out _);
-            }
-
-            public static TgaInfo Info(BinReader reader, out ReadState state)
-            {
-                state = new ReadState();
-                var header = ParseHeader(reader, state);
-                return header ?? throw new StbImageReadException(ErrorCode.UnknownHeader);
-            }
-
-            public static bool TestCore(ReadOnlySpan<byte> header, out TgaInfo info)
-            {
-                info = default;
-
-                if (header.Length < HeaderSize)
+                if (info.image_type != 1 &&
+                    info.image_type != 9)
                     return false;
-
-                info.offset = header[0];
-
-                info.colormap_type = header[1];
-                if (info.colormap_type > 1)
+            }
+            else
+            {
+                if (info.image_type != 2 &&
+                    info.image_type != 3)
                     return false;
-
-                info.image_type = header[2];
-                if (info.image_type >= 8)
-                {
-                    info.image_type -= 8;
-                    info.is_RLE = true;
-                }
-
-                if (info.colormap_type == 1)
-                {
-                    if (info.image_type != 1 &&
-                        info.image_type != 9)
-                        return false;
-                }
-                else
-                {
-                    if (info.image_type != 2 &&
-                        info.image_type != 3)
-                        return false;
-                }
-
-                return true;
             }
 
-            public static TgaInfo? ParseHeader(BinReader reader, ReadState state)
+            return true;
+        }
+
+        public static TgaInfo? ParseHeader(BinReader reader, ReadState state)
+        {
+            if (reader == null)
+                throw new ArgumentNullException(nameof(reader));
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+
+            Span<byte> tmp = stackalloc byte[HeaderSize];
+            if (!reader.TryReadBytes(tmp))
+                return null;
+
+            if (!TestCore(tmp, out var info))
+                throw new StbImageReadException(ErrorCode.UnknownFormat);
+
+            info.palette_start = reader.ReadInt16LE();
+            info.palette_len = reader.ReadInt16LE();
+
+            info.palette_bits = reader.ReadByte();
+            if (info.palette_bits != 8 &&
+                info.palette_bits != 15 &&
+                info.palette_bits != 16 &&
+                info.palette_bits != 24 &&
+                info.palette_bits != 32)
+                return null;
+
+            info.x_origin = reader.ReadInt16LE();
+            info.y_origin = reader.ReadInt16LE();
+
+            reader.Skip(9);
+
+            state.Width = reader.ReadInt16LE();
+            if (state.Width < 1)
+                return null;
+
+            state.Height = reader.ReadInt16LE();
+            if (state.Height < 1)
+                return null;
+
+            info.bits_per_pixel = reader.ReadByte();
+
+            info.inverted = reader.ReadByte();
+            info.inverted = 1 - ((info.inverted >> 5) & 1);
+
+            // use the number of bits from the palette if paletted
+            if (info.palette_bits != 0)
             {
-                if (reader == null)
-                    throw new ArgumentNullException(nameof(reader));
-                if (state == null)
-                    throw new ArgumentNullException(nameof(state));
-
-                Span<byte> tmp = stackalloc byte[HeaderSize];
-                if (!reader.TryReadBytes(tmp))
+                if (info.bits_per_pixel != 8 &&
+                    info.bits_per_pixel != 16)
                     return null;
 
-                if (!TestCore(tmp, out var info))
-                    throw new StbImageReadException(ErrorCode.UnknownFormat);
-
-                info.palette_start = reader.ReadInt16LE();
-                info.palette_len = reader.ReadInt16LE();
-
-                info.palette_bits = reader.ReadByte();
-                if (info.palette_bits != 8 &&
-                    info.palette_bits != 15 &&
-                    info.palette_bits != 16 &&
-                    info.palette_bits != 24 &&
-                    info.palette_bits != 32)
-                    return null;
-
-                info.x_origin = reader.ReadInt16LE();
-                info.y_origin = reader.ReadInt16LE();
-
-                reader.Skip(9);
-
-                state.Width = reader.ReadInt16LE();
-                if (state.Width < 1)
-                    return null;
-
-                state.Height = reader.ReadInt16LE();
-                if (state.Height < 1)
-                    return null;
-
-                info.bits_per_pixel = reader.ReadByte();
-
-                info.inverted = reader.ReadByte();
-                info.inverted = 1 - ((info.inverted >> 5) & 1);
-
-                // use the number of bits from the palette if paletted
-                if (info.palette_bits != 0)
-                {
-                    if (info.bits_per_pixel != 8 &&
-                        info.bits_per_pixel != 16)
-                        return null;
-
-                    state.Components = GetComponentCount(
-                        info.palette_bits, false, out state.Depth);
-                }
-                else
-                {
-                    state.Components = GetComponentCount(
-                        info.bits_per_pixel, info.image_type == 3, out state.Depth);
-                }
-
-                if (state.Components == 0)
-                    throw new StbImageReadException(ErrorCode.BadComponentCount);
-
-                state.OutComponents = state.Components;
-                state.OutDepth = state.Depth;
-                return info;
+                state.Components = GetComponentCount(
+                    info.palette_bits, false, out state.Depth);
+            }
+            else
+            {
+                state.Components = GetComponentCount(
+                    info.bits_per_pixel, info.image_type == 3, out state.Depth);
             }
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static void ReadRgb16(BinReader reader, Span<byte> destination)
+            if (state.Components == 0)
+                throw new StbImageReadException(ErrorCode.BadComponentCount);
+
+            state.OutComponents = state.Components;
+            state.OutDepth = state.Depth;
+            return info;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void ReadRgb16(BinReader reader, Span<byte> destination)
+        {
+            Debug.Assert(reader != null);
+
+            const ushort fiveBitMask = 31;
+            var px = (ushort)reader.ReadInt16LE();
+            int b = px & fiveBitMask;
+            int g = (px >> 5) & fiveBitMask;
+            int r = (px >> 10) & fiveBitMask;
+
+            destination[2] = (byte)(b * 255 / 31);
+            destination[1] = (byte)(g * 255 / 31);
+            destination[0] = (byte)(r * 255 / 31);
+        }
+
+        /// <summary>
+        /// Swap to RGB - if the source data was RGB16, it already is in the right order.
+        /// </summary>
+        public static void SwapComponentOrder(Span<byte> data, int components, int depth)
+        {
+            if (components >= 3 && depth == 8)
             {
-                Debug.Assert(reader != null);
-
-                const ushort fiveBitMask = 31;
-                var px = (ushort)reader.ReadInt16LE();
-                int b = px & fiveBitMask;
-                int g = (px >> 5) & fiveBitMask;
-                int r = (px >> 10) & fiveBitMask;
-
-                destination[2] = (byte)(b * 255 / 31);
-                destination[1] = (byte)(g * 255 / 31);
-                destination[0] = (byte)(r * 255 / 31);
-            }
-
-            /// <summary>
-            /// Swap to RGB - if the source data was RGB16, it already is in the right order.
-            /// </summary>
-            public static void SwapComponentOrder(Span<byte> data, int components, int depth)
-            {
-                if (components >= 3 && depth == 8)
+                for (int i = 0; i < data.Length; i += components)
                 {
-                    for (int i = 0; i < data.Length; i += components)
+                    byte tmp = data[i];
+                    data[i] = data[i + 2];
+                    data[i + 2] = tmp;
+                }
+            }
+        }
+
+        public static TgaInfo Load(
+            BinReader reader, ReadState state, ArrayPool<byte>? bytePool = null)
+        {
+            var info = ParseHeader(reader, state) ??
+                throw new StbImageReadException(ErrorCode.UnknownHeader);
+
+            reader.Skip(info.offset);
+
+            bytePool ??= ArrayPool<byte>.Shared;
+
+            int lineBufferLength = (state.Width * state.Components * state.Depth + 7) / 8;
+            byte[] lineBuffer = bytePool.Rent(lineBufferLength);
+            try
+            {
+                Span<byte> line = lineBuffer.AsSpan(0, lineBufferLength);
+
+                if (info.colormap_type == 0 && !info.is_RLE && state.Depth == 8)
+                {
+                    for (int y = 0; y < state.Height; ++y)
                     {
-                        byte tmp = data[i];
-                        data[i] = data[i + 2];
-                        data[i + 2] = tmp;
+                        reader.ReadBytes(line);
+                        SwapComponentOrder(line, state.Components, state.Depth);
+
+                        int row = info.inverted != 0 ? state.Height - y - 1 : y;
+                        state.OutputPixelLine(AddressingMajor.Row, row, 0, line);
                     }
                 }
-            }
-
-            public static TgaInfo Load(
-                BinReader reader, ReadState state, ArrayPool<byte>? bytePool = null)
-            {
-                var info = ParseHeader(reader, state) ??
-                    throw new StbImageReadException(ErrorCode.UnknownHeader);
-
-                reader.Skip(info.offset);
-
-                bytePool ??= ArrayPool<byte>.Shared;
-
-                int lineBufferLength = (state.Width * state.Components * state.Depth + 7) / 8;
-                byte[] lineBuffer = bytePool.Rent(lineBufferLength);
-                try
+                else
                 {
-                    Span<byte> line = lineBuffer.AsSpan(0, lineBufferLength);
+                    Memory<byte> paletteBuffer = default;
+                    Span<byte> palette = default;
 
-                    if (info.colormap_type == 0 && !info.is_RLE && state.Depth == 8)
+                    if (info.colormap_type != 0)
                     {
-                        for (int y = 0; y < state.Height; ++y)
-                        {
-                            reader.ReadBytes(line);
-                            SwapComponentOrder(line, state.Components, state.Depth);
+                        reader.Skip(info.palette_start);
 
-                            int row = info.inverted != 0 ? state.Height - y - 1 : y;
-                            state.OutputPixelLine(AddressingMajor.Row, row, 0, line);
+                        paletteBuffer = new byte[info.palette_len * state.Components];
+                        palette = paletteBuffer.Span;
+
+                        if (state.Depth == 16)
+                        {
+                            for (int i = 0; i < palette.Length; i += state.Components)
+                                ReadRgb16(reader, palette.Slice(i));
+                        }
+                        else
+                        {
+                            reader.ReadBytes(palette);
                         }
                     }
-                    else
+
+                    Debug.Assert(!palette.IsEmpty);
+
+                    int RLE_count = 0;
+                    int RLE_repeating = 0;
+                    bool read_next_pixel = true;
+                    Span<byte> tmp = stackalloc byte[4];
+
+                    for (int y = 0; y < state.Height; y++)
                     {
-                        Memory<byte> paletteBuffer = default;
-                        Span<byte> palette = default;
+                        Span<byte> sline = line;
 
-                        if (info.colormap_type != 0)
+                        for (int x = 0; x < state.Width; x++)
                         {
-                            reader.Skip(info.palette_start);
-
-                            paletteBuffer = new byte[info.palette_len * state.Components];
-                            palette = paletteBuffer.Span;
-
-                            if (state.Depth == 16)
+                            if (info.is_RLE)
                             {
-                                for (int i = 0; i < palette.Length; i += state.Components)
-                                    ReadRgb16(reader, palette.Slice(i));
+                                if (RLE_count == 0)
+                                {
+                                    int RLE_cmd = reader.ReadByte();
+                                    RLE_count = 1 + (RLE_cmd & 127);
+                                    RLE_repeating = RLE_cmd >> 7;
+                                    read_next_pixel = true;
+                                }
+                                else if (RLE_repeating == 0)
+                                    read_next_pixel = true;
                             }
                             else
+                                read_next_pixel = true;
+
+                            if (read_next_pixel)
                             {
-                                reader.ReadBytes(palette);
-                            }
-                        }
-
-                        Debug.Assert(!palette.IsEmpty);
-
-                        int RLE_count = 0;
-                        int RLE_repeating = 0;
-                        bool read_next_pixel = true;
-                        Span<byte> tmp = stackalloc byte[4];
-
-                        for (int y = 0; y < state.Height; y++)
-                        {
-                            Span<byte> sline = line;
-
-                            for (int x = 0; x < state.Width; x++)
-                            {
-                                if (info.is_RLE)
+                                if (info.colormap_type != 0)
                                 {
-                                    if (RLE_count == 0)
-                                    {
-                                        int RLE_cmd = reader.ReadByte();
-                                        RLE_count = 1 + (RLE_cmd & 127);
-                                        RLE_repeating = RLE_cmd >> 7;
-                                        read_next_pixel = true;
-                                    }
-                                    else if (RLE_repeating == 0)
-                                        read_next_pixel = true;
+                                    int pal_idx = (info.bits_per_pixel == 8)
+                                        ? reader.ReadByte()
+                                        : reader.ReadInt16LE();
+
+                                    if (pal_idx >= info.palette_len)
+                                        pal_idx = 0;
+
+                                    pal_idx *= state.Components;
+                                    for (int j = 0; j < state.Components; j++)
+                                        tmp[j] = palette[pal_idx + j];
                                 }
+                                else if (state.Depth == 16)
+                                    ReadRgb16(reader, tmp);
                                 else
-                                    read_next_pixel = true;
+                                    for (int j = 0; j < state.Components; j++)
+                                        tmp[j] = reader.ReadByte();
 
-                                if (read_next_pixel)
-                                {
-                                    if (info.colormap_type != 0)
-                                    {
-                                        int pal_idx = (info.bits_per_pixel == 8)
-                                            ? reader.ReadByte()
-                                            : reader.ReadInt16LE();
-
-                                        if (pal_idx >= info.palette_len)
-                                            pal_idx = 0;
-
-                                        pal_idx *= state.Components;
-                                        for (int j = 0; j < state.Components; j++)
-                                            tmp[j] = palette[pal_idx + j];
-                                    }
-                                    else if (state.Depth == 16)
-                                        ReadRgb16(reader, tmp);
-                                    else
-                                        for (int j = 0; j < state.Components; j++)
-                                            tmp[j] = reader.ReadByte();
-
-                                    read_next_pixel = false;
-                                }
-
-                                for (int j = 0; j < state.Components; j++)
-                                    sline[j] = tmp[j];
-                                sline = sline.Slice(state.Components);
-
-                                RLE_count--;
+                                read_next_pixel = false;
                             }
 
-                            SwapComponentOrder(line, state.Components, state.Depth);
-                            int row = info.inverted != 0 ? state.Height - y - 1 : y;
-                            state.OutputPixelLine(AddressingMajor.Row, row, 0, line);
-                        }
-                    }
+                            for (int j = 0; j < state.Components; j++)
+                                sline[j] = tmp[j];
+                            sline = sline.Slice(state.Components);
 
-                    return info;
+                            RLE_count--;
+                        }
+
+                        SwapComponentOrder(line, state.Components, state.Depth);
+                        int row = info.inverted != 0 ? state.Height - y - 1 : y;
+                        state.OutputPixelLine(AddressingMajor.Row, row, 0, line);
+                    }
                 }
-                finally
-                {
-                    bytePool.Return(lineBuffer);
-                }
+
+                return info;
+            }
+            finally
+            {
+                bytePool.Return(lineBuffer);
             }
         }
     }
