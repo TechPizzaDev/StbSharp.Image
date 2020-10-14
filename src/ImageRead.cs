@@ -151,6 +151,7 @@ namespace StbSharp.ImageRead
         EmptyImage,
         UnsupportedBitDepth,
         BadColorType,
+        BadImageType,
         BadCompressionMethod,
         BadFilterMethod,
         BadInterlaceMethod,

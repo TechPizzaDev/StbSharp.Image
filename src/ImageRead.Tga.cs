@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 
 namespace StbSharp.ImageRead
@@ -17,7 +18,7 @@ namespace StbSharp.ImageRead
             public bool is_RLE;
             public int palette_start;
             public int palette_len;
-            public int palette_bits;
+            public int palette_bpp;
             public int x_origin;
             public int y_origin;
             public int bits_per_pixel;
@@ -59,7 +60,7 @@ namespace StbSharp.ImageRead
         {
             state = new ReadState();
             var header = ParseHeader(reader, state);
-            return header ?? throw new StbImageReadException(ErrorCode.UnknownHeader);
+            return header;
         }
 
         public static bool TestCore(ReadOnlySpan<byte> header, out TgaInfo info)
@@ -98,7 +99,7 @@ namespace StbSharp.ImageRead
             return true;
         }
 
-        public static TgaInfo? ParseHeader(BinReader reader, ReadState state)
+        public static TgaInfo ParseHeader(BinReader reader, ReadState state)
         {
             if (reader == null)
                 throw new ArgumentNullException(nameof(reader));
@@ -107,34 +108,53 @@ namespace StbSharp.ImageRead
 
             Span<byte> tmp = stackalloc byte[HeaderSize];
             if (!reader.TryReadBytes(tmp))
-                return null;
+                throw new EndOfStreamException();
 
-            if (!TestCore(tmp, out var info))
-                throw new StbImageReadException(ErrorCode.UnknownFormat);
+            bool test = TestCore(tmp, out var info);
 
-            info.palette_start = reader.ReadInt16LE();
-            info.palette_len = reader.ReadInt16LE();
+            if (info.colormap_type == 1)
+            {
+                if (info.image_type != 1 &&
+                    info.image_type != 9)
+                    throw new StbImageReadException(ErrorCode.BadImageType);
 
-            info.palette_bits = reader.ReadByte();
-            if (info.palette_bits != 8 &&
-                info.palette_bits != 15 &&
-                info.palette_bits != 16 &&
-                info.palette_bits != 24 &&
-                info.palette_bits != 32)
-                return null;
+                info.palette_start = reader.ReadInt16LE();
+                info.palette_len = reader.ReadInt16LE();
+                info.palette_bpp = reader.ReadByte();
+
+                if (info.palette_bpp != 8 &&
+                    info.palette_bpp != 15 &&
+                    info.palette_bpp != 16 &&
+                    info.palette_bpp != 24 &&
+                    info.palette_bpp != 32)
+                    throw new StbImageReadException(ErrorCode.BadPalette);
+            }
+            else
+            {
+                if (info.image_type != 2 &&
+                    info.image_type != 3 &&
+                    info.image_type != 10 &&
+                    info.image_type != 11)
+                    throw new StbImageReadException(ErrorCode.BadImageType);
+
+                reader.Skip(5);
+                // 16bit: Color Map Origin
+                // 16bit: Color Map Length
+                // 8bit:  Color Map Entry Size
+            }
+
+            Debug.Assert(test); // Prior checks should throw if test was unsucessful.
 
             info.x_origin = reader.ReadInt16LE();
             info.y_origin = reader.ReadInt16LE();
 
-            reader.Skip(9);
-
             state.Width = reader.ReadInt16LE();
             if (state.Width < 1)
-                return null;
+                throw new StbImageReadException(ErrorCode.ZeroWidth);
 
             state.Height = reader.ReadInt16LE();
             if (state.Height < 1)
-                return null;
+                throw new StbImageReadException(ErrorCode.ZeroHeight);
 
             info.bits_per_pixel = reader.ReadByte();
 
@@ -142,14 +162,14 @@ namespace StbSharp.ImageRead
             info.inverted = 1 - ((info.inverted >> 5) & 1);
 
             // use the number of bits from the palette if paletted
-            if (info.palette_bits != 0)
+            if (info.palette_bpp != 0)
             {
                 if (info.bits_per_pixel != 8 &&
                     info.bits_per_pixel != 16)
-                    return null;
+                    throw new StbImageReadException(ErrorCode.BadBitsPerPixel);
 
                 state.Components = GetComponentCount(
-                    info.palette_bits, false, out state.Depth);
+                    info.palette_bpp, false, out state.Depth);
             }
             else
             {
@@ -162,6 +182,12 @@ namespace StbSharp.ImageRead
 
             state.OutComponents = state.Components;
             state.OutDepth = state.Depth;
+
+            state.Orientation = 
+                ImageOrientation.LeftToRight | 
+                (info.inverted != 0 ? ImageOrientation.BottomToTop : ImageOrientation.TopToBottom);
+
+            state.StateReady();
             return info;
         }
 
@@ -200,8 +226,7 @@ namespace StbSharp.ImageRead
         public static TgaInfo Load(
             BinReader reader, ReadState state, ArrayPool<byte>? bytePool = null)
         {
-            var info = ParseHeader(reader, state) ??
-                throw new StbImageReadException(ErrorCode.UnknownHeader);
+            var info = ParseHeader(reader, state);
 
             reader.Skip(info.offset);
 
@@ -240,14 +265,14 @@ namespace StbSharp.ImageRead
                         {
                             for (int i = 0; i < palette.Length; i += state.Components)
                                 ReadRgb16(reader, palette.Slice(i));
+
+                            Debug.Assert(!palette.IsEmpty);
                         }
                         else
                         {
                             reader.ReadBytes(palette);
                         }
                     }
-
-                    Debug.Assert(!palette.IsEmpty);
 
                     int RLE_count = 0;
                     int RLE_repeating = 0;
