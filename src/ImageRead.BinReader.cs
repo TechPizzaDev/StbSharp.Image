@@ -119,7 +119,7 @@ namespace StbSharp.ImageRead
             {
                 int toRead = Math.Min(destination.Length, _bufferLength);
                 Take(toRead).CopyTo(destination);
-                destination = destination.Slice(toRead);
+                destination = destination[toRead..];
             }
 
             while (!destination.IsEmpty)
@@ -130,7 +130,7 @@ namespace StbSharp.ImageRead
                 if (read == 0)
                     break;
 
-                destination = destination.Slice(read);
+                destination = destination[read..];
                 _position += read;
             }
 

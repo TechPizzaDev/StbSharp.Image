@@ -17,7 +17,7 @@ namespace StbSharp.ImageRead
                 if (read == 0)
                     break;
 
-                dst = dst.Slice(read);
+                dst = dst[read..];
             }
             while (!dst.IsEmpty);
 

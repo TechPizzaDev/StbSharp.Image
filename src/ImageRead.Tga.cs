@@ -264,7 +264,7 @@ namespace StbSharp.ImageRead
                         if (state.Depth == 16)
                         {
                             for (int i = 0; i < palette.Length; i += state.Components)
-                                ReadRgb16(reader, palette.Slice(i));
+                                ReadRgb16(reader, palette[i..]);
 
                             Debug.Assert(!palette.IsEmpty);
                         }
@@ -326,7 +326,7 @@ namespace StbSharp.ImageRead
 
                             for (int j = 0; j < state.Components; j++)
                                 sline[j] = tmp[j];
-                            sline = sline.Slice(state.Components);
+                            sline = sline[state.Components..];
 
                             RLE_count--;
                         }

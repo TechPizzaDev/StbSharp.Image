@@ -662,8 +662,8 @@ namespace StbSharp.ImageRead
 
             for (int i = 0; i < filtered_bpc; i++)
             {
-                var cur = destination.Slice(curOff);
-                var rawslice = currentFilteredRow.Slice(rawOff);
+                var cur = destination[curOff..];
+                var rawslice = currentFilteredRow[rawOff..];
 
                 switch (filter)
                 {
@@ -722,8 +722,8 @@ namespace StbSharp.ImageRead
             {
                 int nk = (w - 1) * filtered_bpc;
                 var filtered = currentFilteredRow.Slice(rawOff, nk);
-                var dst = destination.Slice(curOff);
-                var ndst = destination.Slice(curOff - filtered_bpc);
+                var dst = destination[curOff..];
+                var ndst = destination[(curOff - filtered_bpc)..];
 
                 int k;
                 switch (filter)
@@ -739,7 +739,7 @@ namespace StbSharp.ImageRead
 
                     case FilterType.Up:
                     {
-                        var prior = previousFilteredRow.Slice(priorOff);
+                        var prior = previousFilteredRow[priorOff..];
                         for (k = 0; k < filtered.Length; k++)
                         {
                             dst[k] = (byte)((filtered[k] + prior[k]) & 255);
@@ -749,7 +749,7 @@ namespace StbSharp.ImageRead
 
                     case FilterType.Average:
                     {
-                        var prior = previousFilteredRow.Slice(priorOff);
+                        var prior = previousFilteredRow[priorOff..];
                         for (k = 0; k < filtered.Length; k++)
                             dst[k] = (byte)((filtered[k] + ((prior[k] + ndst[k]) / 2)) & 255);
                         break;
@@ -793,7 +793,7 @@ namespace StbSharp.ImageRead
                             rawOff += filtered_bpc, curOff += dst_bpc)
                         {
                             var raws = currentFilteredRow.Slice(rawOff, filtered_bpc);
-                            var cur = destination.Slice(curOff);
+                            var cur = destination[curOff..];
                             raws.CopyTo(cur);
                             cur[filtered_bpc] = 255;
                         }
@@ -804,8 +804,8 @@ namespace StbSharp.ImageRead
                         for (int i = 0; i < max; i++,
                             rawOff += filtered_bpc, curOff += dst_bpc)
                         {
-                            var cur = destination.Slice(curOff);
-                            var curo = destination.Slice(curOff - dst_bpc);
+                            var cur = destination[curOff..];
+                            var curo = destination[(curOff - dst_bpc)..];
                             for (k = 0; k < filtered_bpc; k++)
                             {
                                 cur[k] = (byte)((currentFilteredRow[rawOff + k] + curo[k]) & 255);
@@ -818,8 +818,8 @@ namespace StbSharp.ImageRead
                         for (int i = 0; i < max; i++,
                             rawOff += filtered_bpc, curOff += dst_bpc, priorOff += dst_bpc)
                         {
-                            var cur = destination.Slice(curOff);
-                            var prior = previousFilteredRow.Slice(priorOff);
+                            var cur = destination[curOff..];
+                            var prior = previousFilteredRow[priorOff..];
                             for (k = 0; k < filtered_bpc; k++)
                             {
                                 cur[k] = (byte)((currentFilteredRow[rawOff + k] + prior[k]) & 255);
@@ -832,9 +832,9 @@ namespace StbSharp.ImageRead
                         for (int i = 0; i < max; i++,
                             rawOff += filtered_bpc, curOff += dst_bpc, priorOff += dst_bpc)
                         {
-                            var cur = destination.Slice(curOff);
-                            var curo = destination.Slice(curOff - dst_bpc);
-                            var prior = previousFilteredRow.Slice(priorOff);
+                            var cur = destination[curOff..];
+                            var curo = destination[(curOff - dst_bpc)..];
+                            var prior = previousFilteredRow[priorOff..];
                             for (k = 0; k < filtered_bpc; k++)
                             {
                                 cur[k] = (byte)(
@@ -848,10 +848,10 @@ namespace StbSharp.ImageRead
                         for (int i = 0; i < max; i++,
                             rawOff += filtered_bpc, curOff += dst_bpc, priorOff += dst_bpc)
                         {
-                            var cur = destination.Slice(curOff);
-                            var curo = destination.Slice(curOff - dst_bpc);
-                            var prior = previousFilteredRow.Slice(priorOff);
-                            var prioro = previousFilteredRow.Slice(priorOff - dst_bpc);
+                            var cur = destination[curOff..];
+                            var curo = destination[(curOff - dst_bpc)..];
+                            var prior = previousFilteredRow[priorOff..];
+                            var prioro = previousFilteredRow[(priorOff - dst_bpc)..];
                             for (k = 0; k < filtered_bpc; k++)
                             {
                                 cur[k] = (byte)(
@@ -866,8 +866,8 @@ namespace StbSharp.ImageRead
                         for (int i = 0; i < max; i++,
                             rawOff += filtered_bpc, curOff += dst_bpc)
                         {
-                            var cur = destination.Slice(curOff);
-                            var curo = destination.Slice(curOff - dst_bpc);
+                            var cur = destination[curOff..];
+                            var curo = destination[(curOff - dst_bpc)..];
                             for (k = 0; k < filtered_bpc; k++)
                             {
                                 cur[k] = (byte)((currentFilteredRow[rawOff + k] + (curo[k] / 2)) & 255);
@@ -880,8 +880,8 @@ namespace StbSharp.ImageRead
                         for (int i = 0; i < max; i++,
                             rawOff += filtered_bpc, curOff += dst_bpc)
                         {
-                            var cur = destination.Slice(curOff);
-                            var curo = destination.Slice(curOff - dst_bpc);
+                            var cur = destination[curOff..];
+                            var curo = destination[(curOff - dst_bpc)..];
                             for (k = 0; k < filtered_bpc; k++)
                             {
                                 cur[k] = (byte)(
@@ -894,7 +894,7 @@ namespace StbSharp.ImageRead
 
                 if (depth == 16)
                 {
-                    var cur = destination.Slice(filtered_bpc + 1);
+                    var cur = destination[(filtered_bpc + 1)..];
                     for (int i = 0; i < cur.Length; i += dst_bpc)
                         cur[i] = 255;
                 }
@@ -916,7 +916,7 @@ namespace StbSharp.ImageRead
             else if (depth < 8)
             {
                 int img_width_bytes = (width * srcComp * depth + 7) / 8;
-                var src = row.Slice(width * dstComp - img_width_bytes);
+                var src = row[(width * dstComp - img_width_bytes)..];
 
                 // TODO: make loops forward loops
 

@@ -859,8 +859,8 @@ namespace StbSharp.ImageRead
 
             for (int i = 0; i < val.Length / 8; ++i)
             {
-                var d = data.Slice(i);
-                var v = val.Slice(i);
+                var d = data[i..];
+                var v = val[i..];
 
                 if ((d[08] == 0) &&
                     (d[16] == 0) &&
@@ -895,9 +895,9 @@ namespace StbSharp.ImageRead
 
             for (int i = 0; i < val.Length / 8; i++)
             {
-                CalcIdct(val.Slice(i * 8), out var idct);
+                CalcIdct(val[(i * 8)..], out var idct);
 
-                var dstSlice = destination.Slice(i * destinationStride);
+                var dstSlice = destination[(i * destinationStride)..];
                 dstSlice[0] = Clamp((idct.x0 + idct.t3) >> 17);
                 dstSlice[1] = Clamp((idct.x1 + idct.t2) >> 17);
                 dstSlice[2] = Clamp((idct.x2 + idct.t1) >> 17);
@@ -991,7 +991,7 @@ namespace StbSharp.ImageRead
                                 state.fast_ac[ha], n, state.dequant[component.tq]);
 
                             IdctBlock(
-                                cdata.Slice(component.w2 * j * 8 + i * 8),
+                                cdata[(component.w2 * j * 8 + i * 8)..],
                                 component.w2,
                                 data);
 
@@ -1046,7 +1046,7 @@ namespace StbSharp.ImageRead
                                             state.dequant[component.tq]);
 
                                         IdctBlock(
-                                            componentData.Slice(component.w2 * by + bx),
+                                            componentData[(component.w2 * by + bx)..],
                                             component.w2,
                                             data);
                                     }
@@ -1196,7 +1196,7 @@ namespace StbSharp.ImageRead
                         Dequantize(data, z.dequant[component.tq]);
 
                         IdctBlock(
-                            component.data.Span.Slice(component.w2 * j * 8 + i * 8),
+                            component.data.Span[(component.w2 * j * 8 + i * 8)..],
                             component.w2,
                             data);
                     }
@@ -2009,7 +2009,7 @@ namespace StbSharp.ImageRead
                             r.ystep = 0;
                             r.line0 = r.line1;
                             if ((++r.ypos) < component.y)
-                                r.line1 = r.line1.Slice(component.w2);
+                                r.line1 = r.line1[component.w2..];
                         }
                     }
 

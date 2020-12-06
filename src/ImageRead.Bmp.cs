@@ -292,12 +292,12 @@ namespace StbSharp.ImageRead
                                 v2 = v1 & 15;
                                 v1 >>= 4;
                             }
-                            WriteFromPalette(ri.OutComponents, palette.Slice(v1 * 4));
+                            WriteFromPalette(ri.OutComponents, palette[(v1 * 4)..]);
 
                             if ((x + 1) == ri.Width)
                                 break;
                             v2 = info.bitsPerPixel == 8 ? s.ReadByte() : v2;
-                            WriteFromPalette(ri.OutComponents, palette.Slice(v2 * 4));
+                            WriteFromPalette(ri.OutComponents, palette[(v2 * 4)..]);
                         }
                         s.Skip(pad);
 
