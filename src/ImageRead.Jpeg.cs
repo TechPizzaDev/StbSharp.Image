@@ -577,7 +577,7 @@ namespace StbSharp.ImageRead
                     else
                     {
                         k += r;
-                        var zig = deZigZag[k++];
+                        byte zig = deZigZag[k++];
                         int value = ExtendReceive(state, s);
                         data[zig] = (short)(value * dequant[zig]);
                     }
@@ -852,6 +852,7 @@ namespace StbSharp.ImageRead
             idct.x3 += 65536 + (128 << 17);
         }
 
+        [SkipLocalsInit]
         public static void IdctBlock(
             Span<byte> destination, int destinationStride, ReadOnlySpan<short> data)
         {
@@ -957,6 +958,7 @@ namespace StbSharp.ImageRead
             // since we don't even allow 1<<30 pixels
         }
 
+        [SkipLocalsInit]
         public static void ParseEntropyCodedData(JpegState state)
         {
             Debug.Assert(state != null);
@@ -1204,6 +1206,7 @@ namespace StbSharp.ImageRead
             }
         }
 
+        [SkipLocalsInit]
         public static bool ProcessMarker(JpegState z, int m)
         {
             Debug.Assert(z != null);
