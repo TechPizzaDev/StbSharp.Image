@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Buffers;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace StbSharp.ImageRead
 {
+    [SkipLocalsInit]
     public static class Bmp
     {
         public const int HeaderSize = 2;

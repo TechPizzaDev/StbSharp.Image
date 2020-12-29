@@ -3,11 +3,13 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace StbSharp.ImageRead
 {
+    [SkipLocalsInit]
     public static class Png
     {
         public const int HeaderSize = 8;
@@ -46,12 +48,12 @@ namespace StbSharp.ImageRead
 
         private static FilterType[] FirstRowFilter =
         {
-                FilterType.None,
-                FilterType.Sub,
-                FilterType.None,
-                FilterType.AverageFirst,
-                FilterType.PaethFirst
-            };
+            FilterType.None,
+            FilterType.Sub,
+            FilterType.None,
+            FilterType.AverageFirst,
+            FilterType.PaethFirst
+        };
 
         #endregion
 
@@ -622,7 +624,7 @@ namespace StbSharp.ImageRead
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static void DefilterRow(
-            ReadOnlySpan<byte> previousFilteredRow,
+            ReadOnlySpan<byte> prevFiltRow,
             ReadOnlySpan<byte> currentFilteredRow,
             Span<byte> destination,
             int width,
@@ -646,7 +648,7 @@ namespace StbSharp.ImageRead
             int srcComp = header.Components;
             int byte_depth = depth == 16 ? 2 : 1;
             int dst_bpc = dstComp * byte_depth;
-            int filtered_bpc = srcComp * byte_depth;
+            int filt_bpc = srcComp * byte_depth;
             int img_width_bytes = ((width * srcComp * depth) + 7) / 8;
 
             if (depth < 8)
@@ -654,13 +656,13 @@ namespace StbSharp.ImageRead
                 int o = width * dstComp - img_width_bytes;
                 curOff += o;
                 priorOff += o;
-                filtered_bpc = 1;
+                filt_bpc = 1;
                 w = img_width_bytes;
             }
 
             destination.Clear();
 
-            for (int i = 0; i < filtered_bpc; i++)
+            for (int i = 0; i < filt_bpc; i++)
             {
                 var cur = destination[curOff..];
                 var rawslice = currentFilteredRow[rawOff..];
@@ -675,16 +677,16 @@ namespace StbSharp.ImageRead
                         break;
 
                     case FilterType.Up:
-                        cur[i] = (byte)((rawslice[i] + previousFilteredRow[priorOff + i]) & 255);
+                        cur[i] = (byte)(rawslice[i] + prevFiltRow[priorOff + i]);
                         break;
 
                     case FilterType.Average:
-                        cur[i] = (byte)((rawslice[i] + (previousFilteredRow[priorOff + i] / 2)) & 255);
+                        cur[i] = (byte)(rawslice[i] + (prevFiltRow[priorOff + i] / 2));
                         break;
 
                     case FilterType.Paeth:
-                        cur[i] = (byte)(
-                            (rawslice[i] + MathHelper.Paeth(0, previousFilteredRow[priorOff + i], 0)) & 255);
+                        cur[i] = (byte)
+                            (rawslice[i] + MathHelper.Paeth(0, prevFiltRow[priorOff + i], 0));
                         break;
                 }
             }
@@ -701,10 +703,10 @@ namespace StbSharp.ImageRead
             {
                 if (srcComp != dstComp)
                 {
-                    destination[curOff + filtered_bpc] = 255;
-                    destination[curOff + filtered_bpc + 1] = 255;
+                    destination[curOff + filt_bpc] = 255;
+                    destination[curOff + filt_bpc + 1] = 255;
                 }
-                rawOff += filtered_bpc;
+                rawOff += filt_bpc;
                 curOff += dst_bpc;
                 priorOff += dst_bpc;
             }
@@ -720,63 +722,73 @@ namespace StbSharp.ImageRead
 
             if ((depth < 8) || (srcComp == dstComp))
             {
-                int nk = (w - 1) * filtered_bpc;
-                var filtered = currentFilteredRow.Slice(rawOff, nk);
-                var dst = destination[curOff..];
-                var ndst = destination[(curOff - filtered_bpc)..];
+                int nk = (w - 1) * filt_bpc;
+                var filt = currentFilteredRow.Slice(rawOff, nk);
+                var dst = destination.Slice(curOff, filt.Length);
+                var ndst = destination.Slice(curOff - filt_bpc, filt.Length);
 
                 int k;
                 switch (filter)
                 {
                     case FilterType.None:
-                        filtered.CopyTo(dst);
+                        filt.CopyTo(dst);
                         break;
 
                     case FilterType.Sub:
-                        for (k = 0; k < filtered.Length; k++)
-                            dst[k] = (byte)((filtered[k] + ndst[k]) & 255);
+                        for (k = 0; k < filt.Length; k++)
+                            dst[k] = (byte)(filt[k] + ndst[k]);
                         break;
 
                     case FilterType.Up:
                     {
-                        var prior = previousFilteredRow[priorOff..];
-                        for (k = 0; k < filtered.Length; k++)
+                        var prior = prevFiltRow.Slice(priorOff, filt.Length);
+                        k = 0;
+                        if (Vector.IsHardwareAccelerated)
                         {
-                            dst[k] = (byte)((filtered[k] + prior[k]) & 255);
+                            while (filt.Length - k >= Vector<byte>.Count)
+                            {
+                                var v_filtered = new Vector<byte>(filt[k..]);
+                                var v_prior = new Vector<byte>(prior[k..]);
+                                Vector.Add(v_filtered, v_prior).CopyTo(dst[k..]);
+                                k += Vector<byte>.Count;
+                            }
+                        }
+                        for (; k < filt.Length; k++)
+                        {
+                            dst[k] = (byte)(filt[k] + prior[k]);
                         }
                         break;
                     }
 
                     case FilterType.Average:
                     {
-                        var prior = previousFilteredRow[priorOff..];
-                        for (k = 0; k < filtered.Length; k++)
-                            dst[k] = (byte)((filtered[k] + ((prior[k] + ndst[k]) / 2)) & 255);
+                        var prior = prevFiltRow.Slice(priorOff, filt.Length);
+                        for (k = 0; k < filt.Length; k++)
+                            dst[k] = (byte)(filt[k] + ((prior[k] + ndst[k]) / 2));
                         break;
                     }
 
                     case FilterType.Paeth:
-                        for (k = 0; k < filtered.Length; k++)
+                        var bSpan = prevFiltRow.Slice(priorOff, filt.Length);
+                        var cSpan = prevFiltRow.Slice(priorOff - filt_bpc, filt.Length);
+
+                        for (k = 0; k < filt.Length; k++)
                         {
-                            int p = priorOff + k;
-                            dst[k] = (byte)(
-                                (filtered[k] + MathHelper.Paeth(
-                                    ndst[k], previousFilteredRow[p], previousFilteredRow[p - filtered_bpc])) & 255);
+                            dst[k] = (byte)(filt[k] + MathHelper.Paeth(ndst[k], bSpan[k], cSpan[k]));
                         }
                         break;
 
                     case FilterType.AverageFirst:
-                        for (k = 0; k < filtered.Length; k++)
+                        for (k = 0; k < filt.Length; k++)
                         {
-                            dst[k] = (byte)((filtered[k] + (ndst[k] / 2)) & 255);
+                            dst[k] = (byte)(filt[k] + (ndst[k] / 2));
                         }
                         break;
 
                     case FilterType.PaethFirst:
-                        for (k = 0; k < filtered.Length; k++)
+                        for (k = 0; k < filt.Length; k++)
                         {
-                            dst[k] = (byte)(
-                                (filtered[k] + MathHelper.Paeth(ndst[k], 0, 0)) & 255);
+                            dst[k] = (byte)(filt[k] + MathHelper.Paeth(ndst[k], 0, 0));
                         }
                         break;
                 }
@@ -790,111 +802,111 @@ namespace StbSharp.ImageRead
                     case FilterType.None:
                     {
                         for (int i = 0; i < max; i++,
-                            rawOff += filtered_bpc, curOff += dst_bpc)
+                            rawOff += filt_bpc, curOff += dst_bpc)
                         {
-                            var raws = currentFilteredRow.Slice(rawOff, filtered_bpc);
+                            var raws = currentFilteredRow.Slice(rawOff, filt_bpc);
                             var cur = destination[curOff..];
                             raws.CopyTo(cur);
-                            cur[filtered_bpc] = 255;
+                            cur[filt_bpc] = 255;
                         }
                         break;
                     }
 
                     case FilterType.Sub:
                         for (int i = 0; i < max; i++,
-                            rawOff += filtered_bpc, curOff += dst_bpc)
+                            rawOff += filt_bpc, curOff += dst_bpc)
                         {
                             var cur = destination[curOff..];
                             var curo = destination[(curOff - dst_bpc)..];
-                            for (k = 0; k < filtered_bpc; k++)
+                            for (k = 0; k < filt_bpc; k++)
                             {
-                                cur[k] = (byte)((currentFilteredRow[rawOff + k] + curo[k]) & 255);
+                                cur[k] = (byte)(currentFilteredRow[rawOff + k] + curo[k]);
                             }
-                            cur[filtered_bpc] = 255;
+                            cur[filt_bpc] = 255;
                         }
                         break;
 
                     case FilterType.Up:
                         for (int i = 0; i < max; i++,
-                            rawOff += filtered_bpc, curOff += dst_bpc, priorOff += dst_bpc)
+                            rawOff += filt_bpc, curOff += dst_bpc, priorOff += dst_bpc)
                         {
                             var cur = destination[curOff..];
-                            var prior = previousFilteredRow[priorOff..];
-                            for (k = 0; k < filtered_bpc; k++)
+                            var prior = prevFiltRow[priorOff..];
+                            for (k = 0; k < filt_bpc; k++)
                             {
-                                cur[k] = (byte)((currentFilteredRow[rawOff + k] + prior[k]) & 255);
+                                cur[k] = (byte)(currentFilteredRow[rawOff + k] + prior[k]);
                             }
-                            cur[filtered_bpc] = 255;
+                            cur[filt_bpc] = 255;
                         }
                         break;
 
                     case FilterType.Average:
                         for (int i = 0; i < max; i++,
-                            rawOff += filtered_bpc, curOff += dst_bpc, priorOff += dst_bpc)
+                            rawOff += filt_bpc, curOff += dst_bpc, priorOff += dst_bpc)
                         {
                             var cur = destination[curOff..];
                             var curo = destination[(curOff - dst_bpc)..];
-                            var prior = previousFilteredRow[priorOff..];
-                            for (k = 0; k < filtered_bpc; k++)
+                            var prior = prevFiltRow[priorOff..];
+                            for (k = 0; k < filt_bpc; k++)
                             {
-                                cur[k] = (byte)(
-                                    (currentFilteredRow[rawOff + k] + ((prior[k] + curo[k]) >> 1)) & 255);
+                                cur[k] = (byte)
+                                    (currentFilteredRow[rawOff + k] + ((prior[k] + curo[k]) >> 1));
                             }
-                            cur[filtered_bpc] = 255;
+                            cur[filt_bpc] = 255;
                         }
                         break;
 
                     case FilterType.Paeth:
                         for (int i = 0; i < max; i++,
-                            rawOff += filtered_bpc, curOff += dst_bpc, priorOff += dst_bpc)
+                            rawOff += filt_bpc, curOff += dst_bpc, priorOff += dst_bpc)
                         {
                             var cur = destination[curOff..];
                             var curo = destination[(curOff - dst_bpc)..];
-                            var prior = previousFilteredRow[priorOff..];
-                            var prioro = previousFilteredRow[(priorOff - dst_bpc)..];
-                            for (k = 0; k < filtered_bpc; k++)
+                            var prior = prevFiltRow[priorOff..];
+                            var prioro = prevFiltRow[(priorOff - dst_bpc)..];
+                            for (k = 0; k < filt_bpc; k++)
                             {
-                                cur[k] = (byte)(
+                                cur[k] = (byte)
                                     (currentFilteredRow[rawOff + k] + MathHelper.Paeth(
-                                        curo[k], prior[k], prioro[k])) & 255);
+                                        curo[k], prior[k], prioro[k]));
                             }
-                            cur[filtered_bpc] = 255;
+                            cur[filt_bpc] = 255;
                         }
                         break;
 
                     case FilterType.AverageFirst:
                         for (int i = 0; i < max; i++,
-                            rawOff += filtered_bpc, curOff += dst_bpc)
+                            rawOff += filt_bpc, curOff += dst_bpc)
                         {
                             var cur = destination[curOff..];
                             var curo = destination[(curOff - dst_bpc)..];
-                            for (k = 0; k < filtered_bpc; k++)
+                            for (k = 0; k < filt_bpc; k++)
                             {
-                                cur[k] = (byte)((currentFilteredRow[rawOff + k] + (curo[k] / 2)) & 255);
+                                cur[k] = (byte)(currentFilteredRow[rawOff + k] + (curo[k] / 2));
                             }
-                            cur[filtered_bpc] = 255;
+                            cur[filt_bpc] = 255;
                         }
                         break;
 
                     case FilterType.PaethFirst:
                         for (int i = 0; i < max; i++,
-                            rawOff += filtered_bpc, curOff += dst_bpc)
+                            rawOff += filt_bpc, curOff += dst_bpc)
                         {
                             var cur = destination[curOff..];
                             var curo = destination[(curOff - dst_bpc)..];
-                            for (k = 0; k < filtered_bpc; k++)
+                            for (k = 0; k < filt_bpc; k++)
                             {
-                                cur[k] = (byte)(
-                                    (currentFilteredRow[rawOff + k] + MathHelper.Paeth(curo[k], 0, 0)) & 255);
+                                cur[k] = (byte)
+                                    (currentFilteredRow[rawOff + k] + MathHelper.Paeth(curo[k], 0, 0));
                             }
-                            cur[filtered_bpc] = 255;
+                            cur[filt_bpc] = 255;
                         }
                         break;
                 }
 
                 if (depth == 16)
                 {
-                    var cur = destination[(filtered_bpc + 1)..];
+                    var cur = destination[(filt_bpc + 1)..];
                     for (int i = 0; i < cur.Length; i += dst_bpc)
                         cur[i] = 255;
                 }
@@ -1185,6 +1197,7 @@ namespace StbSharp.ImageRead
             }
         }
 
+        [SkipLocalsInit]
         public class ChunkStream : Stream
         {
             private HandleChunkDelegate _handleChunk;

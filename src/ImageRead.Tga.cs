@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 
 namespace StbSharp.ImageRead
 {
+    [SkipLocalsInit]
     public static class Tga
     {
         public const int HeaderSize = 3;
