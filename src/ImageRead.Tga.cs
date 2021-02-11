@@ -57,7 +57,7 @@ namespace StbSharp.ImageRead
             return TestCore(header, out _);
         }
 
-        public static TgaInfo Info(BinReader reader, out ReadState state)
+        public static TgaInfo Info(ImageBinReader reader, out ReadState state)
         {
             state = new ReadState();
             var header = ParseHeader(reader, state);
@@ -100,7 +100,7 @@ namespace StbSharp.ImageRead
             return true;
         }
 
-        public static TgaInfo ParseHeader(BinReader reader, ReadState state)
+        public static TgaInfo ParseHeader(ImageBinReader reader, ReadState state)
         {
             if (reader == null)
                 throw new ArgumentNullException(nameof(reader));
@@ -193,7 +193,7 @@ namespace StbSharp.ImageRead
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ReadRgb16(BinReader reader, Span<byte> destination)
+        public static void ReadRgb16(ImageBinReader reader, Span<byte> destination)
         {
             Debug.Assert(reader != null);
 
@@ -225,7 +225,7 @@ namespace StbSharp.ImageRead
         }
 
         public static TgaInfo Load(
-            BinReader reader, ReadState state, ArrayPool<byte>? bytePool = null)
+            ImageBinReader reader, ReadState state, ArrayPool<byte>? bytePool = null)
         {
             var info = ParseHeader(reader, state);
 

@@ -8,23 +8,22 @@ namespace StbSharp.ImageRead
         /// <summary>
         /// Delegate for a wrapping a <see cref="Stream"/> in a zlib deflate (RFC 1951) decompressor.
         /// </summary>
-        public delegate Stream DeflateDecompressorDelegate(Stream input);
-
-        /// <summary>
-        /// Custom zlib deflate (RFC 1951) decompressor that replaces the default.
-        /// </summary>
-        public static DeflateDecompressorDelegate? CustomDeflateDecompressor { get; set; }
+        public delegate Stream DeflateDecompressorFactory(Stream input, bool leaveOpen);
 
         /// <summary>
         /// Decompresses data using a <see cref="DeflateStream"/>.
-        /// <para>Can be replaced by assigning <see cref="CustomDeflateDecompressor"/>.</para>
         /// </summary>
-        public static Stream CreateDecompressor(Stream input)
+        /// <param name="input">The stream to read compressed data from.</param>
+        /// <param name="deflateDecompressorFactory">
+        /// Custom zlib deflate (RFC 1951) decompressor factory that replaces the default.
+        /// </param>
+        public static Stream CreateDecompressor(
+            Stream input, bool leaveOpen, DeflateDecompressorFactory? deflateDecompressorFactory)
         {
-            if (CustomDeflateDecompressor != null)
-                return CustomDeflateDecompressor.Invoke(input);
+            if (deflateDecompressorFactory != null)
+                return deflateDecompressorFactory.Invoke(input, leaveOpen);
 
-            return new DeflateStream(input, CompressionMode.Decompress, leaveOpen: false);
+            return new DeflateStream(input, CompressionMode.Decompress, leaveOpen);
         }
     }
 }

@@ -38,14 +38,14 @@ namespace StbSharp.ImageRead
             return true;
         }
 
-        public static BmpInfo Info(BinReader reader, out ReadState state)
+        public static BmpInfo Info(ImageBinReader reader, out ReadState state)
         {
             state = new ReadState();
             var header = ParseHeader(reader, state);
             return header ?? throw new StbImageReadException(ErrorCode.UnknownHeader);
         }
 
-        public static BmpInfo? ParseHeader(BinReader s, ReadState ri)
+        public static BmpInfo? ParseHeader(ImageBinReader s, ReadState ri)
         {
             if (s == null)
                 throw new ArgumentNullException(nameof(s));
@@ -192,7 +192,7 @@ namespace StbSharp.ImageRead
         }
 
         public static BmpInfo Load(
-            BinReader s, ReadState ri, ArrayPool<byte>? bytePool = null)
+            ImageBinReader s, ReadState ri, ArrayPool<byte>? bytePool = null)
         {
             // TODO: optimize by pulling out some branching from loops
 

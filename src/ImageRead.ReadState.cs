@@ -1,9 +1,10 @@
 using System;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace StbSharp.ImageRead
 {
-    public delegate void ReadProgressCallback(float progress, Rect? rectangle);
+    public delegate void ReadProgressCallback(double progress, Rect? rectangle);
 
     public delegate void StateReadyDelegate(ReadState state);
 
@@ -16,10 +17,12 @@ namespace StbSharp.ImageRead
 
     public class ReadState
     {
+        public event ReadProgressCallback? Progress;
+
         public StateReadyDelegate? StateReadyCallback;
-        public ReadProgressCallback? ProgressCallback;
         public OutputPixelLineDelegate? OutputPixelLineCallback;
         public OutputPixelDelegate? OutputPixelCallback;
+        public CancellationToken CancellationToken;
 
         public int Width;
         public int Height;

@@ -6,37 +6,34 @@ using System.Threading;
 
 namespace StbSharp.ImageRead
 {
-    public class BinReader : IDisposable
+    public class ImageBinReader : IDisposable
     {
-        private byte[] _buffer;
         private int _bufferOffset;
         private int _bufferLength;
         private long _position;
 
-        public Stream Stream { get; }
-        public bool LeaveOpen { get; }
-        public CancellationToken CancellationToken { get; }
+        public Stream Stream { get; private set; }
+        public byte[] Buffer { get; private set; }
+        public CancellationToken CancellationToken { get; set; }
 
+        public bool IsDisposed => Buffer == null;
         public long Position => _position + _bufferOffset;
 
-        public BinReader(
-            Stream stream,
-            byte[] buffer,
-            bool leaveOpen,
-            CancellationToken cancellationToken = default)
+        public ImageBinReader(Stream stream, byte[] buffer)
         {
             Stream = stream ?? throw new ArgumentNullException(nameof(stream));
-            _buffer = buffer ?? throw new ArgumentNullException(nameof(buffer));
-            LeaveOpen = leaveOpen;
-            CancellationToken = cancellationToken;
+            Buffer = buffer ?? throw new ArgumentNullException(nameof(buffer));
         }
 
         private Span<byte> Take(int count)
         {
+            if (IsDisposed)
+                throw new ObjectDisposedException(GetType().FullName);
+
             if (_bufferLength < count)
                 throw new EndOfStreamException();
 
-            var slice = _buffer.AsSpan(_bufferOffset, count);
+            var slice = Buffer.AsSpan(_bufferOffset, count);
             _bufferOffset += count;
             _bufferLength -= count;
             return slice;
@@ -44,16 +41,19 @@ namespace StbSharp.ImageRead
 
         private void FillBuffer()
         {
-            _buffer.AsSpan(_bufferOffset, _bufferLength).CopyTo(_buffer);
+            if (IsDisposed)
+                throw new ObjectDisposedException(GetType().FullName);
+
+            Buffer.AsSpan(_bufferOffset, _bufferLength).CopyTo(Buffer);
 
             _position += _bufferOffset;
             _bufferOffset = 0;
 
-            while (_bufferLength < _buffer.Length)
+            while (_bufferLength < Buffer.Length)
             {
                 CancellationToken.ThrowIfCancellationRequested();
 
-                var slice = _buffer.AsSpan(_bufferLength);
+                var slice = Buffer.AsSpan(_bufferLength);
                 int read = Stream.Read(slice);
                 if (read == 0)
                     break;
@@ -94,8 +94,8 @@ namespace StbSharp.ImageRead
             {
                 CancellationToken.ThrowIfCancellationRequested();
 
-                int toRead = (int)Math.Min(count, _buffer.Length);
-                var slice = _buffer.AsSpan(0, toRead);
+                int toRead = (int)Math.Min(count, Buffer.Length);
+                var slice = Buffer.AsSpan(0, toRead);
                 int read = Stream.Read(slice);
                 if (read == 0)
                     break;
@@ -156,7 +156,7 @@ namespace StbSharp.ImageRead
                     return -1;
             }
 
-            byte value = _buffer[_bufferOffset];
+            byte value = Buffer[_bufferOffset];
             _bufferOffset += sizeof(byte);
             _bufferLength -= sizeof(byte);
             return value;
@@ -170,7 +170,7 @@ namespace StbSharp.ImageRead
             if (_bufferLength < sizeof(byte))
                 FillBufferAndCheck(sizeof(byte));
 
-            byte value = _buffer[_bufferOffset];
+            byte value = Buffer[_bufferOffset];
             _bufferOffset += sizeof(byte);
             _bufferLength -= sizeof(byte);
             return value;
@@ -264,11 +264,8 @@ namespace StbSharp.ImageRead
 
         protected virtual void Dispose(bool disposing)
         {
-            if (disposing)
-            {
-                if (!LeaveOpen)
-                    Stream.Dispose();
-            }
+            Stream = null!;
+            Buffer = null!;
         }
 
         public void Dispose()

@@ -113,7 +113,7 @@ namespace StbSharp.ImageRead
 
         #endregion
 
-        public static PngChunkHeader ReadChunkHeader(BinReader reader)
+        public static PngChunkHeader ReadChunkHeader(ImageBinReader reader)
         {
             if (reader == null)
                 throw new ArgumentNullException(nameof(reader));
@@ -128,14 +128,18 @@ namespace StbSharp.ImageRead
             return Signature.SequenceEqual(header);
         }
 
-        public static void Info(BinReader reader, out ReadState state)
+        public static void Info(ImageBinReader reader, out ReadState state)
         {
             state = new ReadState();
             Load(reader, state, ScanMode.Header);
         }
 
         public static void Load(
-            BinReader reader, ReadState state, ScanMode scan, ArrayPool<byte>? bytePool = null)
+            ImageBinReader reader,
+            ReadState state,
+            ScanMode scan,
+            ArrayPool<byte>? bytePool = null,
+            ZlibHelper.DeflateDecompressorFactory? deflateDecompressorFactory = null)
         {
             if (reader == null)
                 throw new ArgumentNullException(nameof(reader));
@@ -394,8 +398,8 @@ namespace StbSharp.ImageRead
                                 if (scan == ScanMode.Header)
                                     return HandleChunkResult.Header;
 
-                                // TODO: add support for custom decompressor streams
-                                decompressedStream = ZlibHelper.CreateDecompressor(stream);
+                                decompressedStream = ZlibHelper.CreateDecompressor(
+                                    stream, leaveOpen: true, deflateDecompressorFactory);
                             }
                             return HandleChunkResult.Include;
                         }
@@ -1204,7 +1208,7 @@ namespace StbSharp.ImageRead
             private int _chunkLeftToRead;
             private int _validationCrc;
 
-            public BinReader Reader { get; }
+            public ImageBinReader Reader { get; }
             public PngChunkHeader LastChunkHeader { get; private set; }
             public HandleChunkResult LastResult { get; private set; }
 
@@ -1219,7 +1223,7 @@ namespace StbSharp.ImageRead
                 set => Seek(value, SeekOrigin.Begin);
             }
 
-            public ChunkStream(BinReader reader, HandleChunkDelegate handleChunk)
+            public ChunkStream(ImageBinReader reader, HandleChunkDelegate handleChunk)
             {
                 Reader = reader ?? throw new ArgumentNullException(nameof(reader));
                 _handleChunk = handleChunk ?? throw new ArgumentNullException(nameof(handleChunk));

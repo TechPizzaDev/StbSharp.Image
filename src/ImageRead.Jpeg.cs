@@ -200,7 +200,7 @@ namespace StbSharp.ImageRead
 
             private bool _isDisposed;
 
-            public BinReader Reader { get; }
+            public ImageBinReader Reader { get; }
             public ReadState State { get; }
             public ArrayPool<byte> BytePool { get; }
 
@@ -246,7 +246,7 @@ namespace StbSharp.ImageRead
             public bool SkipInvalidMarkerLength = true;
             public bool SkipInvalidMarker = true;
 
-            public JpegState(BinReader reader, ReadState readState, ArrayPool<byte>? arrayPool)
+            public JpegState(ImageBinReader reader, ReadState readState, ArrayPool<byte>? arrayPool)
             {
                 Reader = reader ?? throw new ArgumentNullException(nameof(reader));
                 State = readState ?? throw new ArgumentNullException(nameof(readState));
@@ -1306,7 +1306,6 @@ namespace StbSharp.ImageRead
                                 64);
 
                             if (state.spec_start == 0)
-
                                 DecodeBlockProgressiveDc(state, data, hdc, n);
                             else
                                 DecodeBlockProggressiveAc(state, data, hac, fastAc);
@@ -2434,7 +2433,7 @@ namespace StbSharp.ImageRead
         }
 
         public static void Load(
-            BinReader reader, ReadState state, ArrayPool<byte>? arrayPool = null)
+            ImageBinReader reader, ReadState state, ArrayPool<byte>? arrayPool = null)
         {
             using (var j = new JpegState(reader, state, arrayPool))
                 LoadImage(j);
@@ -2447,7 +2446,7 @@ namespace StbSharp.ImageRead
         }
 
         public static void Info(
-            BinReader reader, out ReadState state, ArrayPool<byte>? arrayPool = null)
+            ImageBinReader reader, out ReadState state, ArrayPool<byte>? arrayPool = null)
         {
             state = new ReadState();
 
