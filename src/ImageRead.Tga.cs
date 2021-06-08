@@ -149,11 +149,11 @@ namespace StbSharp.ImageRead
             info.x_origin = reader.ReadInt16LE();
             info.y_origin = reader.ReadInt16LE();
 
-            state.Width = reader.ReadInt16LE();
+            state.Width = reader.ReadUInt16LE();
             if (state.Width < 1)
                 throw new StbImageReadException(ErrorCode.ZeroWidth);
 
-            state.Height = reader.ReadInt16LE();
+            state.Height = reader.ReadUInt16LE();
             if (state.Height < 1)
                 throw new StbImageReadException(ErrorCode.ZeroHeight);
 

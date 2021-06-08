@@ -88,14 +88,17 @@ namespace StbSharp.ImageRead
                 _bufferOffset += toRead;
                 _bufferLength -= toRead;
                 count -= toRead;
+
+                if (count == 0)
+                    return;
             }
 
-            while (count > 0)
-            {
-                CancellationToken.ThrowIfCancellationRequested();
+            CancellationToken.ThrowIfCancellationRequested();
 
+            do
+            {
                 int toRead = (int)Math.Min(count, Buffer.Length);
-                var slice = Buffer.AsSpan(0, toRead);
+                Span<byte> slice = Buffer.AsSpan(0, toRead);
                 int read = Stream.Read(slice);
                 if (read == 0)
                     break;
@@ -103,8 +106,9 @@ namespace StbSharp.ImageRead
                 count -= read;
                 _position += read;
             }
+            while (count > 0);
 
-            if (count > 0)
+            if (count != 0)
                 throw new EndOfStreamException();
         }
 

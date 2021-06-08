@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -119,16 +120,10 @@ namespace StbSharp.ImageRead
             public Memory<byte> MDelta { get; private set; }
 
             public Span<byte> Fast => MFast.Span;
-
-            [CLSCompliant(false)]
             public Span<ushort> Code => MemoryMarshal.Cast<byte, ushort>(MCode.Span);
-
             public Span<byte> Values => MValues.Span;
             public Span<byte> Size => MSize.Span;
-
-            [CLSCompliant(false)]
             public Span<uint> Maxcode => MemoryMarshal.Cast<byte, uint>(MMaxcode.Span);
-
             public Span<int> Delta => MemoryMarshal.Cast<byte, int>(MDelta.Span);
 
             public Huffman(ArrayPool<byte> pool)
@@ -145,7 +140,7 @@ namespace StbSharp.ImageRead
 
                 _buffer = _pool.Rent(Size);
 
-                var m = _buffer.AsMemory(0, Size);
+                Memory<byte> m = _buffer.AsMemory(0, Size);
                 int o = 0;
 
                 MFast = m.Slice(o, FastLength * sizeof(byte));
@@ -208,7 +203,6 @@ namespace StbSharp.ImageRead
             public readonly Huffman[] huff_ac = new Huffman[CompCount];
             public readonly short[][] fast_ac = new short[CompCount][];
 
-            [CLSCompliant(false)]
             public readonly ushort[][] dequant = new ushort[CompCount][];
 
             // sizes for components, interleaved MCUs
@@ -219,7 +213,6 @@ namespace StbSharp.ImageRead
             // definition of jpeg image component
             public ImageComponent[] components = new ImageComponent[CompCount];
 
-            [CLSCompliant(false)]
             public uint code_buffer; // jpeg entropy-coded buffer
 
             public int code_bits; // number of valid bits
@@ -258,13 +251,13 @@ namespace StbSharp.ImageRead
                     huff_dc[i] = new Huffman(BytePool);
                 }
 
-                for (var i = 0; i < components.Length; ++i)
+                for (int i = 0; i < components.Length; ++i)
                     components[i] = new ImageComponent();
 
-                for (var i = 0; i < fast_ac.Length; ++i)
+                for (int i = 0; i < fast_ac.Length; ++i)
                     fast_ac[i] = new short[Huffman.FastLength];
 
-                for (var i = 0; i < dequant.Length; ++i)
+                for (int i = 0; i < dequant.Length; ++i)
                     dequant[i] = new ushort[64];
             }
 
@@ -320,7 +313,7 @@ namespace StbSharp.ImageRead
 
         private static void BuildHuffman(Huffman h, Span<int> count)
         {
-            var Size = h.Size;
+            Span<byte> Size = h.Size;
 
             int i;
             int j;
@@ -331,8 +324,8 @@ namespace StbSharp.ImageRead
                     Size[k++] = (byte)(i + 1);
             }
 
-            var Delta = h.Delta;
-            var Code = h.Code;
+            Span<int> Delta = h.Delta;
+            Span<ushort> Code = h.Code;
 
             int code = 0;
             Size[k] = 0;
@@ -355,7 +348,7 @@ namespace StbSharp.ImageRead
 
             h.Maxcode[j] = 0xffffffff;
 
-            var Fast = h.Fast;
+            Span<byte> Fast = h.Fast;
             Fast.Fill(255);
 
             for (i = 0; i < k; ++i)
@@ -373,7 +366,7 @@ namespace StbSharp.ImageRead
 
         private static void BuildFastAc(Span<short> fastAc, Huffman h)
         {
-            var Fast = h.Fast;
+            Span<byte> Fast = h.Fast;
 
             fastAc.Clear();
             for (int i = 0; i < Fast.Length; ++i)
@@ -478,7 +471,7 @@ namespace StbSharp.ImageRead
                 GrowBufferUnsafe(state);
 
             int sgn = (int)state.code_buffer >> 31;
-            uint k = MathHelper.RotateBits(state.code_buffer, n);
+            uint k = BitOperations.RotateLeft(state.code_buffer, n);
             uint mask = BMask[n];
             state.code_buffer = k & ~mask;
             k &= mask;
@@ -491,7 +484,7 @@ namespace StbSharp.ImageRead
             if (state.code_bits < n)
                 GrowBufferUnsafe(state);
 
-            uint k = MathHelper.RotateBits(state.code_buffer, n);
+            uint k = BitOperations.RotateLeft(state.code_buffer, n);
             uint mask = BMask[n];
             state.code_buffer = k & ~mask;
             k &= mask;
@@ -528,7 +521,7 @@ namespace StbSharp.ImageRead
             state.components[b].dc_pred = dc;
             data[0] = (short)(dc * dequant[0]);
 
-            var deZigZag = DeZigZag;
+            ReadOnlySpan<byte> deZigZag = DeZigZag;
             int k = 1;
             do
             {
@@ -609,7 +602,7 @@ namespace StbSharp.ImageRead
             if (state.spec_start == 0)
                 throw new StbImageReadException(ErrorCode.CantMergeDcAndAc);
 
-            var deZigZag = DeZigZag;
+            ReadOnlySpan<byte> deZigZag = DeZigZag;
             if (state.succ_high == 0)
             {
                 int shift = state.succ_low;
@@ -902,8 +895,8 @@ namespace StbSharp.ImageRead
                 {
                     Vector128<int> abiased_l = Sse2.Add(aLow, bias);
                     Vector128<int> abiased_h = Sse2.Add(aHigh, bias);
-                    dct_wadd(abiased_l, abiased_h, bLow, bHigh, out var sum_l, out var sum_h);
-                    dct_wsub(abiased_l, abiased_h, bLow, bHigh, out var dif_l, out var dif_h);
+                    dct_wadd(abiased_l, abiased_h, bLow, bHigh, out Vector128<int> sum_l, out Vector128<int> sum_h);
+                    dct_wsub(abiased_l, abiased_h, bLow, bHigh, out Vector128<int> dif_l, out Vector128<int> dif_h);
                     out0 = Sse2.PackSignedSaturate(Sse2.ShiftRightArithmetic(sum_l, s), Sse2.ShiftRightArithmetic(sum_h, s));
                     out1 = Sse2.PackSignedSaturate(Sse2.ShiftRightArithmetic(dif_l, s), Sse2.ShiftRightArithmetic(dif_h, s));
                 }
@@ -955,28 +948,28 @@ namespace StbSharp.ImageRead
                     // even part
                     dct_rot(
                         row2, row6, rot0_0, rot0_1,
-                        out var t2e_l, out var t2e_h,
-                        out var t3e_l, out var t3e_h);
+                        out Vector128<int> t2e_l, out Vector128<int> t2e_h,
+                        out Vector128<int> t3e_l, out Vector128<int> t3e_h);
 
                     Vector128<short> sum04 = Sse2.Add(row0, row4);
                     Vector128<short> dif04 = Sse2.Subtract(row0, row4);
-                    dct_widen(sum04, out var t0e_l, out var t0e_h);
-                    dct_widen(dif04, out var t1e_l, out var t1e_h);
-                    dct_wadd(t0e_l, t0e_h, t3e_l, t3e_h, out var x0_l, out var x0_h);
-                    dct_wsub(t0e_l, t0e_h, t3e_l, t3e_h, out var x3_l, out var x3_h);
-                    dct_wadd(t1e_l, t1e_h, t2e_l, t2e_h, out var x1_l, out var x1_h);
-                    dct_wsub(t1e_l, t1e_h, t2e_l, t2e_h, out var x2_l, out var x2_h);
+                    dct_widen(sum04, out Vector128<int> t0e_l, out Vector128<int> t0e_h);
+                    dct_widen(dif04, out Vector128<int> t1e_l, out Vector128<int> t1e_h);
+                    dct_wadd(t0e_l, t0e_h, t3e_l, t3e_h, out Vector128<int> x0_l, out Vector128<int> x0_h);
+                    dct_wsub(t0e_l, t0e_h, t3e_l, t3e_h, out Vector128<int> x3_l, out Vector128<int> x3_h);
+                    dct_wadd(t1e_l, t1e_h, t2e_l, t2e_h, out Vector128<int> x1_l, out Vector128<int> x1_h);
+                    dct_wsub(t1e_l, t1e_h, t2e_l, t2e_h, out Vector128<int> x2_l, out Vector128<int> x2_h);
 
                     // odd part
-                    dct_rot(row7, row3, rot2_0, rot2_1, out var y0o_l, out var y0o_h, out var y2o_l, out var y2o_h);
-                    dct_rot(row5, row1, rot3_0, rot3_1, out var y1o_l, out var y1o_h, out var y3o_l, out var y3o_h);
+                    dct_rot(row7, row3, rot2_0, rot2_1, out Vector128<int> y0o_l, out Vector128<int> y0o_h, out Vector128<int> y2o_l, out Vector128<int> y2o_h);
+                    dct_rot(row5, row1, rot3_0, rot3_1, out Vector128<int> y1o_l, out Vector128<int> y1o_h, out Vector128<int> y3o_l, out Vector128<int> y3o_h);
                     Vector128<short> sum17 = Sse2.Add(row1, row7);
                     Vector128<short> sum35 = Sse2.Add(row3, row5);
-                    dct_rot(sum17, sum35, rot1_0, rot1_1, out var y4o_l, out var y4o_h, out var y5o_l, out var y5o_h);
-                    dct_wadd(y0o_l, y0o_h, y4o_l, y4o_h, out var x4_l, out var x4_h);
-                    dct_wadd(y1o_l, y1o_h, y5o_l, y5o_h, out var x5_l, out var x5_h);
-                    dct_wadd(y2o_l, y2o_h, y5o_l, y5o_h, out var x6_l, out var x6_h);
-                    dct_wadd(y3o_l, y3o_h, y4o_l, y4o_h, out var x7_l, out var x7_h);
+                    dct_rot(sum17, sum35, rot1_0, rot1_1, out Vector128<int> y4o_l, out Vector128<int> y4o_h, out Vector128<int> y5o_l, out Vector128<int> y5o_h);
+                    dct_wadd(y0o_l, y0o_h, y4o_l, y4o_h, out Vector128<int> x4_l, out Vector128<int> x4_h);
+                    dct_wadd(y1o_l, y1o_h, y5o_l, y5o_h, out Vector128<int> x5_l, out Vector128<int> x5_h);
+                    dct_wadd(y2o_l, y2o_h, y5o_l, y5o_h, out Vector128<int> x6_l, out Vector128<int> x6_h);
+                    dct_wadd(y3o_l, y3o_h, y4o_l, y4o_h, out Vector128<int> x7_l, out Vector128<int> x7_h);
                     dct_bfly32o(x0_l, x0_h, x7_l, x7_h, bias, shift, out row0, out row7);
                     dct_bfly32o(x1_l, x1_h, x6_l, x6_h, bias, shift, out row1, out row6);
                     dct_bfly32o(x2_l, x2_h, x5_l, x5_h, bias, shift, out row2, out row5);
@@ -1068,7 +1061,7 @@ namespace StbSharp.ImageRead
                     }
                     else
                     {
-                        Idct1D(d[0], d[8], d[16], d[24], d[32], d[40], d[48], d[56], out var idct);
+                        Idct1D(d[0], d[8], d[16], d[24], d[32], d[40], d[48], d[56], out ImageRead.Jpeg.Idct idct);
 
                         idct.x0 += 512;
                         idct.x1 += 512;
@@ -1088,7 +1081,7 @@ namespace StbSharp.ImageRead
 
                 for (int i = 0; i < val.Length / 8; i++)
                 {
-                    CalcIdct(val[(i * 8)..], out var idct);
+                    CalcIdct(val[(i * 8)..], out ImageRead.Jpeg.Idct idct);
 
                     byte* dstSlice = dst + i * dstStride;
                     dstSlice[0] = Clamp((idct.x0 + idct.t3) >> 17);
@@ -1154,7 +1147,7 @@ namespace StbSharp.ImageRead
             if (!state.progressive)
             {
                 short* data = stackalloc short[64];
-                Span<short> sdata = new Span<short>(data, 64);
+                Span<short> sdata = new(data, 64);
 
                 if (state.scan_n == 1)
                 {
@@ -1164,10 +1157,10 @@ namespace StbSharp.ImageRead
                     // component has, independent of interleaved MCU blocking and such
 
                     int n = state.order[0];
-                    var component = state.components[n];
+                    ImageComponent component = state.components[n];
                     int w = (component.x + 7) / 8;
                     int h = (component.y + 7) / 8;
-                    var componentData = component.data.Span;
+                    Span<byte> componentData = component.data.Span;
 
                     int ha = component.ha;
                     Huffman hdc = state.huff_dc[component.hd];
@@ -1227,7 +1220,7 @@ namespace StbSharp.ImageRead
                                 // by the basic H and V specified for the component
 
                                 int n = state.order[k];
-                                var component = state.components[n];
+                                ImageComponent component = state.components[n];
 
                                 int ha = component.ha;
                                 Huffman hdc = state.huff_dc[component.hd];
@@ -1287,10 +1280,10 @@ namespace StbSharp.ImageRead
                     // component has, independent of interleaved MCU blocking and such
 
                     int n = state.order[0];
-                    var component = state.components[n];
+                    ImageComponent component = state.components[n];
                     int w = (component.x + 7) / 8;
                     int h = (component.y + 7) / 8;
-                    var coeff16 = MemoryMarshal.Cast<byte, short>(component.coeff.Span);
+                    Span<short> coeff16 = MemoryMarshal.Cast<byte, short>(component.coeff.Span);
 
                     int ha = component.ha;
                     Huffman hdc = state.huff_dc[component.hd];
@@ -1339,8 +1332,8 @@ namespace StbSharp.ImageRead
                                 // by the basic H and V specified for the component
 
                                 int n = state.order[k];
-                                var component = state.components[n];
-                                var coeff16 = MemoryMarshal.Cast<byte, short>(component.coeff.Span);
+                                ImageComponent component = state.components[n];
+                                Span<short> coeff16 = MemoryMarshal.Cast<byte, short>(component.coeff.Span);
 
                                 Huffman hdc = state.huff_dc[component.hd];
 
@@ -1395,7 +1388,7 @@ namespace StbSharp.ImageRead
 
             for (int n = 0; n < z.State.Components; ++n)
             {
-                var component = z.components[n];
+                ImageComponent component = z.components[n];
                 int w = (component.x + 7) / 8;
                 int h = (component.y + 7) / 8;
 
@@ -1425,7 +1418,7 @@ namespace StbSharp.ImageRead
             if (z == null)
                 throw new ArgumentNullException(nameof(z));
 
-            var s = z.Reader;
+            ImageBinReader s = z.Reader;
             int length;
             switch (m)
             {
@@ -1569,7 +1562,7 @@ namespace StbSharp.ImageRead
             if (state == null)
                 throw new ArgumentNullException(nameof(state));
 
-            var redaer = state.Reader;
+            ImageBinReader redaer = state.Reader;
 
             int Ls = redaer.ReadInt16BE();
             state.scan_n = redaer.ReadByte();
@@ -1673,7 +1666,7 @@ namespace StbSharp.ImageRead
             if (z == null)
                 throw new ArgumentNullException(nameof(z));
 
-            var s = z.Reader;
+            ImageBinReader s = z.Reader;
 
             int Lf = s.ReadInt16BE();
             if (Lf < 11)
@@ -1683,11 +1676,11 @@ namespace StbSharp.ImageRead
             if (p != 8)
                 throw new StbImageReadException(ErrorCode.UnsupportedBitDepth);
 
-            z.State.Height = s.ReadInt16BE();
+            z.State.Height = s.ReadUInt16BE();
             if (z.State.Height == 0)
                 throw new StbImageReadException(ErrorCode.ZeroHeight);
 
-            z.State.Width = s.ReadInt16BE();
+            z.State.Width = s.ReadUInt16BE();
             if (z.State.Width == 0)
                 throw new StbImageReadException(ErrorCode.ZeroWidth);
 
@@ -1829,7 +1822,7 @@ namespace StbSharp.ImageRead
             if (!ParseHeader(state, (int)ScanMode.Load))
                 return false;
 
-            var s = state.Reader;
+            ImageBinReader s = state.Reader;
             byte m = ReadMarker(state);
             while (m != 0xd9)
             {
@@ -1892,9 +1885,9 @@ namespace StbSharp.ImageRead
         public static Memory<byte> ResampleRowV2(
             Memory<byte> dst, Memory<byte> inNear, Memory<byte> inFar, int w, int hs)
         {
-            var o = dst.Span;
-            var n = inNear.Span;
-            var f = inFar.Span;
+            Span<byte> o = dst.Span;
+            Span<byte> n = inNear.Span;
+            Span<byte> f = inFar.Span;
 
             for (int i = 0; i < w; ++i)
             {
@@ -1907,8 +1900,8 @@ namespace StbSharp.ImageRead
         public static Memory<byte> ResampleRowH2(
             Memory<byte> dst, Memory<byte> inNear, Memory<byte> inFar, int w, int hs)
         {
-            var o = dst.Span;
-            var input = inNear.Span;
+            Span<byte> o = dst.Span;
+            Span<byte> input = inNear.Span;
             if (w == 1)
             {
                 o[0] = o[1] = input[0];
@@ -1935,9 +1928,9 @@ namespace StbSharp.ImageRead
         public static unsafe Memory<byte> ResampleRowHV2(
             Memory<byte> destination, Memory<byte> inputNear, Memory<byte> inputFar, int w, int hs)
         {
-            var dst = destination.Span;
-            var near = inputNear.Span;
-            var far = inputFar.Span;
+            Span<byte> dst = destination.Span;
+            Span<byte> near = inputNear.Span;
+            Span<byte> far = inputFar.Span;
 
             // need to generate 2x2 samples for every one in input
             if (w == 1)
@@ -1959,49 +1952,49 @@ namespace StbSharp.ImageRead
                 fixed (byte* nearPtr = near)
                 fixed (byte* farPtr = far)
                 {
-                    var bias = Vector128.Create((short)8);
+                    Vector128<short> bias = Vector128.Create((short)8);
 
                     for (; i < ((w - 1) & ~7); i += 8)
                     {
                         // load and perform the vertical filtering pass
                         // this uses 3*x + y = 4*x + (y - x)
-                        var farb = Sse2.LoadScalarVector128((long*)(farPtr + i)).AsByte();
-                        var nearb = Sse2.LoadScalarVector128((long*)(nearPtr + i)).AsByte();
-                        var farw = Sse2.UnpackLow(farb, Vector128<byte>.Zero).AsInt16();
-                        var nearw = Sse2.UnpackLow(nearb, Vector128<byte>.Zero).AsInt16();
-                        var diff = Sse2.Subtract(farw, nearw);
-                        var nears = Sse2.ShiftLeftLogical(nearw, 2);
-                        var curr = Sse2.Add(nears, diff); // current row
+                        Vector128<byte> farb = Sse2.LoadScalarVector128((long*)(farPtr + i)).AsByte();
+                        Vector128<byte> nearb = Sse2.LoadScalarVector128((long*)(nearPtr + i)).AsByte();
+                        Vector128<short> farw = Sse2.UnpackLow(farb, Vector128<byte>.Zero).AsInt16();
+                        Vector128<short> nearw = Sse2.UnpackLow(nearb, Vector128<byte>.Zero).AsInt16();
+                        Vector128<short> diff = Sse2.Subtract(farw, nearw);
+                        Vector128<short> nears = Sse2.ShiftLeftLogical(nearw, 2);
+                        Vector128<short> curr = Sse2.Add(nears, diff); // current row
 
                         // horizontal filter works the same based on shifted vers of current
                         // row. "prev" is current row shifted right by 1 pixel; we need to
                         // insert the previous pixel value (from t1).
                         // "next" is current row shifted left by 1 pixel, with first pixel
                         // of next block of 8 pixels added in.
-                        var prv0 = Sse2.ShiftLeftLogical128BitLane(curr, 2);
-                        var nxt0 = Sse2.ShiftRightLogical128BitLane(curr, 2);
-                        var prev = Sse2.Insert(prv0, (short)t1, 0);
-                        var next = Sse2.Insert(nxt0, (short)(3 * nearPtr[i + 8] + farPtr[i + 8]), 7);
+                        Vector128<short> prv0 = Sse2.ShiftLeftLogical128BitLane(curr, 2);
+                        Vector128<short> nxt0 = Sse2.ShiftRightLogical128BitLane(curr, 2);
+                        Vector128<short> prev = Sse2.Insert(prv0, (short)t1, 0);
+                        Vector128<short> next = Sse2.Insert(nxt0, (short)(3 * nearPtr[i + 8] + farPtr[i + 8]), 7);
 
                         // horizontal filter, polyphase implementation since it's convenient:
                         // even pixels = 3*cur + prev = cur*4 + (prev - cur)
                         // odd  pixels = 3*cur + next = cur*4 + (next - cur)
                         // note the shared term.
-                        var curs = Sse2.ShiftLeftLogical(curr, 2);
-                        var prvd = Sse2.Subtract(prev, curr);
-                        var nxtd = Sse2.Subtract(next, curr);
-                        var curb = Sse2.Add(curs, bias);
-                        var even = Sse2.Add(prvd, curb);
-                        var odd = Sse2.Add(nxtd, curb);
+                        Vector128<short> curs = Sse2.ShiftLeftLogical(curr, 2);
+                        Vector128<short> prvd = Sse2.Subtract(prev, curr);
+                        Vector128<short> nxtd = Sse2.Subtract(next, curr);
+                        Vector128<short> curb = Sse2.Add(curs, bias);
+                        Vector128<short> even = Sse2.Add(prvd, curb);
+                        Vector128<short> odd = Sse2.Add(nxtd, curb);
 
                         // interleave even and odd pixels, then undo scaling.
-                        var int0 = Sse2.UnpackLow(even, odd);
-                        var int1 = Sse2.UnpackHigh(even, odd);
-                        var de0 = Sse2.ShiftRightLogical(int0, 4);
-                        var de1 = Sse2.ShiftRightLogical(int1, 4);
+                        Vector128<short> int0 = Sse2.UnpackLow(even, odd);
+                        Vector128<short> int1 = Sse2.UnpackHigh(even, odd);
+                        Vector128<short> de0 = Sse2.ShiftRightLogical(int0, 4);
+                        Vector128<short> de1 = Sse2.ShiftRightLogical(int1, 4);
 
                         // pack and write output
-                        var outv = Sse2.PackUnsignedSaturate(de0, de1);
+                        Vector128<byte> outv = Sse2.PackUnsignedSaturate(de0, de1);
                         Sse2.Store(dstPtr + i * 2, outv);
 
                         // "previous" value for next iter
@@ -2091,8 +2084,8 @@ namespace StbSharp.ImageRead
             int w,
             int hs)
         {
-            var dst = destination.Span;
-            var inNear = inputNear.Span;
+            Span<byte> dst = destination.Span;
+            Span<byte> inNear = inputNear.Span;
 
             for (int i = 0; i < w; i++)
             {
@@ -2126,76 +2119,56 @@ namespace StbSharp.ImageRead
                 {
                     byte* pdst = dstPtr;
 
-                    // TODO: finish this?
-                    //var v_halfbyte = Vector128.Create((byte)128);
-                    //for (; i - Vector128<byte>.Count * 3 <= dst.Length; i += Vector128<byte>.Count * 3, x += Vector128<byte>.Count)
-                    //{
-                    //    var w_y_fixed = Sse2.LoadVector128(yPtr + x);
-                    //    var w_cr = Sse2.Add(Sse2.LoadVector128(cbPtr + x), v_halfbyte);
-                    //    var w_cb = Sse2.Add(Sse2.LoadVector128(crPtr + x), v_halfbyte);
-                    //
-                    //    var vl_y_fixed = Sse2.UnpackLow(Vector128<byte>.Zero, w_y_fixed).AsInt16();
-                    //    var vh_y_fixed = Sse2.UnpackHigh(Vector128<byte>.Zero, w_y_fixed).AsInt16();
-                    //    var vl_cr = Sse2.UnpackLow(Vector128<byte>.Zero, w_cr).AsInt16();
-                    //    var vh_cr = Sse2.UnpackHigh(Vector128<byte>.Zero, w_cr).AsInt16();
-                    //    var vl_cb = Sse2.UnpackLow(Vector128<byte>.Zero, w_cb).AsInt16();
-                    //    var vh_cb = Sse2.UnpackHigh(Vector128<byte>.Zero, w_cb).AsInt16();
-                    //
-                    //    //var v_r = Sse2.Add(w_y_fixed, Sse2.Multiply(w_cr, ));
-                    //    //var v_g = Sse2.Add(w_y_fixed, Sse2.Multiply(w_cr, ));
-                    //    //var v_b = Sse2.Add(w_y_fixed, Sse2.Multiply(w_cb, ));
-                    //}
-
                     // this is a fairly straightforward implementation and not super-optimized.
-                    var signflip = Vector128.Create((sbyte)-128).AsByte();
-                    var cr_const0 = Vector128.Create((short)(1.40200f * 4096.0f + 0.5f));
-                    var cr_const1 = Vector128.Create((short)-(0.71414f * 4096.0f + 0.5f));
-                    var cb_const0 = Vector128.Create((short)-(0.34414f * 4096.0f + 0.5f));
-                    var cb_const1 = Vector128.Create((short)(1.77200f * 4096.0f + 0.5f));
-                    var y_bias = Vector128.Create((byte)128);
-                    var shuffleMask = Vector128.Create((byte)0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 3, 7, 11, 15);
+                    Vector128<byte> signflip = Vector128.Create((sbyte)-128).AsByte();
+                    Vector128<short> cr_const0 = Vector128.Create((short)(1.40200f * 4096.0f + 0.5f));
+                    Vector128<short> cr_const1 = Vector128.Create((short)-(0.71414f * 4096.0f + 0.5f));
+                    Vector128<short> cb_const0 = Vector128.Create((short)-(0.34414f * 4096.0f + 0.5f));
+                    Vector128<short> cb_const1 = Vector128.Create((short)(1.77200f * 4096.0f + 0.5f));
+                    Vector128<byte> y_bias = Vector128.Create((byte)128);
+                    Vector128<byte> shuffleMask = Vector128.Create((byte)0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 3, 7, 11, 15);
 
                     // Check if we have space for 28 elements,
                     // as Ssse3 writes 16 bytes (12 significant) at a time.
                     for (; i + 28 <= dst.Length; i += 24, x += 8)
                     {
                         // load
-                        var y_bytes = Sse2.LoadScalarVector128((long*)(yPtr + x)).AsByte();
-                        var cr_bytes = Sse2.LoadScalarVector128((long*)(crPtr + x)).AsByte();
-                        var cb_bytes = Sse2.LoadScalarVector128((long*)(cbPtr + x)).AsByte();
-                        var cr_biased = Sse2.Xor(cr_bytes, signflip); // -128
-                        var cb_biased = Sse2.Xor(cb_bytes, signflip); // -128
+                        Vector128<byte> y_bytes = Sse2.LoadScalarVector128((long*)(yPtr + x)).AsByte();
+                        Vector128<byte> cr_bytes = Sse2.LoadScalarVector128((long*)(crPtr + x)).AsByte();
+                        Vector128<byte> cb_bytes = Sse2.LoadScalarVector128((long*)(cbPtr + x)).AsByte();
+                        Vector128<byte> cr_biased = Sse2.Xor(cr_bytes, signflip); // -128
+                        Vector128<byte> cb_biased = Sse2.Xor(cb_bytes, signflip); // -128
 
                         // unpack to short (and left-shift cr, cb by 8)
-                        var yw = Sse2.UnpackLow(y_bias, y_bytes).AsInt16();
-                        var crw = Sse2.UnpackLow(Vector128<byte>.Zero, cr_biased).AsInt16();
-                        var cbw = Sse2.UnpackLow(Vector128<byte>.Zero, cb_biased).AsInt16();
+                        Vector128<short> yw = Sse2.UnpackLow(y_bias, y_bytes).AsInt16();
+                        Vector128<short> crw = Sse2.UnpackLow(Vector128<byte>.Zero, cr_biased).AsInt16();
+                        Vector128<short> cbw = Sse2.UnpackLow(Vector128<byte>.Zero, cb_biased).AsInt16();
 
                         // color transform
-                        var yws = Sse2.ShiftRightLogical(yw, 4);
-                        var cr0 = Sse2.MultiplyHigh(cr_const0, crw);
-                        var cb0 = Sse2.MultiplyHigh(cb_const0, cbw);
-                        var cr1 = Sse2.MultiplyHigh(crw, cr_const1);
-                        var cb1 = Sse2.MultiplyHigh(cbw, cb_const1);
-                        var rws = Sse2.Add(cr0, yws);
-                        var gwt = Sse2.Add(cb0, yws);
-                        var bws = Sse2.Add(yws, cb1);
-                        var gws = Sse2.Add(gwt, cr1);
+                        Vector128<short> yws = Sse2.ShiftRightLogical(yw, 4);
+                        Vector128<short> cr0 = Sse2.MultiplyHigh(cr_const0, crw);
+                        Vector128<short> cb0 = Sse2.MultiplyHigh(cb_const0, cbw);
+                        Vector128<short> cr1 = Sse2.MultiplyHigh(crw, cr_const1);
+                        Vector128<short> cb1 = Sse2.MultiplyHigh(cbw, cb_const1);
+                        Vector128<short> rws = Sse2.Add(cr0, yws);
+                        Vector128<short> gwt = Sse2.Add(cb0, yws);
+                        Vector128<short> bws = Sse2.Add(yws, cb1);
+                        Vector128<short> gws = Sse2.Add(gwt, cr1);
 
                         // descale
-                        var rw = Sse2.ShiftRightArithmetic(rws, 4);
-                        var bw = Sse2.ShiftRightArithmetic(bws, 4);
-                        var gw = Sse2.ShiftRightArithmetic(gws, 4);
+                        Vector128<short> rw = Sse2.ShiftRightArithmetic(rws, 4);
+                        Vector128<short> bw = Sse2.ShiftRightArithmetic(bws, 4);
+                        Vector128<short> gw = Sse2.ShiftRightArithmetic(gws, 4);
 
                         // back to byte, set up for transpose
-                        var brb = Sse2.PackUnsignedSaturate(rw, bw);
-                        var gxb = Sse2.PackUnsignedSaturate(gw, Vector128<short>.Zero);
+                        Vector128<byte> brb = Sse2.PackUnsignedSaturate(rw, bw);
+                        Vector128<byte> gxb = Sse2.PackUnsignedSaturate(gw, Vector128<short>.Zero);
 
                         // transpose to interleave channels
-                        var t0 = Sse2.UnpackLow(brb, gxb).AsInt16();
-                        var t1 = Sse2.UnpackHigh(brb, gxb).AsInt16();
-                        var o0 = Sse2.UnpackLow(t0, t1).AsByte();
-                        var o1 = Sse2.UnpackHigh(t0, t1).AsByte();
+                        Vector128<short> t0 = Sse2.UnpackLow(brb, gxb).AsInt16();
+                        Vector128<short> t1 = Sse2.UnpackHigh(brb, gxb).AsInt16();
+                        Vector128<byte> o0 = Sse2.UnpackLow(t0, t1).AsByte();
+                        Vector128<byte> o1 = Sse2.UnpackHigh(t0, t1).AsByte();
 
                         if (Ssse3.IsSupported)
                         {
@@ -2209,7 +2182,7 @@ namespace StbSharp.ImageRead
                         else
                         {
                             // TODO: optimize somehow?
-
+                            
                             *pdst++ = o0.GetElement(0);
                             *pdst++ = o0.GetElement(1);
                             *pdst++ = o0.GetElement(2);
@@ -2308,7 +2281,7 @@ namespace StbSharp.ImageRead
 
         private static void ProcessData(JpegState state)
         {
-            var res_comp = new ResampleData[state.decode_n];
+            ResampleData[] res_comp = new ResampleData[state.decode_n];
             for (int k = 0; k < res_comp.Length; k++)
             {
                 ref ImageComponent comp = ref state.components[k];
@@ -2336,10 +2309,10 @@ namespace StbSharp.ImageRead
                     r.Resample = ResampleRowGeneric;
             }
 
-            var coutput = new Memory<byte>[JpegState.CompCount];
+            Memory<byte>[] coutput = new Memory<byte>[JpegState.CompCount];
             int outStride = state.State.OutComponents * state.State.Width;
-            var pooledRowBuffer = state.BytePool.Rent(outStride);
-            var rowBuffer = pooledRowBuffer.AsSpan(0, outStride);
+            byte[] pooledRowBuffer = state.BytePool.Rent(outStride);
+            Span<byte> rowBuffer = pooledRowBuffer.AsSpan(0, outStride);
             try
             {
                 for (int j = 0; j < state.State.Height; ++j)
@@ -2366,10 +2339,10 @@ namespace StbSharp.ImageRead
                         }
                     }
 
-                    var co0 = coutput[0].Span;
-                    var co1 = coutput[1].Span;
-                    var co2 = coutput[2].Span;
-                    var co3 = coutput[3].Span;
+                    Span<byte> co0 = coutput[0].Span;
+                    Span<byte> co1 = coutput[1].Span;
+                    Span<byte> co2 = coutput[2].Span;
+                    Span<byte> co3 = coutput[3].Span;
 
                     // TODO: validate/improve rowBuffer slicing
                     if (state.State.Components == 3)
