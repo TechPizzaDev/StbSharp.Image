@@ -936,7 +936,7 @@ namespace StbSharp.ImageRead
 
                 // TODO: make loops forward loops
 
-                byte scale = (byte)((header.ColorType == 0) ? DepthScaleTable[depth] : 1);
+                byte scale = (byte)(header.ColorType == 0 ? DepthScaleTable[depth] : 1);
 
                 int rowOff = 0;
                 int srcOff = 0;
@@ -945,55 +945,46 @@ namespace StbSharp.ImageRead
                 {
                     for (k = width * srcComp; k >= 2; k -= 2, srcOff++)
                     {
-                        row[rowOff++] = (byte)(scale * (src[srcOff] >> 4));
-                        row[rowOff++] = (byte)(scale * ((src[srcOff]) & 0x0f));
+                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 4) & 0x0f));
+                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 0) & 0x0f));
                     }
+
                     if (k > 0)
-                        row[rowOff++] = (byte)(scale * (src[srcOff] >> 4));
+                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 4) & 0x0f));
                 }
                 else if (depth == 2)
                 {
                     for (k = width * srcComp; k >= 4; k -= 4, srcOff++)
                     {
-                        row[rowOff++] = (byte)(scale * (src[srcOff] >> 6));
+                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 6) & 0x03));
                         row[rowOff++] = (byte)(scale * ((src[srcOff] >> 4) & 0x03));
                         row[rowOff++] = (byte)(scale * ((src[srcOff] >> 2) & 0x03));
-                        row[rowOff++] = (byte)(scale * ((src[srcOff]) & 0x03));
+                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 0) & 0x03));
                     }
-                    if (k > 0)
-                        row[rowOff++] = (byte)(scale * (src[srcOff] >> 6));
-                    if (k > 1)
-                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 4) & 0x03));
-                    if (k > 2)
-                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 2) & 0x03));
+
+                    for (int i = 0; i < k; i++)
+                    {
+                        row[rowOff++] = (byte)(scale * (src[srcOff] >> (6 - i * 2) & 0x03));
+                    }
                 }
                 else if (depth == 1)
                 {
                     for (k = width * srcComp; k >= 8; k -= 8, srcOff++)
                     {
-                        row[rowOff++] = (byte)(scale * (src[srcOff] >> 7));
+                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 7) & 0x01));
                         row[rowOff++] = (byte)(scale * ((src[srcOff] >> 6) & 0x01));
                         row[rowOff++] = (byte)(scale * ((src[srcOff] >> 5) & 0x01));
                         row[rowOff++] = (byte)(scale * ((src[srcOff] >> 4) & 0x01));
                         row[rowOff++] = (byte)(scale * ((src[srcOff] >> 3) & 0x01));
                         row[rowOff++] = (byte)(scale * ((src[srcOff] >> 2) & 0x01));
                         row[rowOff++] = (byte)(scale * ((src[srcOff] >> 1) & 0x01));
-                        row[rowOff++] = (byte)(scale * ((src[srcOff]) & 0x01));
+                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 0) & 0x01));
                     }
-                    if (k > 0)
-                        row[rowOff++] = (byte)(scale * (src[srcOff] >> 7));
-                    if (k > 1)
-                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 6) & 0x01));
-                    if (k > 2)
-                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 5) & 0x01));
-                    if (k > 3)
-                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 4) & 0x01));
-                    if (k > 4)
-                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 3) & 0x01));
-                    if (k > 5)
-                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 2) & 0x01));
-                    if (k > 6)
-                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> 1) & 0x01));
+
+                    for (int i = 0; i < k; i++)
+                    {
+                        row[rowOff++] = (byte)(scale * ((src[srcOff] >> (7 - i)) & 0x01));
+                    }
                 }
 
                 if (srcComp != dstComp)
