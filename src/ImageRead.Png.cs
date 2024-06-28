@@ -37,23 +37,23 @@ namespace StbSharp.ImageRead
 
         #region Constants
 
-        public static ReadOnlySpan<byte> Signature => new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 };
+        public static ReadOnlySpan<byte> Signature => [137, 80, 78, 71, 13, 10, 26, 10];
 
-        public static ReadOnlySpan<byte> DepthScaleTable => new byte[] { 0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01 };
+        public static ReadOnlySpan<byte> DepthScaleTable => [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
 
-        public static ReadOnlySpan<byte> InterlaceOriginX => new byte[] { 0, 4, 0, 2, 0, 1, 0, };
-        public static ReadOnlySpan<byte> InterlaceOriginY => new byte[] { 0, 0, 4, 0, 2, 0, 1 };
-        public static ReadOnlySpan<byte> InterlaceSpacingX => new byte[] { 8, 8, 4, 4, 2, 2, 1 };
-        public static ReadOnlySpan<byte> InterlaceSpacingY => new byte[] { 8, 8, 8, 4, 4, 2, 2 };
+        public static ReadOnlySpan<byte> InterlaceOriginX => [0, 4, 0, 2, 0, 1, 0,];
+        public static ReadOnlySpan<byte> InterlaceOriginY => [0, 0, 4, 0, 2, 0, 1];
+        public static ReadOnlySpan<byte> InterlaceSpacingX => [8, 8, 4, 4, 2, 2, 1];
+        public static ReadOnlySpan<byte> InterlaceSpacingY => [8, 8, 8, 4, 4, 2, 2];
 
-        private static FilterType[] FirstRowFilter =
-        {
+        private static ReadOnlySpan<FilterType> FirstRowFilter =>
+        [
             FilterType.None,
             FilterType.Sub,
             FilterType.None,
             FilterType.AverageFirst,
             FilterType.PaethFirst
-        };
+        ];
 
         #endregion
 
@@ -115,8 +115,7 @@ namespace StbSharp.ImageRead
 
         public static PngChunkHeader ReadChunkHeader(ImageBinReader reader)
         {
-            if (reader == null)
-                throw new ArgumentNullException(nameof(reader));
+            ArgumentNullException.ThrowIfNull(reader);
 
             uint length = reader.ReadUInt32BE();
             uint type = reader.ReadUInt32BE();
@@ -141,10 +140,8 @@ namespace StbSharp.ImageRead
             ArrayPool<byte>? bytePool = null,
             ZlibHelper.DeflateDecompressorFactory? deflateDecompressorFactory = null)
         {
-            if (reader == null)
-                throw new ArgumentNullException(nameof(reader));
-            if (state == null)
-                throw new ArgumentNullException(nameof(state));
+            ArgumentNullException.ThrowIfNull(reader);
+            ArgumentNullException.ThrowIfNull(state);
 
             Span<byte> tmp = stackalloc byte[HeaderSize];
             if (!reader.TryReadBytes(tmp))
@@ -507,12 +504,11 @@ namespace StbSharp.ImageRead
             in Transparency? transparency,
             in Palette? palette)
         {
-            if (filteredData == null)
-                throw new ArgumentNullException(nameof(filteredData));
+            ArgumentNullException.ThrowIfNull(filteredData);
 
             for (int y = 0; y < height; y++)
             {
-                if (!ImageReadHelpers.FullRead(filteredData, filteredDataBuffer))
+                if (filteredData.ReadAtLeast(filteredDataBuffer, filteredDataBuffer.Length, false) != filteredDataBuffer.Length)
                     throw new StbImageReadException(ErrorCode.BadCompression);
 
                 DefilterRow(
@@ -547,10 +543,8 @@ namespace StbSharp.ImageRead
             ReadState state, Stream decompressedStream, ArrayPool<byte>? bytePool,
             in Header header, in Transparency? transparency, in Palette? palette)
         {
-            if (state == null)
-                throw new ArgumentNullException(nameof(state));
-            if (decompressedStream == null)
-                throw new ArgumentNullException(nameof(decompressedStream));
+            ArgumentNullException.ThrowIfNull(state);
+            ArgumentNullException.ThrowIfNull(decompressedStream);
             bytePool ??= ArrayPool<byte>.Shared;
 
             int depth = header.Depth;
@@ -626,7 +620,6 @@ namespace StbSharp.ImageRead
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static void DefilterRow(
             ReadOnlySpan<byte> prevFiltRow,
             ReadOnlySpan<byte> currentFilteredRow,
@@ -1020,8 +1013,7 @@ namespace StbSharp.ImageRead
             in Transparency? transparency,
             in Palette? palette)
         {
-            if (state == null)
-                throw new ArgumentNullException(nameof(state));
+            ArgumentNullException.ThrowIfNull(state);
 
             if (transparency.HasValue)
             {
