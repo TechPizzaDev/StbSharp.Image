@@ -3,7 +3,7 @@
     <Authors>StbImageSharpTeam</Authors>
     <Product>StbImageSharp</Product>
     <PackageId>StbImageSharp</PackageId>
-    <TargetFramework>net5.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <Description>C# port of the stb_image.h</Description>
     <PackageLicenseUrl>Public Domain</PackageLicenseUrl>
