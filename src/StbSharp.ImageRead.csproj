@@ -3,7 +3,7 @@
     <Authors>StbImageSharpTeam</Authors>
     <Product>StbImageSharp</Product>
     <PackageId>StbImageSharp</PackageId>
-    <TargetFramework>net5.0</TargetFramework>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <Description>C# port of the stb_image.h</Description>
     <PackageLicenseUrl>Public Domain</PackageLicenseUrl>
@@ -15,11 +15,9 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  
   <ItemGroup>
     <Compile Remove="ImageRead.Psd.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="ImageRead.Psd.cs" />
   </ItemGroup>
   
   <ItemGroup>
