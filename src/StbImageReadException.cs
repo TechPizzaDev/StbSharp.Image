@@ -1,9 +1,8 @@
 using System;
-using System.Runtime.Serialization;
+using System.Diagnostics.CodeAnalysis;
 
 namespace StbSharp.ImageRead
 {
-    [Serializable]
     public class StbImageReadException : StbException
     {
         public ErrorCode ErrorCode { get; }
@@ -34,8 +33,10 @@ namespace StbSharp.ImageRead
         {
         }
 
-        protected StbImageReadException(SerializationInfo info, StreamingContext context) : base(info, context)
+        [DoesNotReturn]
+        public static void Throw(ErrorCode errorCode)
         {
+            throw new StbImageReadException(errorCode);
         }
     }
 }

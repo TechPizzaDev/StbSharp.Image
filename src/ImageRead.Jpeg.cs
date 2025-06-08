@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -186,6 +187,18 @@ namespace StbSharp.ImageRead
             }
         }
 
+        [InlineArray(Huffman.FastLength)]
+        public struct FastAc
+        {
+            private short _e0;
+        }
+
+        [InlineArray(64)]
+        public struct Dequant
+        {
+            private ushort _e0;
+        }
+
         public class JpegState : IDisposable
         {
             public const int CompCount = 4;
@@ -198,9 +211,9 @@ namespace StbSharp.ImageRead
 
             public readonly Huffman[] huff_dc = new Huffman[CompCount];
             public readonly Huffman[] huff_ac = new Huffman[CompCount];
-            public readonly short[][] fast_ac = new short[CompCount][];
+            public readonly FastAc[] fast_ac = new FastAc[CompCount];
 
-            public readonly ushort[][] dequant = new ushort[CompCount][];
+            public readonly Dequant[] dequant = new Dequant[CompCount];
 
             // sizes for components, interleaved MCUs
             public int img_h_max, img_v_max;
@@ -250,12 +263,6 @@ namespace StbSharp.ImageRead
 
                 for (int i = 0; i < components.Length; ++i)
                     components[i] = new ImageComponent();
-
-                for (int i = 0; i < fast_ac.Length; ++i)
-                    fast_ac[i] = new short[Huffman.FastLength];
-
-                for (int i = 0; i < dequant.Length; ++i)
-                    dequant[i] = new ushort[64];
             }
 
             protected virtual void Dispose(bool disposing)
@@ -312,12 +319,10 @@ namespace StbSharp.ImageRead
         {
             Span<byte> Size = h.Size;
 
-            int i;
-            int j;
             int k = 0;
-            for (i = 0; i < 16; ++i)
+            for (int i = 0; i < 16; ++i)
             {
-                for (j = 0; j < count[i]; ++j)
+                for (int j = 0; j < count[i]; ++j)
                     Size[k++] = (byte)(i + 1);
             }
 
@@ -327,7 +332,7 @@ namespace StbSharp.ImageRead
             int code = 0;
             Size[k] = 0;
             k = 0;
-            for (j = 1; j <= 16; ++j)
+            for (int j = 1; j <= 16; ++j)
             {
                 Delta[j] = k - code;
                 if (Size[k] == j)
@@ -342,20 +347,19 @@ namespace StbSharp.ImageRead
                 h.Maxcode[j] = (uint)(code << (16 - j));
                 code <<= 1;
             }
-
-            h.Maxcode[j] = 0xffffffff;
+            h.Maxcode[17] = 0xffffffff;
 
             Span<byte> Fast = h.Fast;
             Fast.Fill(255);
 
-            for (i = 0; i < k; ++i)
+            for (int i = 0; i < k; ++i)
             {
                 int s = Size[i];
                 if (s <= 9)
                 {
                     int c = Code[i] << (9 - s);
                     int m = 1 << (9 - s);
-                    for (j = 0; j < m; ++j)
+                    for (int j = 0; j < m; ++j)
                         Fast[c + j] = (byte)i;
                 }
             }
@@ -363,27 +367,29 @@ namespace StbSharp.ImageRead
 
         private static void BuildFastAc(Span<short> fastAc, Huffman h)
         {
-            Span<byte> Fast = h.Fast;
+            Span<byte> Fast = h.Fast[..fastAc.Length];
 
             fastAc.Clear();
             for (int i = 0; i < Fast.Length; ++i)
             {
                 byte fast = Fast[i];
-                if (fast < 255)
+                if (fast >= 255)
                 {
-                    int rs = h.Values[fast];
-                    int run = (rs >> 4) & 15;
-                    int magbits = rs & 15;
-                    int len = h.Size[fast];
-                    if ((magbits != 0) && (len + magbits <= 9))
-                    {
-                        int k = ((i << len) & (Huffman.FastLength - 1)) >> (9 - magbits);
-                        int m = 1 << (magbits - 1);
-                        if (k < m)
-                            k += (int)((~0U << magbits) + 1);
-                        if ((k >= (-128)) && (k <= 127))
-                            fastAc[i] = (short)((k << 8) + (run << 4) + len + magbits);
-                    }
+                    continue;
+                }
+
+                int rs = h.Values[fast];
+                int run = (rs >> 4) & 15;
+                int magbits = rs & 15;
+                int len = h.Size[fast];
+                if ((magbits != 0) && (len + magbits <= 9))
+                {
+                    int k = ((i << len) & (Huffman.FastLength - 1)) >> (9 - magbits);
+                    int m = 1 << (magbits - 1);
+                    if (k < m)
+                        k += (int)((~0U << magbits) + 1);
+                    if ((k >= (-128)) && (k <= 127))
+                        fastAc[i] = (short)((k << 8) + (run << 4) + len + magbits);
                 }
             }
         }
@@ -622,11 +628,11 @@ namespace StbSharp.ImageRead
 
                 int c = (int)((state.code_buffer >> (32 - 9)) & ((1 << 9) - 1));
                 int r = fac[c];
-                int s;
+
                 if (r != 0)
                 {
                     k += (r >> 4) & 15;
-                    s = r & 15;
+                    int s = r & 15;
                     state.code_buffer <<= s;
                     state.code_bits -= s;
                     data[deZigZag[k++]] = (short)((r >> 8) << shift);
@@ -637,7 +643,7 @@ namespace StbSharp.ImageRead
                     if (rs < 0)
                         throw new StbImageReadException(ErrorCode.BadHuffmanCode);
 
-                    s = rs & 15;
+                    int s = rs & 15;
                     r = rs >> 4;
                     if (s == 0)
                     {
@@ -665,17 +671,80 @@ namespace StbSharp.ImageRead
 
         private static void DecodeBlockProgAcSuccHigh(JpegState state, Span<short> data, Huffman hac)
         {
-            ReadOnlySpan<byte> deZigZag = DeZigZag;
-
             short bit = (short)(1 << state.succ_low);
             if (state.eob_run != 0)
             {
                 state.eob_run--;
+                DecodeBlockProgAcSuccHighEob(state, data, hac, bit);
+            }
+            else
+            {
+                DecodeBlockProgAcSuccHighLast(state, data, hac, bit);
+            }
+        }
 
-                int offset = state.spec_start;
-                while (offset <= state.spec_end)
+
+        private static void DecodeBlockProgAcSuccHighEob(JpegState state, Span<short> data, Huffman hac, short bit)
+        {
+            ReadOnlySpan<byte> deZigZag = DeZigZag;
+
+            int offset = state.spec_start;
+            while (offset <= state.spec_end)
+            {
+                ref short p = ref data[deZigZag[offset++]];
+                if (p != 0)
                 {
-                    ref short p = ref data[deZigZag[offset++]];
+                    if (ReadBit(state))
+                    {
+                        if ((p & bit) == 0)
+                        {
+                            if (p > 0)
+                                p += bit;
+                            else
+                                p -= bit;
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void DecodeBlockProgAcSuccHighLast(JpegState state, Span<short> data, Huffman hac, short bit)
+        {
+            ReadOnlySpan<byte> deZigZag = DeZigZag;
+
+            int k = state.spec_start;
+            do
+            {
+                int rs = HuffmanDecode(state, hac);
+                if (rs < 0)
+                    throw new StbImageReadException(ErrorCode.BadHuffmanCode);
+
+                int s = rs & 15;
+                int r = rs >> 4;
+                if (s == 0)
+                {
+                    if (r < 15)
+                    {
+                        state.eob_run = (1 << r) - 1;
+                        if (r != 0)
+                            state.eob_run += ReadBits(state, r);
+                        r = 64;
+                    }
+                }
+                else
+                {
+                    if (s != 1)
+                        throw new StbImageReadException(ErrorCode.BadHuffmanCode);
+
+                    if (ReadBit(state))
+                        s = bit;
+                    else
+                        s = -bit;
+                }
+
+                while (k <= state.spec_end)
+                {
+                    ref short p = ref data[deZigZag[k++]];
                     if (p != 0)
                     {
                         if (ReadBit(state))
@@ -689,70 +758,18 @@ namespace StbSharp.ImageRead
                             }
                         }
                     }
-                }
-            }
-            else
-            {
-                int k = state.spec_start;
-                do
-                {
-                    int rs = HuffmanDecode(state, hac);
-                    if (rs < 0)
-                        throw new StbImageReadException(ErrorCode.BadHuffmanCode);
-
-                    int s = rs & 15;
-                    int r = rs >> 4;
-                    if (s == 0)
-                    {
-                        if (r < 15)
-                        {
-                            state.eob_run = (1 << r) - 1;
-                            if (r != 0)
-                                state.eob_run += ReadBits(state, r);
-                            r = 64;
-                        }
-                    }
                     else
                     {
-                        if (s != 1)
-                            throw new StbImageReadException(ErrorCode.BadHuffmanCode);
-
-                        if (ReadBit(state))
-                            s = bit;
-                        else
-                            s = -bit;
-                    }
-
-                    while (k <= state.spec_end)
-                    {
-                        ref short p = ref data[deZigZag[k++]];
-                        if (p != 0)
+                        if (r == 0)
                         {
-                            if (ReadBit(state))
-                            {
-                                if ((p & bit) == 0)
-                                {
-                                    if (p > 0)
-                                        p += bit;
-                                    else
-                                        p -= bit;
-                                }
-                            }
+                            p = (short)s;
+                            break;
                         }
-                        else
-                        {
-                            if (r == 0)
-                            {
-                                p = (short)s;
-                                break;
-                            }
-                            r--;
-                        }
+                        r--;
                     }
-
                 }
-                while (k <= state.spec_end);
             }
+            while (k <= state.spec_end);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -844,7 +861,7 @@ namespace StbSharp.ImageRead
             Vector128<short> row6 = Vector128.Create(datas.Slice(6 * 8));
             Vector128<short> row7 = Vector128.Create(datas.Slice(7 * 8));
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
             void dct_pass(Vector128<int> bias, [ConstantExpected] byte shift)
             {
                 // even part
@@ -953,13 +970,13 @@ namespace StbSharp.ImageRead
                 // store
                 Span<byte> dsts = dst[..(dstStride * 7 + 8)];
                 p0.GetLower().CopyTo(dsts);
-                p0.GetUpper().CopyTo(dsts[(dstStride * 1)..]);
-                p2.GetLower().CopyTo(dsts[(dstStride * 2)..]);
-                p2.GetUpper().CopyTo(dsts[(dstStride * 3)..]);
-                p1.GetLower().CopyTo(dsts[(dstStride * 4)..]);
-                p1.GetUpper().CopyTo(dsts[(dstStride * 5)..]);
-                p3.GetLower().CopyTo(dsts[(dstStride * 6)..]);
-                p3.GetUpper().CopyTo(dsts[(dstStride * 7)..]);
+                p0.GetUpper().CopyTo(dsts.Slice(dstStride * 1));
+                p2.GetLower().CopyTo(dsts.Slice(dstStride * 2));
+                p2.GetUpper().CopyTo(dsts.Slice(dstStride * 3));
+                p1.GetLower().CopyTo(dsts.Slice(dstStride * 4));
+                p1.GetUpper().CopyTo(dsts.Slice(dstStride * 5));
+                p3.GetLower().CopyTo(dsts.Slice(dstStride * 6));
+                p3.GetUpper().CopyTo(dsts.Slice(dstStride * 7));
             }
         }
 
@@ -1232,20 +1249,19 @@ namespace StbSharp.ImageRead
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void Dequantize(Span<short> data, ReadOnlySpan<ushort> dequant)
         {
-            dequant = dequant.Slice(0, data.Length);
+            data = data[..64];
+            dequant = dequant[..64];
 
-            for (int i = 0; i < data.Length; i++)
-                data[i] *= (short)dequant[i];
+            (Vector512.Create<short>(data) * Vector512.Create(dequant).AsInt16()).CopyTo(data);
+            (Vector512.Create<short>(data.Slice(32)) * Vector512.Create(dequant.Slice(32)).AsInt16()).CopyTo(data);
         }
 
         public static void FinishProgresive(JpegState z)
         {
-            ArgumentNullException.ThrowIfNull(z);
-
-            if (!z.progressive)
-                return;
+            Debug.Assert(z.progressive);
 
             for (int n = 0; n < z.State.Components; ++n)
             {
@@ -1260,7 +1276,7 @@ namespace StbSharp.ImageRead
                 {
                     for (int i = 0; i < w; i++)
                     {
-                        Span<short> data = coeff_data.Slice(64 * (i + j * component.coeff_w));
+                        Span<short> data = coeff_data.Slice(64 * (i + j * component.coeff_w), 64);
 
                         Dequantize(data, z.dequant[component.tq]);
 
@@ -1695,8 +1711,7 @@ namespace StbSharp.ImageRead
                     if (state.marker == NoneMarker)
                     {
                         // handle 0s at the end of image data from IP Kamera 9060
-                        while (s.ReadByte() != NoneMarker)
-                            ;
+                        while (s.ReadByte() != NoneMarker) { }
 
                         state.marker = s.ReadByte();
                         // if we reach eof without hitting a marker, 
@@ -1798,7 +1813,6 @@ namespace StbSharp.ImageRead
             }
 
             int i = 0;
-            int t0 = 0;
             int t1 = 3 * near[0] + far[0];
 
             // Intrinsics process groups of 8 pixels for as long as they can.
@@ -1812,8 +1826,8 @@ namespace StbSharp.ImageRead
                 {
                     // load and perform the vertical filtering pass
                     // this uses 3*x + y = 4*x + (y - x)
-                    Vector128<byte> farb = Vector128.CreateScalar(MemoryMarshal.Read<long>(far[i..])).AsByte();
-                    Vector128<byte> nearb = Vector128.CreateScalar(MemoryMarshal.Read<long>(near[i..])).AsByte();
+                    Vector128<byte> farb = Vector128.CreateScalar(MemoryMarshal.Read<long>(far.Slice(i))).AsByte();
+                    Vector128<byte> nearb = Vector128.CreateScalar(MemoryMarshal.Read<long>(near.Slice(i))).AsByte();
                     Vector128<short> farw = V128Helper.UnpackLow(farb, Vector128<byte>.Zero).AsInt16();
                     Vector128<short> nearw = V128Helper.UnpackLow(nearb, Vector128<byte>.Zero).AsInt16();
                     Vector128<short> diff = farw - nearw;
@@ -1849,13 +1863,13 @@ namespace StbSharp.ImageRead
 
                     // pack and write output
                     Vector128<byte> outv = V128Helper.PackUnsignedSaturate(de0, de1);
-                    outv.CopyTo(dst[(i * 2)..]);
+                    outv.CopyTo(dst.Slice(i * 2));
 
                     // "previous" value for next iter
                     t1 = 3 * near[i + 7] + far[i + 7];
                 }
 
-                t0 = t1;
+                int t0 = t1;
                 t1 = 3 * near[i] + far[i];
                 dst[i * 2] = (byte)((3 * t1 + t0 + 8) / 16);
             }
@@ -1866,7 +1880,7 @@ namespace StbSharp.ImageRead
 
             for (i++; i < w; i++)
             {
-                t0 = t1;
+                int t0 = t1;
                 t1 = 3 * near[i] + far[i];
                 dst[i * 2 - 1] = (byte)((3 * t0 + t1 + 8) / 16);
                 dst[i * 2] = (byte)((3 * t1 + t0 + 8) / 16);
@@ -2007,12 +2021,6 @@ namespace StbSharp.ImageRead
             return (byte)((t + (t >> 8)) >> 8);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static byte ComputeY8(byte r, byte g, byte b)
-        {
-            return (byte)(((r * 77) + (g * 150) + (29 * b)) >> 8);
-        }
-
         public static void LoadImage(JpegState state)
         {
             ArgumentNullException.ThrowIfNull(state);
@@ -2084,7 +2092,7 @@ namespace StbSharp.ImageRead
                             r.ystep = 0;
                             r.line0 = r.line1;
                             if ((++r.ypos) < component.y)
-                                r.line1 = r.line1[component.w2..];
+                                r.line1 = r.line1.Slice(component.w2);
                         }
                     }
 
