@@ -5,7 +5,6 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.X86;
 
 namespace StbSharp.ImageRead
 {
@@ -13,7 +12,6 @@ namespace StbSharp.ImageRead
     public static class Jpeg
     {
         // TODO: optimize YCbCr with intrinsics
-        // TODO: optimize IdctBlock with intrinsics
 
         #region Constants
 
@@ -773,42 +771,13 @@ namespace StbSharp.ImageRead
                 out Vector128<int> out0l, out Vector128<int> out0h,
                 out Vector128<int> out1l, out Vector128<int> out1h)
             {
-                Vector128<short> c0_l = Sse2.UnpackLow(x, y);
-                Vector128<short> c0_h = Sse2.UnpackHigh(x, y);
-                out0l = Sse2.MultiplyAddAdjacent(c0_l, c0);
-                out0h = Sse2.MultiplyAddAdjacent(c0_h, c0);
-                out1l = Sse2.MultiplyAddAdjacent(c0_l, c1);
-                out1h = Sse2.MultiplyAddAdjacent(c0_h, c1);
-            }
+                Vector128<short> c0_l = V128Helper.UnpackLow(x, y);
+                Vector128<short> c0_h = V128Helper.UnpackHigh(x, y);
 
-            // out = in << 12  (in 16-bit, out 32-bit)
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            static void dct_widen(Vector128<short> src, out Vector128<int> low, out Vector128<int> high)
-            {
-                low = Sse2.UnpackLow(Vector128<short>.Zero, src).AsInt32() >> 4;
-                high = Sse2.UnpackHigh(Vector128<short>.Zero, src).AsInt32() >> 4;
-            }
-
-            // wide add
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            static void dct_wadd(
-                Vector128<int> aLow, Vector128<int> aHigh,
-                Vector128<int> bLow, Vector128<int> bHigh,
-                out Vector128<int> sumLow, out Vector128<int> sumHigh)
-            {
-                sumLow = (aLow + bLow);
-                sumHigh = (aHigh + bHigh);
-            }
-
-            // wide sub
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            static void dct_wsub(
-                Vector128<int> aLow, Vector128<int> aHigh,
-                Vector128<int> bLow, Vector128<int> bHigh,
-                out Vector128<int> difLow, out Vector128<int> difHigh)
-            {
-                difLow = Sse2.Subtract(aLow, bLow);
-                difHigh = Sse2.Subtract(aHigh, bHigh);
+                out0l = V128Helper.MultiplyAddAdjacent(c0_l, c0);
+                out0h = V128Helper.MultiplyAddAdjacent(c0_h, c0);
+                out1l = V128Helper.MultiplyAddAdjacent(c0_l, c1);
+                out1h = V128Helper.MultiplyAddAdjacent(c0_h, c1);
             }
 
             // butterfly a/b, add bias, then shift by "s" and pack
@@ -822,10 +791,15 @@ namespace StbSharp.ImageRead
             {
                 Vector128<int> abiased_l = aLow + bias;
                 Vector128<int> abiased_h = aHigh + bias;
-                dct_wadd(abiased_l, abiased_h, bLow, bHigh, out Vector128<int> sum_l, out Vector128<int> sum_h);
-                dct_wsub(abiased_l, abiased_h, bLow, bHigh, out Vector128<int> dif_l, out Vector128<int> dif_h);
-                out0 = Sse2.PackSignedSaturate(sum_l >> s, sum_h >> s);
-                out1 = Sse2.PackSignedSaturate(dif_l >> s, dif_h >> s);
+
+                Vector128<int> sum_l = abiased_l + bLow;
+                Vector128<int> sum_h = abiased_h + bHigh;
+
+                Vector128<int> dif_l = abiased_l - bLow;
+                Vector128<int> dif_h = abiased_h - bHigh;
+
+                out0 = V128Helper.PackSignedSaturate(sum_l >> s, sum_h >> s);
+                out1 = V128Helper.PackSignedSaturate(dif_l >> s, dif_h >> s);
             }
 
             // 8-bit interleave step (for transposes)
@@ -833,8 +807,8 @@ namespace StbSharp.ImageRead
             static void dct_interleave8(ref Vector128<byte> a, ref Vector128<byte> b)
             {
                 Vector128<byte> tmp = a;
-                a = Sse2.UnpackLow(a, b);
-                b = Sse2.UnpackHigh(tmp, b);
+                a = V128Helper.UnpackLow(a, b);
+                b = V128Helper.UnpackHigh(tmp, b);
             }
 
             // 16-bit interleave step (for transposes)
@@ -842,8 +816,8 @@ namespace StbSharp.ImageRead
             static void dct_interleave16(ref Vector128<short> a, ref Vector128<short> b)
             {
                 Vector128<short> tmp = a;
-                a = Sse2.UnpackLow(a, b);
-                b = Sse2.UnpackHigh(tmp, b);
+                a = V128Helper.UnpackLow(a, b);
+                b = V128Helper.UnpackHigh(tmp, b);
             }
 
             Vector128<short> rot0_0 = Vector128.Create(2217, -5350, 2217, -5350, 2217, -5350, 2217, -5350);
@@ -860,14 +834,15 @@ namespace StbSharp.ImageRead
             Vector128<int> bias_1 = Vector128.Create(65536 + (128 << 17));
 
             // This is loaded to match our regular (generic) integer IDCT exactly.
-            Vector128<short> row0 = Vector128.Create(data.Slice(0 * 8));
-            Vector128<short> row1 = Vector128.Create(data.Slice(1 * 8));
-            Vector128<short> row2 = Vector128.Create(data.Slice(2 * 8));
-            Vector128<short> row3 = Vector128.Create(data.Slice(3 * 8));
-            Vector128<short> row4 = Vector128.Create(data.Slice(4 * 8));
-            Vector128<short> row5 = Vector128.Create(data.Slice(5 * 8));
-            Vector128<short> row6 = Vector128.Create(data.Slice(6 * 8));
-            Vector128<short> row7 = Vector128.Create(data.Slice(7 * 8));
+            ReadOnlySpan<short> datas = data.Slice(0, 64);
+            Vector128<short> row0 = Vector128.Create(datas.Slice(0 * 8));
+            Vector128<short> row1 = Vector128.Create(datas.Slice(1 * 8));
+            Vector128<short> row2 = Vector128.Create(datas.Slice(2 * 8));
+            Vector128<short> row3 = Vector128.Create(datas.Slice(3 * 8));
+            Vector128<short> row4 = Vector128.Create(datas.Slice(4 * 8));
+            Vector128<short> row5 = Vector128.Create(datas.Slice(5 * 8));
+            Vector128<short> row6 = Vector128.Create(datas.Slice(6 * 8));
+            Vector128<short> row7 = Vector128.Create(datas.Slice(7 * 8));
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             void dct_pass(Vector128<int> bias, [ConstantExpected] byte shift)
@@ -880,12 +855,22 @@ namespace StbSharp.ImageRead
 
                 Vector128<short> sum04 = row0 + row4;
                 Vector128<short> dif04 = row0 - row4;
-                dct_widen(sum04, out Vector128<int> t0e_l, out Vector128<int> t0e_h);
-                dct_widen(dif04, out Vector128<int> t1e_l, out Vector128<int> t1e_h);
-                dct_wadd(t0e_l, t0e_h, t3e_l, t3e_h, out Vector128<int> x0_l, out Vector128<int> x0_h);
-                dct_wsub(t0e_l, t0e_h, t3e_l, t3e_h, out Vector128<int> x3_l, out Vector128<int> x3_h);
-                dct_wadd(t1e_l, t1e_h, t2e_l, t2e_h, out Vector128<int> x1_l, out Vector128<int> x1_h);
-                dct_wsub(t1e_l, t1e_h, t2e_l, t2e_h, out Vector128<int> x2_l, out Vector128<int> x2_h);
+
+                Vector128<int> t0e_l = V128Helper.UnpackLow(Vector128<short>.Zero, sum04).AsInt32() >> 4;
+                Vector128<int> t0e_h = V128Helper.UnpackHigh(Vector128<short>.Zero, sum04).AsInt32() >> 4;
+
+                Vector128<int> t1e_l = V128Helper.UnpackLow(Vector128<short>.Zero, dif04).AsInt32() >> 4;
+                Vector128<int> t1e_h = V128Helper.UnpackHigh(Vector128<short>.Zero, dif04).AsInt32() >> 4;
+
+                Vector128<int> x0_l = t0e_l + t3e_l;
+                Vector128<int> x3_l = t0e_l - t3e_l;
+                Vector128<int> x1_l = t1e_l + t2e_l;
+                Vector128<int> x2_l = t1e_l - t2e_l;
+
+                Vector128<int> x0_h = t0e_h + t3e_h;
+                Vector128<int> x3_h = t0e_h - t3e_h;
+                Vector128<int> x1_h = t1e_h + t2e_h;
+                Vector128<int> x2_h = t1e_h - t2e_h;
 
                 // odd part
                 dct_rot(
@@ -904,10 +889,16 @@ namespace StbSharp.ImageRead
                     out Vector128<int> y4o_l, out Vector128<int> y4o_h,
                     out Vector128<int> y5o_l, out Vector128<int> y5o_h);
 
-                dct_wadd(y0o_l, y0o_h, y4o_l, y4o_h, out Vector128<int> x4_l, out Vector128<int> x4_h);
-                dct_wadd(y1o_l, y1o_h, y5o_l, y5o_h, out Vector128<int> x5_l, out Vector128<int> x5_h);
-                dct_wadd(y2o_l, y2o_h, y5o_l, y5o_h, out Vector128<int> x6_l, out Vector128<int> x6_h);
-                dct_wadd(y3o_l, y3o_h, y4o_l, y4o_h, out Vector128<int> x7_l, out Vector128<int> x7_h);
+                Vector128<int> x4_l = y0o_l + y4o_l;
+                Vector128<int> x5_l = y1o_l + y5o_l;
+                Vector128<int> x6_l = y2o_l + y5o_l;
+                Vector128<int> x7_l = y3o_l + y4o_l;
+
+                Vector128<int> x4_h = y0o_h + y4o_h;
+                Vector128<int> x5_h = y1o_h + y5o_h;
+                Vector128<int> x6_h = y2o_h + y5o_h;
+                Vector128<int> x7_h = y3o_h + y4o_h;
+
                 dct_bfly32o(x0_l, x0_h, x7_l, x7_h, bias, shift, out row0, out row7);
                 dct_bfly32o(x1_l, x1_h, x6_l, x6_h, bias, shift, out row1, out row6);
                 dct_bfly32o(x2_l, x2_h, x5_l, x5_h, bias, shift, out row2, out row5);
@@ -942,10 +933,10 @@ namespace StbSharp.ImageRead
 
             {
                 // pack
-                Vector128<byte> p0 = Sse2.PackUnsignedSaturate(row0, row1); // a0a1a2a3...a7b0b1b2b3...b7
-                Vector128<byte> p1 = Sse2.PackUnsignedSaturate(row2, row3);
-                Vector128<byte> p2 = Sse2.PackUnsignedSaturate(row4, row5);
-                Vector128<byte> p3 = Sse2.PackUnsignedSaturate(row6, row7);
+                Vector128<byte> p0 = V128Helper.PackUnsignedSaturate(row0, row1); // a0a1a2a3...a7b0b1b2b3...b7
+                Vector128<byte> p1 = V128Helper.PackUnsignedSaturate(row2, row3);
+                Vector128<byte> p2 = V128Helper.PackUnsignedSaturate(row4, row5);
+                Vector128<byte> p3 = V128Helper.PackUnsignedSaturate(row6, row7);
 
                 // 8bit 8x8 transpose pass 1
                 dct_interleave8(ref p0, ref p2); // a0e0a1e1...
@@ -960,36 +951,28 @@ namespace StbSharp.ImageRead
                 dct_interleave8(ref p1, ref p3); // a4b4c4d4...
 
                 // store
-                p0.GetLower().CopyTo(dst);
-                dst = dst[dstStride..];
-                p0.GetUpper().CopyTo(dst);
-                dst = dst[dstStride..];
-                p2.GetLower().CopyTo(dst);
-                dst = dst[dstStride..];
-                p2.GetUpper().CopyTo(dst);
-                dst = dst[dstStride..];
-                p1.GetLower().CopyTo(dst);
-                dst = dst[dstStride..];
-                p1.GetUpper().CopyTo(dst);
-                dst = dst[dstStride..];
-                p3.GetLower().CopyTo(dst);
-                dst = dst[dstStride..];
-                p3.GetUpper().CopyTo(dst);
-                dst = dst[dstStride..];
+                Span<byte> dsts = dst[..(dstStride * 7 + 8)];
+                p0.GetLower().CopyTo(dsts);
+                p0.GetUpper().CopyTo(dsts[(dstStride * 1)..]);
+                p2.GetLower().CopyTo(dsts[(dstStride * 2)..]);
+                p2.GetUpper().CopyTo(dsts[(dstStride * 3)..]);
+                p1.GetLower().CopyTo(dsts[(dstStride * 4)..]);
+                p1.GetUpper().CopyTo(dsts[(dstStride * 5)..]);
+                p3.GetLower().CopyTo(dsts[(dstStride * 6)..]);
+                p3.GetUpper().CopyTo(dsts[(dstStride * 7)..]);
             }
         }
 
         /// <summary>
-        /// If there's a pending marker from the entropy stream, return that
-        /// otherwise, fetch from the stream and get a marker. if there's no
-        /// marker, return <see cref="NoneMarker"/>, which is never a valid marker value.
+        /// If there's a pending marker from the entropy stream, return it,
+        /// otherwise fetch a new marker from the stream. If there's no marker, 
+        /// return <see cref="NoneMarker"/>, which is never a valid marker value.
         /// </summary>
         private static byte ReadMarker(JpegState state)
         {
-            byte x;
-            if (state.marker != NoneMarker)
+            byte x = state.marker;
+            if (x != NoneMarker)
             {
-                x = state.marker;
                 state.marker = NoneMarker;
                 return x;
             }
@@ -1022,7 +1005,7 @@ namespace StbSharp.ImageRead
             // since we don't even allow 1<<30 pixels
         }
 
-        private static unsafe bool ParseEntropyCodedData(JpegState state)
+        private static bool ParseEntropyCodedData(JpegState state)
         {
             Reset(state);
 
@@ -1257,7 +1240,7 @@ namespace StbSharp.ImageRead
                 data[i] *= (short)dequant[i];
         }
 
-        public static unsafe void FinishProgresive(JpegState z)
+        public static void FinishProgresive(JpegState z)
         {
             ArgumentNullException.ThrowIfNull(z);
 
@@ -1800,7 +1783,7 @@ namespace StbSharp.ImageRead
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        public static unsafe Memory<byte> ResampleRowHV2(
+        public static Memory<byte> ResampleRowHV2(
             Memory<byte> destination, Memory<byte> inputNear, Memory<byte> inputFar, int w, int hs)
         {
             Span<byte> dst = destination.Span;
@@ -1821,65 +1804,60 @@ namespace StbSharp.ImageRead
             // Intrinsics process groups of 8 pixels for as long as they can.
             // Note they can't handle the last pixel in a row in this loop
             // because they need to handle the filter boundary conditions.
-            if (Sse2.IsSupported)
+            if (Vector128.IsHardwareAccelerated)
             {
-                fixed (byte* dstPtr = dst)
-                fixed (byte* nearPtr = near)
-                fixed (byte* farPtr = far)
+                Vector128<short> bias = Vector128.Create((short)8);
+
+                for (; i < ((w - 1) & ~7); i += 8)
                 {
-                    Vector128<short> bias = Vector128.Create((short)8);
+                    // load and perform the vertical filtering pass
+                    // this uses 3*x + y = 4*x + (y - x)
+                    Vector128<byte> farb = Vector128.CreateScalar(MemoryMarshal.Read<long>(far[i..])).AsByte();
+                    Vector128<byte> nearb = Vector128.CreateScalar(MemoryMarshal.Read<long>(near[i..])).AsByte();
+                    Vector128<short> farw = V128Helper.UnpackLow(farb, Vector128<byte>.Zero).AsInt16();
+                    Vector128<short> nearw = V128Helper.UnpackLow(nearb, Vector128<byte>.Zero).AsInt16();
+                    Vector128<short> diff = farw - nearw;
+                    Vector128<short> nears = nearw << 2;
+                    Vector128<short> curr = nears + diff; // current row
 
-                    for (; i < ((w - 1) & ~7); i += 8)
-                    {
-                        // load and perform the vertical filtering pass
-                        // this uses 3*x + y = 4*x + (y - x)
-                        Vector128<byte> farb = Vector128.CreateScalar(*(long*)(farPtr + i)).AsByte();
-                        Vector128<byte> nearb = Vector128.CreateScalar(*(long*)(nearPtr + i)).AsByte();
-                        Vector128<short> farw = Sse2.UnpackLow(farb, Vector128<byte>.Zero).AsInt16();
-                        Vector128<short> nearw = Sse2.UnpackLow(nearb, Vector128<byte>.Zero).AsInt16();
-                        Vector128<short> diff = farw - nearw;
-                        Vector128<short> nears = nearw << 2;
-                        Vector128<short> curr = nears + diff; // current row
+                    // horizontal filter works the same based on shifted vers of current
+                    // row. "prev" is current row shifted right by 1 pixel; we need to
+                    // insert the previous pixel value (from t1).
+                    // "next" is current row shifted left by 1 pixel, with first pixel
+                    // of next block of 8 pixels added in.
+                    Vector128<short> prv0 = V128Helper.ShiftBytesLeft(curr.AsByte(), 2).AsInt16();
+                    Vector128<short> nxt0 = V128Helper.ShiftBytesRight(curr.AsByte(), 2).AsInt16();
+                    Vector128<short> prev = prv0.WithElement(0, (short)t1);
+                    Vector128<short> next = nxt0.WithElement(7, (short)(3 * near[i + 8] + far[i + 8]));
 
-                        // horizontal filter works the same based on shifted vers of current
-                        // row. "prev" is current row shifted right by 1 pixel; we need to
-                        // insert the previous pixel value (from t1).
-                        // "next" is current row shifted left by 1 pixel, with first pixel
-                        // of next block of 8 pixels added in.
-                        Vector128<short> prv0 = Sse2.ShiftLeftLogical128BitLane(curr, 2);
-                        Vector128<short> nxt0 = Sse2.ShiftRightLogical128BitLane(curr, 2);
-                        Vector128<short> prev = prv0.WithElement(0, (short)t1);
-                        Vector128<short> next = nxt0.WithElement(7, (short)(3 * nearPtr[i + 8] + farPtr[i + 8]));
+                    // horizontal filter, polyphase implementation since it's convenient:
+                    // even pixels = 3*cur + prev = cur*4 + (prev - cur)
+                    // odd  pixels = 3*cur + next = cur*4 + (next - cur)
+                    // note the shared term.
+                    Vector128<short> curs = curr << 2;
+                    Vector128<short> prvd = prev - curr;
+                    Vector128<short> nxtd = next - curr;
+                    Vector128<short> curb = curs + bias;
+                    Vector128<short> even = prvd + curb;
+                    Vector128<short> odd = nxtd + curb;
 
-                        // horizontal filter, polyphase implementation since it's convenient:
-                        // even pixels = 3*cur + prev = cur*4 + (prev - cur)
-                        // odd  pixels = 3*cur + next = cur*4 + (next - cur)
-                        // note the shared term.
-                        Vector128<short> curs = curr << 2;
-                        Vector128<short> prvd = prev - curr;
-                        Vector128<short> nxtd = next - curr;
-                        Vector128<short> curb = curs + bias;
-                        Vector128<short> even = prvd + curb;
-                        Vector128<short> odd = nxtd + curb;
+                    // interleave even and odd pixels, then undo scaling.
+                    Vector128<short> int0 = V128Helper.UnpackLow(even, odd);
+                    Vector128<short> int1 = V128Helper.UnpackHigh(even, odd);
+                    Vector128<short> de0 = int0 >>> 4;
+                    Vector128<short> de1 = int1 >>> 4;
 
-                        // interleave even and odd pixels, then undo scaling.
-                        Vector128<short> int0 = Sse2.UnpackLow(even, odd);
-                        Vector128<short> int1 = Sse2.UnpackHigh(even, odd);
-                        Vector128<short> de0 = int0 >>> 4;
-                        Vector128<short> de1 = int1 >>> 4;
+                    // pack and write output
+                    Vector128<byte> outv = V128Helper.PackUnsignedSaturate(de0, de1);
+                    outv.CopyTo(dst[(i * 2)..]);
 
-                        // pack and write output
-                        Vector128<byte> outv = Sse2.PackUnsignedSaturate(de0, de1);
-                        outv.Store(dstPtr + i * 2);
-
-                        // "previous" value for next iter
-                        t1 = 3 * near[i + 7] + far[i + 7];
-                    }
-
-                    t0 = t1;
-                    t1 = 3 * nearPtr[i] + farPtr[i];
-                    dstPtr[i * 2] = (byte)((3 * t1 + t0 + 8) / 16);
+                    // "previous" value for next iter
+                    t1 = 3 * near[i + 7] + far[i + 7];
                 }
+
+                t0 = t1;
+                t1 = 3 * near[i] + far[i];
+                dst[i * 2] = (byte)((3 * t1 + t0 + 8) / 16);
             }
             else
             {
@@ -1925,10 +1903,10 @@ namespace StbSharp.ImageRead
         private const short YBFactor = (int)(1.77200f * 4096f + 0.5f);
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        public static unsafe void YCbCrToRGB(
+        public static void YCbCrToRGB(
             Span<byte> dst, Span<byte> y, Span<byte> pcb, Span<byte> pcr)
         {
-            if (Sse2.IsSupported)
+            if (Vector128.IsHardwareAccelerated)
             {
                 // this is a fairly straightforward implementation and not super-optimized.
                 Vector128<short> cr_const0 = Vector128.Create(YCrFactor);
@@ -1950,16 +1928,16 @@ namespace StbSharp.ImageRead
 
                     // unpack to short (and left-shift cr, cb by 8)
                     Vector128<byte> y_bias = Vector128.Create((byte)128);
-                    Vector128<short> yw = Sse2.UnpackLow(y_bias, y_bytes).AsInt16();
-                    Vector128<short> crw = Sse2.UnpackLow(Vector128<byte>.Zero, cr_biased).AsInt16();
-                    Vector128<short> cbw = Sse2.UnpackLow(Vector128<byte>.Zero, cb_biased).AsInt16();
+                    Vector128<short> yw = V128Helper.UnpackLow(y_bias, y_bytes).AsInt16();
+                    Vector128<short> crw = V128Helper.UnpackLow(Vector128<byte>.Zero, cr_biased).AsInt16();
+                    Vector128<short> cbw = V128Helper.UnpackLow(Vector128<byte>.Zero, cb_biased).AsInt16();
 
                     // color transform
                     Vector128<short> yws = yw >>> 4;
-                    Vector128<short> cr0 = Sse2.MultiplyHigh(cr_const0, crw);
-                    Vector128<short> cb0 = Sse2.MultiplyHigh(cb_const0, cbw);
-                    Vector128<short> cr1 = Sse2.MultiplyHigh(crw, cr_const1);
-                    Vector128<short> cb1 = Sse2.MultiplyHigh(cbw, cb_const1);
+                    Vector128<short> cr0 = V128Helper.MultiplyHigh(cr_const0, crw);
+                    Vector128<short> cb0 = V128Helper.MultiplyHigh(cb_const0, cbw);
+                    Vector128<short> cr1 = V128Helper.MultiplyHigh(crw, cr_const1);
+                    Vector128<short> cb1 = V128Helper.MultiplyHigh(cbw, cb_const1);
                     Vector128<short> rws = cr0 + yws;
                     Vector128<short> gwt = cb0 + yws;
                     Vector128<short> bws = yws + cb1;
@@ -1971,14 +1949,14 @@ namespace StbSharp.ImageRead
                     Vector128<short> gw = gws >> 4;
 
                     // back to byte, set up for transpose
-                    Vector128<byte> brb = Sse2.PackUnsignedSaturate(rw, bw);
-                    Vector128<byte> gxb = Sse2.PackUnsignedSaturate(gw, Vector128<short>.Zero);
+                    Vector128<byte> brb = V128Helper.PackUnsignedSaturate(rw, bw);
+                    Vector128<byte> gxb = V128Helper.PackUnsignedSaturate(gw, Vector128<short>.Zero);
 
                     // transpose to interleave channels
-                    Vector128<short> t0 = Sse2.UnpackLow(brb, gxb).AsInt16();
-                    Vector128<short> t1 = Sse2.UnpackHigh(brb, gxb).AsInt16();
-                    Vector128<byte> o0 = Sse2.UnpackLow(t0, t1).AsByte();
-                    Vector128<byte> o1 = Sse2.UnpackHigh(t0, t1).AsByte();
+                    Vector128<short> t0 = V128Helper.UnpackLow(brb, gxb).AsInt16();
+                    Vector128<short> t1 = V128Helper.UnpackHigh(brb, gxb).AsInt16();
+                    Vector128<byte> o0 = V128Helper.UnpackLow(t0, t1).AsByte();
+                    Vector128<byte> o1 = V128Helper.UnpackHigh(t0, t1).AsByte();
 
                     Vector128<byte> shuffleMask = Vector128.Create(
                         (byte)0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 3, 7, 11, 15);
