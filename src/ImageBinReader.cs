@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -27,11 +28,8 @@ namespace StbSharp.ImageRead
 
         private Span<byte> Take(int count)
         {
-            if (IsDisposed)
-                throw new ObjectDisposedException(GetType().FullName);
-
             if (_bufferLength < count)
-                throw new EndOfStreamException();
+                ThrowEndOfStream();
 
             var slice = Buffer.AsSpan(_bufferOffset, count);
             _bufferOffset += count;
@@ -41,8 +39,7 @@ namespace StbSharp.ImageRead
 
         private void FillBuffer()
         {
-            if (IsDisposed)
-                throw new ObjectDisposedException(GetType().FullName);
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
 
             Buffer.AsSpan(_bufferOffset, _bufferLength).CopyTo(Buffer);
 
@@ -68,7 +65,7 @@ namespace StbSharp.ImageRead
             FillBuffer();
 
             if (_bufferLength < count)
-                throw new EndOfStreamException();
+                ThrowEndOfStream();
         }
 
         /// <summary>
@@ -93,10 +90,10 @@ namespace StbSharp.ImageRead
                     return;
             }
 
-            CancellationToken.ThrowIfCancellationRequested();
-
             do
             {
+                CancellationToken.ThrowIfCancellationRequested();
+
                 int toRead = (int)Math.Min(count, Buffer.Length);
                 Span<byte> slice = Buffer.AsSpan(0, toRead);
                 int read = Stream.Read(slice);
@@ -109,7 +106,7 @@ namespace StbSharp.ImageRead
             while (count > 0);
 
             if (count != 0)
-                throw new EndOfStreamException();
+                ThrowEndOfStream();
         }
 
         public bool TryReadBytes(Span<byte> destination)
@@ -147,7 +144,7 @@ namespace StbSharp.ImageRead
         public void ReadBytes(Span<byte> destination)
         {
             if (!TryReadBytes(destination))
-                throw new EndOfStreamException();
+                ThrowEndOfStream();
         }
 
         public int TryReadByte()
@@ -262,6 +259,12 @@ namespace StbSharp.ImageRead
             if (_bufferLength < sizeof(uint))
                 FillBufferAndCheck(sizeof(uint));
             return BinaryPrimitives.ReadUInt32BigEndian(Take(sizeof(uint)));
+        }
+
+        [DoesNotReturn]
+        private static void ThrowEndOfStream()
+        {
+            throw new EndOfStreamException();
         }
 
         #region IDisposable
