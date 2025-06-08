@@ -117,7 +117,7 @@ namespace StbSharp.ImageRead
             {
                 if (info.image_type != 1 &&
                     info.image_type != 9)
-                    throw new StbImageReadException(ErrorCode.BadImageType);
+                    StbImageReadException.Throw(ErrorCode.BadImageType);
 
                 info.palette_start = reader.ReadInt16LE();
                 info.palette_len = reader.ReadInt16LE();
@@ -128,7 +128,7 @@ namespace StbSharp.ImageRead
                     info.palette_bpp != 16 &&
                     info.palette_bpp != 24 &&
                     info.palette_bpp != 32)
-                    throw new StbImageReadException(ErrorCode.BadPalette);
+                    StbImageReadException.Throw(ErrorCode.BadPalette);
             }
             else
             {
@@ -136,7 +136,7 @@ namespace StbSharp.ImageRead
                     info.image_type != 3 &&
                     info.image_type != 10 &&
                     info.image_type != 11)
-                    throw new StbImageReadException(ErrorCode.BadImageType);
+                    StbImageReadException.Throw(ErrorCode.BadImageType);
 
                 reader.Skip(5);
                 // 16bit: Color Map Origin
@@ -151,11 +151,11 @@ namespace StbSharp.ImageRead
 
             state.Width = reader.ReadUInt16LE();
             if (state.Width < 1)
-                throw new StbImageReadException(ErrorCode.ZeroWidth);
+                StbImageReadException.Throw(ErrorCode.ZeroWidth);
 
             state.Height = reader.ReadUInt16LE();
             if (state.Height < 1)
-                throw new StbImageReadException(ErrorCode.ZeroHeight);
+                StbImageReadException.Throw(ErrorCode.ZeroHeight);
 
             info.bits_per_pixel = reader.ReadByte();
 
@@ -167,7 +167,7 @@ namespace StbSharp.ImageRead
             {
                 if (info.bits_per_pixel != 8 &&
                     info.bits_per_pixel != 16)
-                    throw new StbImageReadException(ErrorCode.BadBitsPerPixel);
+                    StbImageReadException.Throw(ErrorCode.BadBitsPerPixel);
 
                 state.Components = GetComponentCount(
                     info.palette_bpp, false, out state.Depth);
@@ -179,7 +179,7 @@ namespace StbSharp.ImageRead
             }
 
             if (state.Components == 0)
-                throw new StbImageReadException(ErrorCode.BadComponentCount);
+                StbImageReadException.Throw(ErrorCode.BadComponentCount);
 
             state.OutComponents = state.Components;
             state.OutDepth = state.Depth;

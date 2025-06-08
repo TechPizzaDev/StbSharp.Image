@@ -169,6 +169,7 @@ namespace StbSharp.ImageRead
         BadFormat,
         BadPalette,
         InvalidImageLength,
-        InvalidArguments
+        InvalidArguments,
+        UnsupportedCodeSize
     }
 }

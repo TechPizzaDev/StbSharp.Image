@@ -36,7 +36,7 @@ namespace StbSharp.ImageRead
         [DoesNotReturn]
         public static void Throw(ErrorCode errorCode)
         {
-            throw new StbImageReadException(errorCode);
+            StbImageReadException.Throw(errorCode);
         }
     }
 }

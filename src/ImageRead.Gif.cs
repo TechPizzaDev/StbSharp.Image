@@ -81,7 +81,7 @@ namespace StbSharp.ImageRead
             {
                 if (disposing)
                 {
-                    if (Pool != null)
+                    if (Pool != null && _store != null)
                     {
                         Pool.Return(_store);
                         _store = null;
@@ -130,7 +130,7 @@ namespace StbSharp.ImageRead
                 return false;
 
             if (!Test(tmp))
-                throw new StbImageReadException(ErrorCode.UnknownFormat);
+                StbImageReadException.Throw(ErrorCode.UnknownFormat);
 
             ri.Width = s.ReadUInt16LE();
             ri.Height = s.ReadUInt16LE();
@@ -189,7 +189,8 @@ namespace StbSharp.ImageRead
             if (lzw_cs > 12)
             {
                 // TODO:
-                throw new StbImageReadException();
+                StbImageReadException.Throw(ErrorCode.UnsupportedCodeSize);
+                return null;
             }
 
             int clear = 1 << lzw_cs;
@@ -258,13 +259,13 @@ namespace StbSharp.ImageRead
                     else if (code <= avail)
                     {
                         if (first != 0)
-                            throw new StbImageReadException(ErrorCode.NoClearCode);
+                            StbImageReadException.Throw(ErrorCode.NoClearCode);
 
                         if (oldcode >= 0)
                         {
                             ref GifLzw p = ref Unsafe.Add(ref codes, avail++);
                             if (avail > 8192)
-                                throw new StbImageReadException(ErrorCode.TooManyCodes);
+                                StbImageReadException.Throw(ErrorCode.TooManyCodes);
 
                             p.prefix = (short)oldcode;
                             p.first = Unsafe.Add(ref codes, oldcode).first;
@@ -272,7 +273,7 @@ namespace StbSharp.ImageRead
                         }
                         else if (code == avail)
                         {
-                            throw new StbImageReadException(ErrorCode.IllegalCodeInRaster);
+                            StbImageReadException.Throw(ErrorCode.IllegalCodeInRaster);
                         }
 
                         OutCode(g, (ushort)code);
@@ -286,7 +287,7 @@ namespace StbSharp.ImageRead
                     }
                     else
                     {
-                        throw new StbImageReadException(ErrorCode.IllegalCodeInRaster);
+                        StbImageReadException.Throw(ErrorCode.IllegalCodeInRaster);
                     }
                 }
             }
@@ -323,7 +324,7 @@ namespace StbSharp.ImageRead
                 // TODO:
                 //if (AreValidMad3Sizes(ri.OutComponents, ri.Width, ri.Height, 0) == 0)
                 //{
-                //    throw new StbImageReadException(ErrorCode.TooLarge);
+                //    StbImageReadException.Throw(ErrorCode.TooLarge);
                 //}
 
                 pcount = ri.Width * ri.Height;
@@ -332,7 +333,7 @@ namespace StbSharp.ImageRead
 
                 if ((g._out_ == null) || (g.history == null))
                 {
-                    throw new StbImageReadException(ErrorCode.OutOfMemory);
+                    StbImageReadException.Throw(ErrorCode.OutOfMemory);
                 }
 
                 new Span<byte>(g._out_, ri.OutComponents * pcount).Clear();
@@ -388,7 +389,7 @@ namespace StbSharp.ImageRead
                         int w = s.ReadUInt16LE();
                         int h = s.ReadUInt16LE();
                         if (((x + w) > ri.Width) || ((y + h) > ri.Height))
-                            throw new StbImageReadException(ErrorCode.BadImageDescriptor);
+                            StbImageReadException.Throw(ErrorCode.BadImageDescriptor);
 
                         g.line_size = ri.Width;
                         g.start_x = x;
@@ -427,7 +428,7 @@ namespace StbSharp.ImageRead
                         }
                         else
                         {
-                            throw new StbImageReadException(ErrorCode.NoColorTable);
+                            StbImageReadException.Throw(ErrorCode.NoColorTable);
                         }
 
                         byte[]? o = ProcessRaster(s, g, ri);
@@ -495,7 +496,8 @@ namespace StbSharp.ImageRead
                         return null;
 
                     default:
-                        throw new StbImageReadException(ErrorCode.UnknownCode);
+                        StbImageReadException.Throw(ErrorCode.UnknownCode);
+                        return null;
                 }
             }
         }

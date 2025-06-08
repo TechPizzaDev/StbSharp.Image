@@ -148,10 +148,10 @@ namespace StbSharp.ImageRead
 
             Span<byte> tmp = stackalloc byte[HeaderSize];
             if (!reader.TryReadBytes(tmp))
-                throw new StbImageReadException(ErrorCode.UnknownHeader);
+                StbImageReadException.Throw(ErrorCode.UnknownHeader);
 
             if (!Test(tmp))
-                throw new StbImageReadException(ErrorCode.UnknownFormat);
+                StbImageReadException.Throw(ErrorCode.UnknownFormat);
 
             Header header = default;
 
@@ -195,7 +195,7 @@ namespace StbSharp.ImageRead
                 {
                     if (chunk.Type != PngChunkType.CgBI &&
                         chunk.Type != PngChunkType.IHDR)
-                        throw new StbImageReadException(ErrorCode.IHDRNotFirst);
+                        StbImageReadException.Throw(ErrorCode.IHDRNotFirst);
                 }
 
                 try
@@ -216,21 +216,21 @@ namespace StbSharp.ImageRead
                         case PngChunkType.IHDR:
                         {
                             if (seenChunkTypes.Contains(PngChunkType.IHDR))
-                                throw new StbImageReadException(ErrorCode.MultipleIHDR);
+                                StbImageReadException.Throw(ErrorCode.MultipleIHDR);
 
                             if (chunk.Length != 13)
-                                throw new StbImageReadException(ErrorCode.BadIHDRLength);
+                                StbImageReadException.Throw(ErrorCode.BadIHDRLength);
 
                             int width = reader.ReadInt32BE();
                             if (width > (1 << 24))
-                                throw new StbImageReadException(ErrorCode.TooLarge);
+                                StbImageReadException.Throw(ErrorCode.TooLarge);
 
                             int height = reader.ReadInt32BE();
                             if (height > (1 << 24))
-                                throw new StbImageReadException(ErrorCode.TooLarge);
+                                StbImageReadException.Throw(ErrorCode.TooLarge);
 
                             if ((width == 0) || (height == 0))
-                                throw new StbImageReadException(ErrorCode.EmptyImage);
+                                StbImageReadException.Throw(ErrorCode.EmptyImage);
 
                             byte depth = reader.ReadByte();
                             if (depth != 1 &&
@@ -238,26 +238,26 @@ namespace StbSharp.ImageRead
                                 depth != 4 &&
                                 depth != 8 &&
                                 depth != 16)
-                                throw new StbImageReadException(ErrorCode.UnsupportedBitDepth);
+                                StbImageReadException.Throw(ErrorCode.UnsupportedBitDepth);
 
                             byte color = reader.ReadByte();
                             if (color > 6 || (color == 3) && (header.Depth == 16))
-                                throw new StbImageReadException(ErrorCode.BadColorType);
+                                StbImageReadException.Throw(ErrorCode.BadColorType);
 
                             if (color != 3 && (color & 1) != 0)
-                                throw new StbImageReadException(ErrorCode.BadColorType);
+                                StbImageReadException.Throw(ErrorCode.BadColorType);
 
                             byte compression = reader.ReadByte();
                             if (compression != 0)
-                                throw new StbImageReadException(ErrorCode.BadCompressionMethod);
+                                StbImageReadException.Throw(ErrorCode.BadCompressionMethod);
 
                             byte filter = reader.ReadByte();
                             if (filter != 0)
-                                throw new StbImageReadException(ErrorCode.BadFilterMethod);
+                                StbImageReadException.Throw(ErrorCode.BadFilterMethod);
 
                             byte interlace = reader.ReadByte();
                             if (interlace > 1)
-                                throw new StbImageReadException(ErrorCode.BadInterlaceMethod);
+                                StbImageReadException.Throw(ErrorCode.BadInterlaceMethod);
 
                             bool hasCgbi = seenChunkTypes.Contains(PngChunkType.CgBI);
                             header = new Header(
@@ -266,12 +266,12 @@ namespace StbSharp.ImageRead
                             if (header.PaletteComponents != 0)
                             {
                                 if (((1 << 30) / width / 4) < height)
-                                    throw new StbImageReadException(ErrorCode.TooLarge);
+                                    StbImageReadException.Throw(ErrorCode.TooLarge);
                             }
                             else
                             {
                                 if (((1 << 30) / width / header.Components) < height)
-                                    throw new StbImageReadException(ErrorCode.TooLarge);
+                                    StbImageReadException.Throw(ErrorCode.TooLarge);
 
                                 if (scan == ScanMode.Header)
                                     return HandleChunkResult.Header;
@@ -287,11 +287,11 @@ namespace StbSharp.ImageRead
                         case PngChunkType.PLTE:
                         {
                             if (chunk.Length > 256 * 3)
-                                throw new StbImageReadException(ErrorCode.InvalidPLTE);
+                                StbImageReadException.Throw(ErrorCode.InvalidPLTE);
 
                             paletteLength = chunk.Length / 3;
                             if (paletteLength * 3 != chunk.Length)
-                                throw new StbImageReadException(ErrorCode.InvalidPLTE);
+                                StbImageReadException.Throw(ErrorCode.InvalidPLTE);
 
                             paletteData = new Rgba32[paletteLength];
                             for (int i = 0; i < paletteData.Length; i++)
@@ -313,15 +313,15 @@ namespace StbSharp.ImageRead
                         case PngChunkType.tRNS:
                         {
                             if (seenChunkTypes.Contains(PngChunkType.IDAT))
-                                throw new StbImageReadException(ErrorCode.tRNSAfterIDAT);
+                                StbImageReadException.Throw(ErrorCode.tRNSAfterIDAT);
 
                             if (header.PaletteComponents != 0)
                             {
                                 if (paletteLength == 0)
-                                    throw new StbImageReadException(ErrorCode.tRNSBeforePLTE);
+                                    StbImageReadException.Throw(ErrorCode.tRNSBeforePLTE);
 
                                 if (chunk.Length > paletteLength)
-                                    throw new StbImageReadException(ErrorCode.BadtRNSLength);
+                                    StbImageReadException.Throw(ErrorCode.BadtRNSLength);
 
                                 header.PaletteComponents = 4;
                                 for (int i = 0; i < chunk.Length; i++)
@@ -330,10 +330,10 @@ namespace StbSharp.ImageRead
                             else
                             {
                                 if ((header.Components & 1) == 0)
-                                    throw new StbImageReadException(ErrorCode.tRNSWithAlpha);
+                                    StbImageReadException.Throw(ErrorCode.tRNSWithAlpha);
 
                                 if (chunk.Length != header.Components * 2)
-                                    throw new StbImageReadException(ErrorCode.BadtRNSLength);
+                                    StbImageReadException.Throw(ErrorCode.BadtRNSLength);
 
                                 if (header.Depth == 16)
                                 {
@@ -350,7 +350,7 @@ namespace StbSharp.ImageRead
                                     }
                                     else
                                     {
-                                        throw new StbImageReadException(ErrorCode.BadComponentCount);
+                                        StbImageReadException.Throw(ErrorCode.BadComponentCount);
                                     }
                                 }
                                 else
@@ -374,7 +374,7 @@ namespace StbSharp.ImageRead
                                     }
                                     else
                                     {
-                                        throw new StbImageReadException(ErrorCode.BadComponentCount);
+                                        StbImageReadException.Throw(ErrorCode.BadComponentCount);
                                     }
                                 }
                                 has_transparency = true;
@@ -389,7 +389,7 @@ namespace StbSharp.ImageRead
                         case PngChunkType.IDAT:
                         {
                             if (header.PaletteComponents != 0 && paletteLength == 0)
-                                throw new StbImageReadException(ErrorCode.NoPLTE);
+                                StbImageReadException.Throw(ErrorCode.NoPLTE);
 
                             if (!seenChunkTypes.Contains(PngChunkType.IDAT))
                             {
@@ -417,7 +417,7 @@ namespace StbSharp.ImageRead
                             }
 
                             if (!seenChunkTypes.Contains(PngChunkType.IDAT))
-                                throw new StbImageReadException(ErrorCode.NoIDAT);
+                                StbImageReadException.Throw(ErrorCode.NoIDAT);
 
                             return HandleChunkResult.Include;
                         }
@@ -427,7 +427,7 @@ namespace StbSharp.ImageRead
                         default:
                         {
                             if (chunk.IsCritical)
-                                throw new StbImageReadException(ErrorCode.UnknownChunk);
+                                StbImageReadException.Throw(ErrorCode.UnknownChunk);
 
                             return HandleChunkResult.Finish;
                         }
@@ -513,7 +513,7 @@ namespace StbSharp.ImageRead
             for (int y = 0; y < height; y++)
             {
                 if (!ImageReadHelpers.FullRead(filteredData, filteredDataBuffer))
-                    throw new StbImageReadException(ErrorCode.BadCompression);
+                    StbImageReadException.Throw(ErrorCode.BadCompression);
 
                 DefilterRow(
                     previousRowBuffer, filteredDataBuffer, currentRowBuffer,
@@ -615,7 +615,7 @@ namespace StbSharp.ImageRead
                 }
                 else
                 {
-                    throw new StbImageReadException(ErrorCode.BadInterlaceMethod);
+                    StbImageReadException.Throw(ErrorCode.BadInterlaceMethod);
                 }
             }
             finally
@@ -642,7 +642,7 @@ namespace StbSharp.ImageRead
 
             var filter = (FilterType)currentFilteredRow[rawOff++];
             if ((int)filter > 4)
-                throw new StbImageReadException(ErrorCode.InvalidFilter);
+                StbImageReadException.Throw(ErrorCode.InvalidFilter);
 
             if (y == 0)
                 filter = FirstRowFilter[(int)filter];
@@ -1095,7 +1095,7 @@ namespace StbSharp.ImageRead
             }
             else
             {
-                throw new StbImageReadException(ErrorCode.BadComponentCount);
+                StbImageReadException.Throw(ErrorCode.BadComponentCount);
             }
         }
 
@@ -1122,7 +1122,7 @@ namespace StbSharp.ImageRead
             }
             else
             {
-                throw new StbImageReadException(ErrorCode.BadComponentCount);
+                StbImageReadException.Throw(ErrorCode.BadComponentCount);
             }
         }
 
@@ -1197,7 +1197,7 @@ namespace StbSharp.ImageRead
             }
             else
             {
-                throw new StbImageReadException(ErrorCode.BadPalette);
+                StbImageReadException.Throw(ErrorCode.BadPalette);
             }
         }
 

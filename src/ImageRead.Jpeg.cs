@@ -341,7 +341,7 @@ namespace StbSharp.ImageRead
                         Code[k++] = (ushort)code++;
 
                     if ((code - 1) >= (1 << j))
-                        throw new StbImageReadException(ErrorCode.BadCodeLengths);
+                        StbImageReadException.Throw(ErrorCode.BadCodeLengths);
                 }
 
                 h.Maxcode[j] = (uint)(code << (16 - j));
@@ -513,7 +513,7 @@ namespace StbSharp.ImageRead
 
             int t = HuffmanDecode(state, hdc);
             if (t < 0)
-                throw new StbImageReadException(ErrorCode.BadHuffmanCode);
+                StbImageReadException.Throw(ErrorCode.BadHuffmanCode);
 
             data.Clear();
 
@@ -545,7 +545,7 @@ namespace StbSharp.ImageRead
                 {
                     int rs = HuffmanDecode(state, hac);
                     if (rs < 0)
-                        throw new StbImageReadException(ErrorCode.BadHuffmanCode);
+                        StbImageReadException.Throw(ErrorCode.BadHuffmanCode);
 
                     s = rs & 15;
                     r = rs >> 4;
@@ -571,7 +571,7 @@ namespace StbSharp.ImageRead
             JpegState state, Span<short> data, Huffman hdc, int b)
         {
             if (state.spec_end != 0)
-                throw new StbImageReadException(ErrorCode.CantMergeDcAndAc);
+                StbImageReadException.Throw(ErrorCode.CantMergeDcAndAc);
 
             if (state.code_bits < 16)
                 GrowBufferUnsafe(state);
@@ -596,7 +596,7 @@ namespace StbSharp.ImageRead
             JpegState state, Span<short> data, Huffman hac, ReadOnlySpan<short> fac)
         {
             if (state.spec_start == 0)
-                throw new StbImageReadException(ErrorCode.CantMergeDcAndAc);
+                StbImageReadException.Throw(ErrorCode.CantMergeDcAndAc);
 
             if (state.succ_high == 0)
             {
@@ -641,7 +641,7 @@ namespace StbSharp.ImageRead
                 {
                     int rs = HuffmanDecode(state, hac);
                     if (rs < 0)
-                        throw new StbImageReadException(ErrorCode.BadHuffmanCode);
+                        StbImageReadException.Throw(ErrorCode.BadHuffmanCode);
 
                     int s = rs & 15;
                     r = rs >> 4;
@@ -717,7 +717,7 @@ namespace StbSharp.ImageRead
             {
                 int rs = HuffmanDecode(state, hac);
                 if (rs < 0)
-                    throw new StbImageReadException(ErrorCode.BadHuffmanCode);
+                    StbImageReadException.Throw(ErrorCode.BadHuffmanCode);
 
                 int s = rs & 15;
                 int r = rs >> 4;
@@ -734,7 +734,7 @@ namespace StbSharp.ImageRead
                 else
                 {
                     if (s != 1)
-                        throw new StbImageReadException(ErrorCode.BadHuffmanCode);
+                        StbImageReadException.Throw(ErrorCode.BadHuffmanCode);
 
                     if (ReadBit(state))
                         s = bit;
@@ -1298,12 +1298,12 @@ namespace StbSharp.ImageRead
             switch (m)
             {
                 case NoneMarker:
-                    throw new StbImageReadException(ErrorCode.MarkerExpected);
+                    StbImageReadException.Throw(ErrorCode.MarkerExpected);
                     return false;
 
                 case 0xDD:
                     if (s.ReadInt16BE() != 4)
-                        throw new StbImageReadException(ErrorCode.BadDRILength);
+                        StbImageReadException.Throw(ErrorCode.BadDRILength);
 
                     z.restart_interval = s.ReadInt16BE();
                     return true;
@@ -1315,11 +1315,11 @@ namespace StbSharp.ImageRead
                         int q = s.ReadByte();
                         int p = q >> 4;
                         if ((p != 0) && (p != 1))
-                            throw new StbImageReadException(ErrorCode.BadDQTType);
+                            StbImageReadException.Throw(ErrorCode.BadDQTType);
 
                         int t = q & 15;
                         if (t > 3)
-                            throw new StbImageReadException(ErrorCode.BadDQTTable);
+                            StbImageReadException.Throw(ErrorCode.BadDQTTable);
 
                         bool sixteen = p != 0;
                         for (int i = 0; i < 64; i++)
@@ -1341,7 +1341,7 @@ namespace StbSharp.ImageRead
                         int tc = q >> 4;
                         int th = q & 15;
                         if ((tc > 1) || (th > 3))
-                            throw new StbImageReadException(ErrorCode.BadDHTHeader);
+                            StbImageReadException.Throw(ErrorCode.BadDHTHeader);
 
                         int n = 0;
                         for (int i = 0; i < sizes.Length; ++i)
@@ -1382,9 +1382,9 @@ namespace StbSharp.ImageRead
                         return true;
 
                     if (m == 0xFE)
-                        throw new StbImageReadException(ErrorCode.BadCOMLength);
+                        StbImageReadException.Throw(ErrorCode.BadCOMLength);
                     else
-                        throw new StbImageReadException(ErrorCode.BadAPPLength);
+                        StbImageReadException.Throw(ErrorCode.BadAPPLength);
                 }
 
                 if ((m == 0xE0) && (length >= 5))
@@ -1430,7 +1430,7 @@ namespace StbSharp.ImageRead
 
             if (!z.SkipInvalidMarker)
             {
-                throw new StbImageReadException(ErrorCode.UnknownMarker);
+                StbImageReadException.Throw(ErrorCode.UnknownMarker);
             }
             return true;
         }
@@ -1444,10 +1444,10 @@ namespace StbSharp.ImageRead
             int Ls = redaer.ReadInt16BE();
             state.scan_n = redaer.ReadByte();
             if ((state.scan_n < 1) || (state.scan_n > 4) || (state.scan_n > state.State.Components))
-                throw new StbImageReadException(ErrorCode.BadSOSComponentCount);
+                StbImageReadException.Throw(ErrorCode.BadSOSComponentCount);
 
             if (Ls != 6 + 2 * state.scan_n)
-                throw new StbImageReadException(ErrorCode.BadSOSLength);
+                StbImageReadException.Throw(ErrorCode.BadSOSLength);
 
             for (int i = 0; i < state.scan_n; ++i)
             {
@@ -1466,11 +1466,11 @@ namespace StbSharp.ImageRead
 
                 state.components[which].hd = q >> 4;
                 if (state.components[which].hd > 3)
-                    throw new StbImageReadException(ErrorCode.BadDCHuffman);
+                    StbImageReadException.Throw(ErrorCode.BadDCHuffman);
 
                 state.components[which].ha = q & 15;
                 if (state.components[which].ha > 3)
-                    throw new StbImageReadException(ErrorCode.BadACHuffman);
+                    StbImageReadException.Throw(ErrorCode.BadACHuffman);
 
                 state.order[i] = which;
             }
@@ -1489,15 +1489,15 @@ namespace StbSharp.ImageRead
                         (state.spec_start > state.spec_end) ||
                         (state.succ_high > 13) ||
                         (state.succ_low > 13))
-                        throw new StbImageReadException(ErrorCode.BadSOS);
+                        StbImageReadException.Throw(ErrorCode.BadSOS);
                 }
                 else
                 {
                     if (state.spec_start != 0)
-                        throw new StbImageReadException(ErrorCode.BadSOS);
+                        StbImageReadException.Throw(ErrorCode.BadSOS);
 
                     if ((state.succ_high != 0) || (state.succ_low != 0))
-                        throw new StbImageReadException(ErrorCode.BadSOS);
+                        StbImageReadException.Throw(ErrorCode.BadSOS);
 
                     state.spec_end = 63;
                 }
@@ -1545,25 +1545,25 @@ namespace StbSharp.ImageRead
 
             int Lf = s.ReadInt16BE();
             if (Lf < 11)
-                throw new StbImageReadException(ErrorCode.BadSOFLength);
+                StbImageReadException.Throw(ErrorCode.BadSOFLength);
 
             int p = s.ReadByte();
             if (p != 8)
-                throw new StbImageReadException(ErrorCode.UnsupportedBitDepth);
+                StbImageReadException.Throw(ErrorCode.UnsupportedBitDepth);
 
             z.State.Height = s.ReadUInt16BE();
             if (z.State.Height == 0)
-                throw new StbImageReadException(ErrorCode.ZeroHeight);
+                StbImageReadException.Throw(ErrorCode.ZeroHeight);
 
             z.State.Width = s.ReadUInt16BE();
             if (z.State.Width == 0)
-                throw new StbImageReadException(ErrorCode.ZeroWidth);
+                StbImageReadException.Throw(ErrorCode.ZeroWidth);
 
             z.State.Components = s.ReadByte();
             if ((z.State.Components != 1) &&
                 (z.State.Components != 3) &&
                 (z.State.Components != 4))
-                throw new StbImageReadException(ErrorCode.BadComponentCount);
+                StbImageReadException.Throw(ErrorCode.BadComponentCount);
 
             for (int i = 0; i < z.State.Components; ++i)
             {
@@ -1572,7 +1572,7 @@ namespace StbSharp.ImageRead
             }
 
             if (Lf != 8 + 3 * z.State.Components)
-                throw new StbImageReadException(ErrorCode.BadSOFLength);
+                StbImageReadException.Throw(ErrorCode.BadSOFLength);
 
             z.rgb = 0;
 
@@ -1586,15 +1586,15 @@ namespace StbSharp.ImageRead
                 int q = s.ReadByte();
                 comp.h = q >> 4;
                 if ((comp.h == 0) || (comp.h > 4))
-                    throw new StbImageReadException(ErrorCode.BadH);
+                    StbImageReadException.Throw(ErrorCode.BadH);
 
                 comp.v = q & 15;
                 if ((comp.v == 0) || (comp.v > 4))
-                    throw new StbImageReadException(ErrorCode.BadV);
+                    StbImageReadException.Throw(ErrorCode.BadV);
 
                 comp.tq = s.ReadByte();
                 if (comp.tq > 3)
-                    throw new StbImageReadException(ErrorCode.BadTQ);
+                    StbImageReadException.Throw(ErrorCode.BadTQ);
             }
 
             if (scan != ScanMode.Load)
@@ -1655,7 +1655,7 @@ namespace StbSharp.ImageRead
 
             byte m = ReadMarker(z);
             if (m != 0xd8)
-                throw new StbImageReadException(ErrorCode.NoSOI);
+                StbImageReadException.Throw(ErrorCode.NoSOI);
 
             m = ReadMarker(z);
             while (m is not (0xc0 or 0xc1 or 0xc2))
@@ -1724,10 +1724,10 @@ namespace StbSharp.ImageRead
                     int NL = s.ReadInt16BE();
 
                     if (Ld != 4)
-                        throw new StbImageReadException(ErrorCode.BadDNLLength);
+                        StbImageReadException.Throw(ErrorCode.BadDNLLength);
 
                     if (NL != state.State.Height)
-                        throw new StbImageReadException(ErrorCode.BadDNLHeight);
+                        StbImageReadException.Throw(ErrorCode.BadDNLHeight);
                 }
                 else
                 {
@@ -2172,7 +2172,7 @@ namespace StbSharp.ImageRead
         public static void InfoCore(JpegState state)
         {
             if (!ParseHeader(state, ScanMode.Header))
-                throw new StbImageReadException(ErrorCode.Undefined);
+                StbImageReadException.Throw(ErrorCode.Undefined);
         }
 
         public static void Info(
